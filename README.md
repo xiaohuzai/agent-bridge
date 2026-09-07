@@ -43,9 +43,11 @@ export OPENAI_API_KEY=sk-...   # ② or an OpenAI API key (no subscription, no l
 #    requires wire_api = "responses"; chat-completions-only endpoints are rejected
 #    by codex itself (the bridge does not restrict this).
 
-# 1. Start the bridge
-npx browsa-agent-bridge codex --port 3948      # npm package
-node cli.mjs codex --port 3948                 # or straight from a checkout
+# 1. Start the bridge — codex, or ANY Agent Client Protocol v2 agent
+npx browsa-agent-bridge codex --port 3948          # codex via its app-server
+node cli.mjs acp -- claude-code-acp --port 3948    # any ACP agent command works:
+node cli.mjs acp -- gemini --experimental-acp     # claude-code-acp, codex-acp,
+                                                   # opencode, hermes, kimi, qwen…
 
 # 2. Talk to it — curl is a complete client:
 curl -N -X POST http://127.0.0.1:3948/turns \
@@ -131,7 +133,9 @@ browsa-agent-bridge codex [options]
 
 ## Adding an agent
 
-One file per agent in [`adapters/`](./adapters) implementing four methods — `startTurn`, `interrupt`, `respondApproval`, `stop` — plus a line in `cli.mjs`. claude code is the next adapter (`claude -p --input-format stream-json --output-format stream-json` + `--resume`); an agent without approvals or streaming still works — the protocol degrades (final text arrives with `done`, safe sandbox defaults apply).
+**Speak ACP v2? You're already supported** — `agent-bridge acp -- <your-agent-command>` is the generic adapter: it spawns any ACP agent over stdio and maps turns, streaming deltas, tool calls, usage, and permission requests onto the bridge's core. No code needed.
+
+An agent whose native protocol is *richer* than ACP deserves a bespoke adapter (one file in [`adapters/`](./adapters) implementing `startTurn` / `interrupt` / `respondApproval` / `stop` + a line in `cli.mjs`) — codex ships one, because its app-server protocol was verified to be stronger than going through codex-acp (live-captured approval vocabulary, per-turn sandbox policy). An agent without approvals or streaming still works — the protocol degrades (final text arrives with `done`, safe sandbox defaults apply).
 
 ## Platforms
 
@@ -151,6 +155,7 @@ npm test          # real adapter + real HTTP server vs a scripted fake codex
 - codex's `request_user_input` tool is declined by the bridge (the turn can proceed without it).
 - A network-flake retry re-submits the whole prompt — the agent may run a turn twice.
 - Turns are live-only: a client that disconnects cannot rejoin the same turn.
+- The generic ACP adapter targets ACP **v2** (schema-verified); it has been exercised against a scripted agent in CI — first-hand runs against real claude-code-acp / gemini are the next milestone.
 
 ## License
 
