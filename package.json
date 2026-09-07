@@ -1,0 +1,36 @@
+{
+  "name": "browsa-agent-bridge",
+  "version": "0.1.0",
+  "description": "Local bridge that turns CLI agents (codex today; claude code & more next) into a browsa-sidebar chat backend over HTTP+SSE. Zero dependencies.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "browsa-agent-bridge": "cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "server.mjs",
+    "adapters/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiaohuzai/agent-bridge.git"
+  },
+  "keywords": [
+    "browsa",
+    "codex",
+    "claude",
+    "agent",
+    "bridge",
+    "cli",
+    "sidepanel",
+    "local-llm"
+  ]
+}
