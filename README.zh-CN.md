@@ -18,7 +18,7 @@
 
 ---
 
-**agent-bridge** 是一个极小的零依赖 Node 守护进程，只做一件事：把本地 CLI 智能体适配成一个小的、带版本的 HTTP+SSE 协议，让*任何东西*都能驱动它。它存在的原因是一道硬边界——浏览器扩展被沙箱锁死、永远无法启动本地进程，而 CLI 智能体（codex、claude code……）只从 stdio 说话。桥坐在两者中间：
+**agent-bridge** 是一个零依赖的 Node 守护进程，只做一件事：把本地 CLI 智能体适配成一个小的、带版本的 HTTP+SSE 协议（v1），让*任何东西*都能驱动它。它存在的原因是一道硬边界——浏览器扩展被沙箱锁死、无法启动本地进程，而 CLI 智能体（codex、claude code……）只从 stdio 说话。桥坐在两者中间，客户端实现一次即可驱动桥背后的每个智能体，每个智能体 adapter 自动服务桥前面的每个客户端：
 
 ```
 任何客户端 —— 扩展 / 编辑器 / 脚本 / 你自己的 UI
@@ -30,49 +30,113 @@ agent-bridge  ◄── 你在终端启动的这个进程（约 400 行，零依
 codex app-server  ──►  你的 ChatGPT/Codex 登录，或你自己的模型配置
 ```
 
-与 `opencode serve` 等智能体 HTTP server 是同一个思想——*智能体本体就是 server，任何 UI 都是 client*——只是 codex 和 claude code 没有自带 HTTP server，本仓库就是补上的那 400 行。客户端实现一次即可驱动桥背后的每个智能体；每个智能体 adapter 自动服务桥前面的每个客户端。
-
 ## 快速开始
 
 ```bash
-# 0. 前提：codex CLI 可用。认证三选一——
+# 0. 前提：一个已装好、已登录的 CLI 智能体。以 codex 为例，认证三选一——
 codex login                    # ① ChatGPT 订阅登录（Plus/Pro，无需 API key）
-export OPENAI_API_KEY=sk-...   # ② 或 OpenAI API key（无需订阅、无需 login）
+export OPENAI_API_KEY=sk-...   # ② 或 OpenAI API key
 # ③ 或在 ~/.codex/config.toml 配自定义 provider（[model_providers.*] 指向自己的
-#    网关/本地模型），完全无需 codex 登录。注意：codex ≥0.149 强制
-#    wire_api = "responses"，仅说 chat-completions 的端点会被 codex 本身拒绝
-#    （桥不限制这个）。
+#    网关/本地模型）。注意：codex ≥0.149 强制 wire_api = "responses"，仅说
+#    chat-completions 的端点会被 codex 本身拒绝（桥不限制这个）。
 
-# 1. 启动桥——codex，或任何支持 Agent Client Protocol v2 的智能体
-npx browsa-agent-bridge codex --port 3948          # codex（走它的 app-server）
-node cli.mjs acp -- claude-code-acp --port 3948    # 任何 ACP agent 命令都行：
-node cli.mjs acp -- gemini --experimental-acp     # claude-code-acp、codex-acp、
-                                                   # opencode、hermes、kimi、qwen…
+# 1. 拿到桥——零依赖，clone 下来就能跑，无需 npm install
+git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 
-# 2. 对话——一条 curl 就是一个完整的客户端：
+# 2. 启动——codex，或任何 ACP v2 智能体
+node cli.mjs codex --port 3948            # codex（走它的 app-server）
+node cli.mjs acp -- claude-code-acp      # 接 claude code？一行命令。
+node cli.mjs acp -- gemini --experimental-acp   # 任何 ACP agent 命令都行
+
+# 3. 对话——一条 curl 就是一个完整客户端
 curl -N -X POST http://127.0.0.1:3948/turns \
   -H 'Content-Type: application/json' \
   -d '{"text":"用一句话总结这个"}'
 ```
 
-## 线缆协议（v1）
+## 线缆协议 v1：使用指南
 
-四条规则就是全部的客户端契约：
+整份客户端契约只有四条规则：
 
 1. **`POST /turns`，body 为 `{text, sessionId?}`**，然后读 SSE 流。第一回合不带 `sessionId`——智能体会分配一个并在 `start` 事件里带回；存下来，之后每回合带上（智能体自己管理 transcript，你永远不需要重发历史）。
-2. **`done` / `aborted` / `error` 结束回合。** 在此之前：`delta` 是回复文本，`tool` 是智能体活动，`usage` 携带一次 token 统计。`": ka"` 注释行是静默期 keepalive——忽略即可。
+2. **`done` / `aborted` / `error` 结束回合。** 在此之前：`delta` 是回复文本，`tool` 是智能体活动，`approval` 要你去应答。`": ka"` 注释行是静默期 keepalive——忽略即可。
 3. **取消 = 断开连接。** 桥发现断连后会在服务端中断智能体。回合是 live-only 的——离开的回合没有重放。
-4. **审批**（智能体被配置为询问时）：收到带 `requestId` 的 `approval` 事件后，在该回合流保持打开期间用 `POST /approvals/:requestId` 与 `{choice:'once'|'always'|'deny'}` 应答。
+4. **审批**：收到带 `requestId` 的 `approval` 事件后，在本回合流还开着时用 `POST /approvals/:requestId` 与 `{choice:'once'|'always'|'deny'}` 应答。
+
+### 一次完整对话（curl 走查）
+
+```bash
+# ① 探测桥：活着没？后面是谁？什么协议版本？
+curl http://127.0.0.1:3948/health
+# → {"ok":true,"agent":"codex","version":"1.0.0","proto":1}
+
+# ② 发起回合（-N 关闭 curl 缓冲，否则看不到流式输出）
+curl -N -X POST http://127.0.0.1:3948/turns \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"帮我把这个项目的测试跑一遍"}'
+```
+
+SSE 流是一段一段到达的，每条 `data:` 是一个 JSON 事件：
 
 ```
-GET  /health                   → {ok:true, agent, version, proto:1}
-GET  /sessions                 → {ok:true, sessions:[{sessionId, busy}]}   ← 客户端重启后找回会话 id
-POST /turns                    → SSE：start / delta / tool / approval / usage / done / aborted / error
-                               body：{text, sessionId?, images?} —— images 为 https:/data: URL（≤8 张）
-POST /approvals/:requestId     → {ok:true}
+data: {"type":"start","sessionId":"a1b2c3…","turnId":""}   ← 首回合分配会话 id，存下来
+data: {"type":"tool","name":"command","status":"started","detail":"npm test"}
+data: {"type":"approval","requestId":"42","tool":"command","command":"npm install","cwd":"/repo"}
 ```
 
-权威契约——包括首回合会话分配、断连语义等边界规则——写在 [`server.mjs`](./server.mjs) 的头注释里。
+收到 `approval` 说明智能体想跑一条需要放行的命令。**在本回合流还开着的时候**应答（另开一个终端也行）：
+
+```bash
+# ③ 应答审批：choice ∈ once | always | deny
+curl -X POST http://127.0.0.1:3948/approvals/42 \
+  -H 'Content-Type: application/json' -d '{"choice":"once"}'
+# → {"ok":true}    （409 = 这个审批已失效）
+```
+
+流继续，直到一个**终结事件**（`done` / `aborted` / `error`）到来、连接关闭：
+
+```
+data: {"type":"delta","text":"测试全部通过，共 23 个用例。"}
+data: {"type":"done","full":"测试全部通过，共 23 个用例。","usage":{"prompt_tokens":1234,"completion_tokens":567}}
+```
+
+```bash
+# ④ 第二回合：带上存下的 sessionId（不重发历史，智能体自己记得）
+curl -N -X POST http://127.0.0.1:3948/turns \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"把失败的那个修一下","sessionId":"a1b2c3…"}'
+
+# ⑤ 任何时候（比如客户端重启后）找回会话列表
+curl http://127.0.0.1:3948/sessions
+# → {"ok":true,"sessions":[{"sessionId":"a1b2c3…","busy":false}]}
+```
+
+想中断一个跑偏的回合？直接断开 ② 的连接即可——桥会中断智能体，绝不后台空跑。
+
+### 端点速查
+
+| 方法与路径 | 请求体 | 成功响应 | 错误 |
+|---|---|---|---|
+| `GET /health` | — | `{ok:true, agent, version, proto:1}` | 401 token 错 · 403 Host 非回环 |
+| `GET /sessions` | — | `{ok:true, sessions:[{sessionId, busy}]}` | — |
+| `POST /turns` | `{text, sessionId?, images?}`（images ≤8 张 https:/data: URL） | SSE 事件流（见下表） | 400 缺 text / images 不合法 / body 超 4MB |
+| `POST /approvals/:requestId` | `{choice:'once'\|'always'\|'deny'}` | `{ok:true}` | 400 choice 非法 · 409 审批已失效 |
+
+带 `--token` 启动时，所有请求都要带 `Authorization: Bearer <token>`。
+
+### 事件速查
+
+| 事件 | 字段 | 含义 |
+|---|---|---|
+| `start` | `sessionId`, `turnId` | 回合已受理；首回合在此分配 `sessionId` |
+| `delta` | `text` | 增量回复文本 |
+| `tool` | `name`, `status: started\|completed\|failed`, `detail` | 智能体活动（跑命令、改文件……） |
+| `approval` | `requestId`, `tool`, `command`（codex 另带 `cwd`） | 智能体请求批准——用 `POST /approvals/:requestId` 应答 |
+| `done` | `full`, `usage?`, `finishReason?` | **终结**：正常完成；`usage` 为 `{prompt_tokens, completion_tokens}` |
+| `aborted` | — | **终结**：回合被中断 |
+| `error` | `message` | **终结**：出错 |
+
+注：token 统计目前随 `done` 的 `usage` 字段携带（协议保留了独立的 `usage` 事件类型，供未来 adapter 更早推送）；`": ka"` 注释行是心跳，忽略即可。
 
 ### 一个最小客户端（约 20 行）
 
@@ -108,34 +172,42 @@ async function turn(text, sessionId) {
 
 **浏览器客户端**：桥会应答 CORS 预检，且只对回环来源（`http(s)://localhost:*`、`http(s)://127.0.0.1:*`）做反射，所以 localhost 上的页面可以直接调用，任意的 web 来源会被拒绝。传 `--cors-origin '*'` 可对所有来源开放——那时请配 `--token`。非浏览器客户端（Node、Python、curl）完全不需要这些。
 
-## CLI 参数
+### 行为保证
+
+- **sessionId = 智能体自己的会话 id**。桥重启不丢（codex `thread/resume` / ACP `session/resume` 从磁盘恢复）；`GET /sessions` 在客户端重启后找回会话与忙闲状态。
+- **审批是完整往返**：智能体发问 → 桥转成 `approval` 事件 → 客户端应答 → 决定写回智能体。不应答它就一直等；不想等了断开连接即可。
+- **中断 = 挂断**：断开 `POST /turns` 的连接就是中断，绝无后台无主空跑。
+
+权威契约——包括首回合会话分配、断连语义等边界规则——写在 [`server.mjs`](./server.mjs) 的头注释里。
+
+## CLI 参考
 
 ```bash
-browsa-agent-bridge codex [options]
-  --port N              监听端口（默认 3948，只绑回环）
-  --cwd DIR             agent 工作区（默认：当前目录）
-  --sandbox MODE        read-only | workspace-write | danger-full-access（默认 read-only）
-  --network             workspace-write 沙箱内允许联网
-  --approval POLICY     never | on-request | untrusted（默认 never）
-  --token TOKEN         所有请求要求此 bearer token
-  --cors-origin MODE    loopback（默认）| *（任意来源；请配 --token）
-  --codex-bin PATH      codex 二进制（默认：PATH 上的 codex）
-  --codex-home DIR      CODEX_HOME 覆盖（默认：~/.codex）
+node cli.mjs codex [options]          # codex（走它的 app-server）
+node cli.mjs acp -- <agent 命令…>     # 任何 ACP v2 智能体；`--` 之后全部归 agent 命令
 ```
 
-**安全默认值**：read-only 沙箱 + `--approval never`。智能体可以读、可以推理，但要逃逸沙箱的命令会被拒绝。想让它写文件：`--sandbox workspace-write`（需要联网再加 `--network`）。想在你的客户端 UI 里逐条批准：`--approval on-request`——客户端会收到 `approval` 事件，并经 `POST /approvals/:id` 应答。
+| 参数 | 说明 |
+|---|---|
+| `--port N` | 监听端口（默认 3948，只绑回环） |
+| `--cwd DIR` | 智能体工作区（默认：当前目录） |
+| `--token TOKEN` | 所有请求要求此 bearer token |
+| `--cors-origin MODE` | loopback（默认）\| `*`（任意来源；请配 `--token`） |
+| `--sandbox MODE` | **codex 专用**：read-only（默认）\| workspace-write \| danger-full-access |
+| `--network` | **codex 专用**：workspace-write 沙箱内允许联网 |
+| `--approval POLICY` | **codex 专用**：never（默认）\| on-request \| untrusted——想收到 `approval` 事件要开 on-request |
+| `--codex-bin PATH` | **codex 专用**：codex 二进制（默认：PATH 上的 codex） |
+| `--codex-home DIR` | **codex 专用**：CODEX_HOME 覆盖（默认：~/.codex） |
 
-## 会话、审批、中断
+**安全默认值**：read-only 沙箱 + `--approval never`。智能体可以读、可以推理，但要逃逸沙箱的命令会被拒绝。想让它写文件：`--sandbox workspace-write`（需要联网再加 `--network`）。想在你的客户端 UI 里逐条批准：`--approval on-request`。ACP 模式下沙箱与权限由 agent 自己的策略管理，它的权限请求总是路由给客户端。
 
-- **sessionId = 智能体自己的线程 id**，第一回合分配、`start` 事件带回。桥重启不丢（`thread/resume` 从磁盘恢复）。`GET /sessions` 列出已知会话与忙闲状态——客户端重启后用它找回会话 id。
-- **审批是完整往返**：智能体以 JSON-RPC 请求发问 → 桥转成线缆 `approval` 事件 → 客户端应答 → 决定写回智能体的 stdin。
-- **中断 = 挂断**：断开 `POST /turns` 连接就是中断。桥发现断连后自动中断智能体，绝不会在后台无主空跑。
+## 接入智能体
 
-## 接入新 agent
+**说 ACP v2？零代码**——`node cli.mjs acp -- <命令>` 拉起任意 ACP 智能体，把回合、流式、工具调用、审批、用量全部映射到上面的协议：claude code 用 `acp -- claude-code-acp`，gemini 用 `acp -- gemini --experimental-acp`，opencode、kimi、qwen 等同理。图片须 agent 声明 `promptCapabilities.image`，否则自动降级为文本提示（绝不落盘）。目前 ACP v2 兼容由 CI 中的脚本化假 agent 演练；对真实 claude-code-acp / gemini 的实机验证在路线图上。
 
-**说 ACP v2？那已经不用接了**——`agent-bridge acp -- <你的 agent 命令>` 就是通用 adapter：stdio 拉起任意 ACP 智能体，把回合、流式增量、工具调用、用量、权限请求全部映射到桥的核心。零代码。
+**ACP 是什么**：Agent Client Protocol，Zed 发起的开放标准（[agentclientprotocol.com](https://agentclientprotocol.com)），"LSP for agents"——客户端把 agent CLI 作为子进程拉起，JSON-RPC 2.0 走 stdio（NDJSON），设计上**不绑端口**；官方远程传输（WebSocket / Streamable HTTP）尚在 RFD 阶段。本桥的 acp 模式扮演的是 ACP **客户端**；对使用方暴露的始终是上面那套 HTTP+SSE 协议。等官方远程传输定稿，桥会再加一个 ACP-over-WebSocket 门面，让现成 ACP 客户端零改动接入。
 
-原生协议比 ACP 更丰富的 agent 才值得写专用 adapter（[`adapters/`](./adapters) 一个文件，实现 `startTurn` / `interrupt` / `respondApproval` / `stop` 四个方法 + `cli.mjs` 注册一行）——codex 就有一个，因为它的 app-server 协议实测强于走 codex-acp（审批词表、每回合沙箱策略都是真机实捕的）。没有审批或流式的 agent 也能用——协议会优雅降级（全文随 `done` 一次到达，安全沙箱默认生效）。
+**原生协议比 ACP 更丰富的 agent 才值得写专用 adapter**——codex 就有一个，因为实测它的 app-server 协议强于走 codex-acp（审批词表、每回合沙箱策略都是真机实捕的）：[`adapters/`](./adapters) 一个文件，实现 `startTurn` / `interrupt` / `respondApproval` / `stop` 四个方法 + `cli.mjs` 注册一行。没有流式或审批的 agent 也能接——协议优雅降级（全文随 `done` 一次到达，安全沙箱默认生效）。
 
 ## 平台支持
 

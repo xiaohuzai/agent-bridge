@@ -18,7 +18,7 @@
 
 ---
 
-**agent-bridge** is a tiny, zero-dependency Node daemon with one job: adapt local CLI agents to a small, versioned HTTP+SSE protocol so that *anything* can drive them. It exists because of a hard boundary — browser extensions live in a sandbox and can never spawn local processes, while CLI agents (codex, claude code, …) speak only stdio. The bridge sits between the two:
+**agent-bridge** is a tiny, zero-dependency Node daemon with one job: adapt local CLI agents to a small, versioned HTTP+SSE protocol (v1) so that *anything* can drive them. It exists because of a hard boundary — browser extensions live in a sandbox and can never spawn local processes, while CLI agents (codex, claude code, …) speak only stdio. The bridge sits between the two: one client implementation drives every agent behind the bridge; one agent adapter serves every client in front of it.
 
 ```
 any client — extension / editor / script / your own UI
@@ -30,49 +30,114 @@ agent-bridge  ◄── the process you start in a terminal (~400 lines, no deps
 codex app-server  ──►  your ChatGPT/Codex login, or your own model config
 ```
 
-The same idea as `opencode serve` or other agent HTTP servers — *the agent is the server, any UI is a client* — except codex and claude code don't ship an HTTP server, so this repo is the missing ~400 lines. One client implementation works with every agent behind the bridge; one agent adapter works with every client in front of it.
-
 ## Quick start
 
 ```bash
-# 0. Prerequisite: a working codex CLI. Any ONE of these auth paths works —
+# 0. Prerequisite: a working, logged-in CLI agent. codex, for example — any ONE of:
 codex login                    # ① ChatGPT subscription login (Plus/Pro — no API key)
-export OPENAI_API_KEY=sk-...   # ② or an OpenAI API key (no subscription, no login)
+export OPENAI_API_KEY=sk-...   # ② or an OpenAI API key
 # ③ or a custom provider in ~/.codex/config.toml ([model_providers.*] pointing at
-#    your own gateway / local model) — no codex login at all. Note: codex ≥0.149
-#    requires wire_api = "responses"; chat-completions-only endpoints are rejected
-#    by codex itself (the bridge does not restrict this).
+#    your own gateway / local model). Note: codex ≥0.149 requires
+#    wire_api = "responses"; chat-completions-only endpoints are rejected by
+#    codex itself (the bridge does not restrict this).
 
-# 1. Start the bridge — codex, or ANY Agent Client Protocol v2 agent
-npx browsa-agent-bridge codex --port 3948          # codex via its app-server
-node cli.mjs acp -- claude-code-acp --port 3948    # any ACP agent command works:
-node cli.mjs acp -- gemini --experimental-acp     # claude-code-acp, codex-acp,
-                                                   # opencode, hermes, kimi, qwen…
+# 1. Get the bridge — zero dependencies; a clone is enough, no npm install
+git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 
-# 2. Talk to it — curl is a complete client:
+# 2. Start it — codex, or any ACP v2 agent
+node cli.mjs codex --port 3948            # codex via its app-server
+node cli.mjs acp -- claude-code-acp      # claude code? one command.
+node cli.mjs acp -- gemini --experimental-acp   # any ACP agent command works
+
+# 3. Talk to it — curl is a complete client:
 curl -N -X POST http://127.0.0.1:3948/turns \
   -H 'Content-Type: application/json' \
   -d '{"text":"Summarize this in one sentence"}'
 ```
 
-## The wire protocol (v1)
+## The wire protocol (v1): a usage guide
 
 Four rules are the whole client contract:
 
 1. **`POST /turns` with `{text, sessionId?}`** and read the SSE stream. On the first turn omit `sessionId` — the agent assigns one and reports it on the `start` event; store it and pass it back on every later turn (the agent keeps its own transcript; you never resend history).
-2. **`done` / `aborted` / `error` end the turn.** Until then, `delta` events carry the reply text, `tool` events report agent activity, `usage` arrives once with token counts. `": ka"` comment lines are keepalives during silent stretches — ignore them.
+2. **`done` / `aborted` / `error` end the turn.** Until then, `delta` events carry the reply text, `tool` events report agent activity, and an `approval` event is yours to answer. `": ka"` comment lines are keepalives during silent stretches — ignore them.
 3. **To cancel, close the connection.** The bridge notices the disconnect and interrupts the agent server-side. Turns are live-only — there is no replay of a turn you left.
-4. **Approvals** (when the agent is configured to ask): an `approval` event arrives with a `requestId`; answer it with `POST /approvals/:requestId` and `{choice:'once'|'always'|'deny'}` while the turn's stream stays open.
+4. **Approvals**: when an `approval` event arrives with a `requestId`, answer it with `POST /approvals/:requestId` and `{choice:'once'|'always'|'deny'}` while the turn's stream stays open.
+
+### A complete conversation, step by step
+
+```bash
+# ① Probe the bridge: alive? which agent? which protocol version?
+curl http://127.0.0.1:3948/health
+# → {"ok":true,"agent":"codex","version":"1.0.0","proto":1}
+
+# ② Start a turn (-N disables curl buffering, or you won't see streaming)
+curl -N -X POST http://127.0.0.1:3948/turns \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Run this project's test suite"}'
+```
+
+The SSE stream arrives piece by piece; each `data:` line is one JSON event:
 
 ```
-GET  /health                   → {ok:true, agent, version, proto:1}
-GET  /sessions                 → {ok:true, sessions:[{sessionId, busy}]}   ← recover ids after a client restart
-POST /turns                    → SSE: start / delta / tool / approval / usage / done / aborted / error
-                               body: {text, sessionId?, images?} — images are https:/data: URLs (≤8)
-POST /approvals/:requestId     → {ok:true}
+data: {"type":"start","sessionId":"a1b2c3…","turnId":""}   ← first turn assigns the session id — store it
+data: {"type":"tool","name":"command","status":"started","detail":"npm test"}
+data: {"type":"approval","requestId":"42","tool":"command","command":"npm install","cwd":"/repo"}
 ```
 
-The authoritative contract — including edge rules like first-turn session assignment and disconnect semantics — is the header comment of [`server.mjs`](./server.mjs).
+An `approval` event means the agent wants to run something that needs permission. Answer it **while the turn's stream is still open** (another terminal is fine):
+
+```bash
+# ③ Answer the approval: choice ∈ once | always | deny
+curl -X POST http://127.0.0.1:3948/approvals/42 \
+  -H 'Content-Type: application/json' -d '{"choice":"once"}'
+# → {"ok":true}    (409 = that approval is already gone)
+```
+
+The stream continues until a **terminal event** (`done` / `aborted` / `error`) arrives and the connection closes:
+
+```
+data: {"type":"delta","text":"All 23 tests pass."}
+data: {"type":"done","full":"All 23 tests pass.","usage":{"prompt_tokens":1234,"completion_tokens":567}}
+```
+
+```bash
+# ④ Second turn: pass the stored sessionId (never resend history — the agent remembers)
+curl -N -X POST http://127.0.0.1:3948/turns \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Fix the failing one","sessionId":"a1b2c3…"}'
+
+# ⑤ Any time (e.g. after a client restart), recover the session list
+curl http://127.0.0.1:3948/sessions
+# → {"ok":true,"sessions":[{"sessionId":"a1b2c3…","busy":false}]}
+```
+
+To interrupt a runaway turn, just close the ② connection — the bridge interrupts the agent; nothing keeps running headless.
+
+### Endpoint reference
+
+| Method & path | Body | Success response | Errors |
+|---|---|---|---|
+| `GET /health` | — | `{ok:true, agent, version, proto:1}` | 401 bad token · 403 non-loopback Host |
+| `GET /sessions` | — | `{ok:true, sessions:[{sessionId, busy}]}` | — |
+| `POST /turns` | `{text, sessionId?, images?}` (images ≤8 https:/data: URLs) | SSE event stream (see below) | 400 missing text / bad images / body over 4MB |
+| `POST /approvals/:requestId` | `{choice:'once'\|'always'\|'deny'}` | `{ok:true}` | 400 bad choice · 409 approval no longer pending |
+
+Started with `--token`, every request must carry `Authorization: Bearer <token>`.
+
+### Event reference
+
+| Event | Fields | Meaning |
+|---|---|---|
+| `start` | `sessionId`, `turnId` | Turn admitted; the first turn assigns `sessionId` here |
+| `delta` | `text` | Incremental reply text |
+| `tool` | `name`, `status: started\|completed\|failed`, `detail` | Agent activity (running commands, editing files…) |
+| `approval` | `requestId`, `tool`, `command` (codex also `cwd`) | Agent asks for permission — answer via `POST /approvals/:requestId` |
+| `done` | `full`, `usage?`, `finishReason?` | **Terminal**: completed normally; `usage` is `{prompt_tokens, completion_tokens}` |
+| `aborted` | — | **Terminal**: the turn was interrupted |
+| `error` | `message` | **Terminal**: something failed |
+
+Note: token counts are currently carried on the `done` event's `usage` field (a standalone `usage` event type is reserved in the protocol for adapters that stream it earlier); `": ka"` comment lines are heartbeats — ignore them.
 
 ### A minimal client (~20 lines)
 
@@ -108,34 +173,42 @@ async function turn(text, sessionId) {
 
 **Browser clients**: the bridge answers CORS preflights and reflects only loopback origins (`http(s)://localhost:*`, `http(s)://127.0.0.1:*`), so a page served from localhost can call it directly while random web origins are refused. Pass `--cors-origin '*'` to open every origin — pair it with `--token` when you do. Non-browser clients (Node, Python, curl) need none of this.
 
-## CLI options
+### Behavioral guarantees
+
+- **sessionId = the agent's own session id.** It survives bridge restarts (codex `thread/resume` / ACP `session/resume` restore from disk); `GET /sessions` recovers ids and busy state after a client restart.
+- **Approvals are a full round trip**: the agent asks → the bridge forwards a wire `approval` event → the client answers → the decision goes back into the agent. An unanswered approval waits forever; close the connection when you'd rather not wait.
+- **Abort = hang up**: closing the `POST /turns` connection is the interrupt — nothing keeps running headless.
+
+The authoritative contract — including edge rules like first-turn session assignment and disconnect semantics — is the header comment of [`server.mjs`](./server.mjs).
+
+## CLI reference
 
 ```bash
-browsa-agent-bridge codex [options]
-  --port N              listen port (default 3948, loopback only)
-  --cwd DIR             agent workspace (default: current directory)
-  --sandbox MODE        read-only | workspace-write | danger-full-access (default read-only)
-  --network             allow network inside a workspace-write sandbox
-  --approval POLICY     never | on-request | untrusted (default never)
-  --token TOKEN         require this bearer token on every request
-  --cors-origin MODE    loopback (default) | * (any origin; use with --token)
-  --codex-bin PATH      codex binary (default: codex on PATH)
-  --codex-home DIR      CODEX_HOME override (default: ~/.codex)
+node cli.mjs codex [options]          # codex via its app-server
+node cli.mjs acp -- <agent command…>  # any ACP v2 agent; everything after `--` belongs to the agent
 ```
 
-**Safe defaults**: read-only sandbox + `--approval never`. The agent can read and reason but commands that would escape the sandbox are refused. Give it write access with `--sandbox workspace-write` (add `--network` if it needs the net). Want to approve each escape from your client's UI? `--approval on-request` — the client receives `approval` events and answers via `POST /approvals/:id`.
+| Option | Meaning |
+|---|---|
+| `--port N` | listen port (default 3948, loopback only) |
+| `--cwd DIR` | agent workspace (default: current directory) |
+| `--token TOKEN` | require this bearer token on every request |
+| `--cors-origin MODE` | loopback (default) \| `*` (any origin; use with `--token`) |
+| `--sandbox MODE` | **codex only**: read-only (default) \| workspace-write \| danger-full-access |
+| `--network` | **codex only**: allow network inside a workspace-write sandbox |
+| `--approval POLICY` | **codex only**: never (default) \| on-request \| untrusted — turn on on-request to receive `approval` events |
+| `--codex-bin PATH` | **codex only**: codex binary (default: codex on PATH) |
+| `--codex-home DIR` | **codex only**: CODEX_HOME override (default: ~/.codex) |
 
-## Sessions, approvals, abort
-
-- **Session id = the agent's own thread id**, assigned on the first turn and reported on the `start` event. Survives bridge restarts (`thread/resume` restores from disk). `GET /sessions` lists known sessions and their busy state — use it to recover ids after a client restart.
-- **Approvals are a full round trip**: the agent asks as a JSON-RPC request → the bridge forwards a wire `approval` event → the client answers → the decision goes back into the agent's stdin.
-- **Abort = hang up**: closing the `POST /turns` connection is the interrupt. The bridge notices the disconnect and interrupts the agent, so nothing keeps running headless.
+**Safe defaults**: read-only sandbox + `--approval never`. The agent can read and reason but commands that would escape the sandbox are refused. Give it write access with `--sandbox workspace-write` (add `--network` if it needs the net). Want to approve each escape from your client's UI? `--approval on-request`. In acp mode, sandboxing and permissions are governed by the agent's own policy, and its permission requests are always routed to the client.
 
 ## Adding an agent
 
-**Speak ACP v2? You're already supported** — `agent-bridge acp -- <your-agent-command>` is the generic adapter: it spawns any ACP agent over stdio and maps turns, streaming deltas, tool calls, usage, and permission requests onto the bridge's core. No code needed.
+**Speak ACP v2? Zero code** — `node cli.mjs acp -- <command>` spawns any ACP agent and maps turns, streaming, tool calls, approvals, and usage onto the protocol above: claude code via `acp -- claude-code-acp`, gemini via `acp -- gemini --experimental-acp`, likewise opencode, kimi, qwen and friends. Images require the agent's advertised `promptCapabilities.image`, otherwise they degrade to a text note (never written to disk). ACP v2 compliance is currently exercised against a scripted agent in CI; first-hand runs against real claude-code-acp / gemini are on the roadmap.
 
-An agent whose native protocol is *richer* than ACP deserves a bespoke adapter (one file in [`adapters/`](./adapters) implementing `startTurn` / `interrupt` / `respondApproval` / `stop` + a line in `cli.mjs`) — codex ships one, because its app-server protocol was verified to be stronger than going through codex-acp (live-captured approval vocabulary, per-turn sandbox policy). An agent without approvals or streaming still works — the protocol degrades (final text arrives with `done`, safe sandbox defaults apply).
+**What is ACP?** The Agent Client Protocol, an open standard started by Zed ([agentclientprotocol.com](https://agentclientprotocol.com)) — "LSP for agents": the client spawns the agent CLI as a subprocess and the two speak JSON-RPC 2.0 over stdio (NDJSON). By design it binds **no port**; the official remote transport (WebSocket / Streamable HTTP) is still an RFD. The bridge's acp mode acts as the ACP **client**; what the bridge exposes to its users is always the HTTP+SSE protocol above. Once the official remote transport lands, the bridge plans an ACP-over-WebSocket front so existing ACP clients can connect unchanged.
+
+An agent whose native protocol is *richer* than ACP deserves a bespoke adapter — codex ships one, because its app-server protocol was verified to be stronger than going through codex-acp (live-captured approval vocabulary, per-turn sandbox policy): one file in [`adapters/`](./adapters) implementing `startTurn` / `interrupt` / `respondApproval` / `stop` + a line in `cli.mjs`. An agent without approvals or streaming still works — the protocol degrades (final text arrives with `done`, safe sandbox defaults apply).
 
 ## Platforms
 
