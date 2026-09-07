@@ -81,6 +81,8 @@ export class AcpStdioAdapter {
     this.ready = false;
     this.buf = '';
     this.closed = false;
+    this.rpcMethods = new Map(); // rpc id → method (for error-response logging)
+    this.seenLogs = new Set();   // once-per-kind diagnostics (reset per child)
   }
 
   async ensureChild() {
@@ -126,11 +128,13 @@ export class AcpStdioAdapter {
       throw new Error(`acp agent speaks protocolVersion ${JSON.stringify(version)}, bridge supports 1–2`);
     }
     this.acpVersion = version;
-    this.opts.log(`[acp] negotiated ACP v${version}`);
     // promptCapabilities lives under agentCapabilities on the official shims
     // and under capabilities on the older Zed shim — read both.
     this.promptImage = !!(res?.agentCapabilities?.promptCapabilities?.image ?? res?.capabilities?.promptCapabilities?.image);
+    const info = res?.agentInfo || {};
+    this.opts.log(`[acp] agent ${info.name || '?'} v${info.version || '?'} — ACP v${version}, images: ${this.promptImage ? 'yes' : 'no'}`);
     this.ready = true;
+    this.seenLogs.clear();
   }
 
   #onData(chunk) {
@@ -149,13 +153,14 @@ export class AcpStdioAdapter {
   #onFrame(j) {
     // agent→client REQUEST: session/request_permission must be answered.
     if (j.id !== undefined && j.method) {
-      if (j.method === 'session/request_permission') {
+      if (/request_permission$/.test(j.method)) {
         const params = j.params || {};
         const sessionId = params.sessionId;
         this.permissions.set(String(j.id), { sessionId, options: params.options || [] });
         const t = sessionId ? this.sessions.get(sessionId) : null;
         const kind = (k) => (params.options || []).find((o) => o.kind === k);
         const pick = (k) => kind(k)?.optionId ?? kind(k === 'deny' ? 'reject_always' : k)?.optionId ?? params.options?.[0]?.optionId ?? '';
+        this.opts.log(`[acp] permission request id=${j.id}: ${params.title || params.description || '(untitled)'}`);
         t?.events?.({
           type: 'approval',
           requestId: String(j.id),
@@ -168,6 +173,12 @@ export class AcpStdioAdapter {
           _pick: { once: pick('allow_once'), always: pick('allow_always'), deny: pick('deny') },
         });
       } else {
+        // e.g. item/tool/requestUserInput, mcpServer/elicitation/request —
+        // not modeled in v1; refuse so the turn can proceed.
+        if (!this.seenLogs.has(`r:${j.method}`)) {
+          this.seenLogs.add(`r:${j.method}`);
+          this.opts.log(`[acp] refusing unsupported request: ${j.method}`);
+        }
         this.#write({ jsonrpc: '2.0', id: j.id, error: { code: -32601, message: `agent-bridge: ${j.method} not supported` } });
       }
       return;
@@ -177,11 +188,19 @@ export class AcpStdioAdapter {
       const p = this.pending.get(j.id);
       if (!p) return;
       this.pending.delete(j.id);
+      if (j.error) this.opts.log(`[acp] rpc error (${this.rpcMethods.get(j.id) || `id ${j.id}`}): ${j.error.message || JSON.stringify(j.error).slice(0, 200)}`);
+      this.rpcMethods.delete(j.id);
       j.error ? p.reject(new Error(j.error.message || JSON.stringify(j.error))) : p.resolve(j.result);
       return;
     }
     // notifications
-    if (j.method !== 'session/update') return;
+    if (j.method !== 'session/update') {
+      if (!this.seenLogs.has(`n:${j.method}`)) {
+        this.seenLogs.add(`n:${j.method}`);
+        this.opts.log(`[acp] ignoring notification: ${j.method}`);
+      }
+      return;
+    }
     const params = j.params || {};
     const t = params.sessionId ? this.sessions.get(params.sessionId) : null;
     if (!t || t.finished) return;
@@ -214,6 +233,7 @@ export class AcpStdioAdapter {
       }
       case 'state_update': {
         if (u.state !== 'idle') break; // 'running' / 'requires_action' need no turn event
+        this.opts.log(`[acp] ← turn idle: stopReason=${u.stopReason || '(none)'}`);
         if (t.finished) break;
         t.finished = true;
         const stop = u.stopReason;
@@ -233,17 +253,19 @@ export class AcpStdioAdapter {
 
   rpc(method, params, timeoutMs = RPC_TIMEOUT_MS) {
     const id = this.nextId++;
+    if (method) this.rpcMethods.set(id, method);
     return new Promise((resolve, reject) => {
       // timeoutMs <= 0 means "no timer": a v1 session/prompt rpc stays
       // pending for the WHOLE turn (its response IS the completion), so a
       // fixed timeout would kill every long turn.
       const timer = timeoutMs > 0 ? setTimeout(() => {
         this.pending.delete(id);
+        this.rpcMethods.delete(id);
         reject(new Error(`acp rpc timeout: ${method}`));
       }, timeoutMs) : null;
       this.pending.set(id, {
-        resolve: (v) => { if (timer) clearTimeout(timer); resolve(v); },
-        reject: (e) => { if (timer) clearTimeout(timer); reject(e); },
+        resolve: (v) => { if (timer) clearTimeout(timer); this.rpcMethods.delete(id); resolve(v); },
+        reject: (e) => { if (timer) clearTimeout(timer); this.rpcMethods.delete(id); reject(e); },
       });
       this.#write({ jsonrpc: '2.0', id, method, params });
     });
@@ -255,11 +277,13 @@ export class AcpStdioAdapter {
     if (sessionId) {
       // Session from a previous bridge lifetime — ACP v2 has session/resume.
       await this.rpc('session/resume', { sessionId, cwd: this.opts.cwd });
+      this.opts.log(`[acp] session resumed ${String(sessionId).slice(0, 8)}…`);
       return sessionId;
     }
     const r = await this.rpc('session/new', { cwd: this.opts.cwd, mcpServers: [] });
     const sid = r?.sessionId;
     if (!sid) throw new Error('acp session/new: no sessionId');
+    this.opts.log(`[acp] session created ${String(sid).slice(0, 8)}…`);
     return sid;
   }
 
@@ -284,6 +308,7 @@ export class AcpStdioAdapter {
     };
     this.sessions.set(sid, entry);
     onEvent({ type: 'start', sessionId: sid, turnId: '' });
+    this.opts.log(`[acp] prompt → ${text.length} chars, ${Array.isArray(images) ? images.length : 0} image(s)${dropped ? `, ${dropped} dropped` : ''}`);
     let r;
     try {
       // v1: the response IS the completion — no timeout, cancellable only
@@ -300,6 +325,7 @@ export class AcpStdioAdapter {
       // the turn's usage (v2 completes via state_update instead).
       entry.promptInFlight = false;
       if (r.usage) entry.usage = { prompt_tokens: r.usage.inputTokens ?? 0, completion_tokens: r.usage.outputTokens ?? 0 };
+      this.opts.log(`[acp] ← prompt response: stopReason=${r.stopReason}${entry.usage ? `, usage ${entry.usage.prompt_tokens}/${entry.usage.completion_tokens}` : ', no usage'}`);
       if (!entry.finished) {
         entry.finished = true;
         if (r.stopReason === 'cancelled') onEvent({ type: 'aborted' });
@@ -333,6 +359,7 @@ export class AcpStdioAdapter {
     if (!t.finished) {
       t.finished = true;
       t.promptInFlight = false;
+      this.opts.log(`[acp] settling session locally after cancel (shim did not answer the pending prompt)`);
       t.events?.({ type: 'aborted' });
     }
   }

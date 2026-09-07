@@ -107,6 +107,7 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
           }
           body.images = body.images.map((u) => u.trim());
         }
+        log(`[bridge] turn begin (${body.text.length} chars${body.sessionId ? `, session ${String(body.sessionId).slice(0, 8)}…` : ', new session'})`);
         await handleTurn(req, res, body, cors);
         return;
       }

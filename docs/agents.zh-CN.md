@@ -88,6 +88,7 @@ node cli.mjs acp -- npx -y @agentclientprotocol/claude-agent-acp
 
 ## 故障排查
 
+- **报问题时把桥终端里 `[acp]` / `[bridge]` 开头的行一起贴上**——它们覆盖了握手协商、会话创建/恢复、每回合的 prompt 与响应（含 stopReason 和 usage）、审批请求、以及被忽略的未知通知，能直接定位问题在哪一层。
 - `codex CLI not found: 'codex' …` / `agent command not found: '…'` —— agent 二进制没装或不在 PATH；装上，或用 `--codex-bin` / 换命令指定路径。
 - codex 模式收不到审批事件 —— 启动时没带 `--approval on-request`。
 - 换了桥后面的 agent 之后旧对话报错 —— sessionId 是 agent 私有的（codex 线程 id ≠ claude 会话 id），清掉对话历史重新开始即可。
