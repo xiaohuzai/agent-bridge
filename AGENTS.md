@@ -1,0 +1,85 @@
+# AGENTS.md
+
+Guidance for coding agents working in this repository.
+
+## What this repo is
+
+**agent-bridge** is a UI-agnostic, zero-dependency Node daemon that adapts local CLI coding agents to a small HTTP+SSE wire protocol (v1). Any client (browser extension, editor, script, your own UI) implements the client side once; any agent is reached through an adapter. It is deliberately NOT tied to any product, UI, or vendor — do not add product-specific coupling, branding, or features that only make sense for one client.
+
+Non-goals (decided, do not re-propose): becoming a chat UI; letting agents control the browser (the reverse direction — that posture is security-contaminated); renaming the repo with an `-acp` suffix (in the ACP ecosystem that suffix means "the ACP adapter for X", which would re-introduce exactly the coupling this repo avoids — ACP lives in the README, topics, the future `/acp` endpoint, and the ACP Registry listing).
+
+## Commands
+
+```bash
+npm test                              # the whole suite (node --test test/*.test.mjs)
+node --test test/agent-bridge-acp.test.mjs   # one file
+npm pack && tar -tzf browsa-agent-bridge-*.tgz   # publish dry-run (files whitelist matters)
+```
+
+No npm dependencies, no build step, no network in tests. CI is a single job named **`Test`** (node 20) running `npm test`.
+
+## Architecture
+
+```
+fronts (what clients speak)              core            adapters (what agents speak)
+├── server.mjs  — wire protocol v1  ──►  sessions/  ◄── adapters/codex-app-server.mjs
+│   HTTP+SSE: /health /sessions          turns/          (codex app-server JSON-RPC)
+│   /turns /approvals/:id                approvals       adapters/acp-stdio.mjs
+└── (planned: ACP WebSocket +                            (ANY ACP v2 agent command)
+   Streamable HTTP per the official RFD)
+```
+
+`cli.mjs` picks an adapter: `agent-bridge codex [options]` or `agent-bridge acp -- <command…>` (everything after `--` belongs to the agent command). The server is adapter-agnostic — it only calls four methods: `startTurn({text, sessionId, images, onEvent})`, `interrupt(sessionId)`, `respondApproval(requestId, choice)`, `stop()`. `onEvent` emits `{type: 'start'|'delta'|'tool'|'approval'|'usage'|'done'|'aborted'|'error'}`.
+
+The authoritative wire-protocol contract is the header comment of `server.mjs`. Core invariants:
+- Session ids are assigned by the adapter on the first turn and reported on the `start` event; the client stores and returns them. Sessions must survive a bridge restart (resume from the agent's own persistence).
+- **Disconnect = abort.** The bridge listens on `res.on('close')` — NEVER `req.on('close')` (Node ≥16 fires the latter as soon as the request body is consumed: an instant false abort that swallows whole turns). The session id may only become known when `startTurn` returns, so the disconnect handler tracks it on a mutable and a post-admission `res.destroyed` check covers aborts that raced admission.
+- Turns are live-only: no replay of a turn the client left.
+- Heartbeats (`: ka` SSE comments) fire every 15s during silent stretches.
+
+## Verification discipline (this repo's most important rule)
+
+Every agent-side protocol fact in the adapters was captured LIVE, not read from docs. The adapters' header comments are the record. When an agent CLI moves fast (codex does):
+
+1. Re-dump the protocol from the binary: `codex app-server generate-json-schema --out /tmp/x` (ACP: the official repo's `schema/v2/schema.json`).
+2. Drive it with a mock backend and capture real frames before writing code.
+3. Only then change the adapter, and record new facts in the header comment.
+
+Known traps already paid for (do not rediscover):
+- **codex**: `thread/start` takes `sandbox` as a kebab-case STRING; the camelCase `sandboxPolicy` object belongs to per-turn `turn/start` (that's where `networkAccess` lives). `turn/completed` carries the turn id NESTED as `params.turn.id` (every other notification uses `params.turnId`). Approvals use the v2 vocabulary — `item/commandExecution/requestApproval` answered with `{decision:'accept'|'cancel'|{acceptWithExecpolicyAmendment}}`; answering v1-style `{decision:'approved'}` silently no-ops. Usage is `thread/tokenUsage/updated` → `tokenUsage.last` (`total` is cumulative). `wire_api = "chat"` is gone; mock backends must speak /v1/responses SSE.
+- **stdio batch race**: codex batches the turn/start RESPONSE and the first notifications into one stdio chunk, and frame processing is synchronous — a turn entry registered after the `await rpc()` resumes drops the whole batch. Fix pattern: pre-register the turn entry BEFORE the rpc with an awaiting window (accept any turnId until patched), and emit the client-visible `start` event BEFORE the rpc (sessionId is already known — emitting it after reordered it behind same-chunk deltas and, worst case, let `done` swallow it).
+- **Notification matching must be by turn id** (or a per-session state machine): array-searching "the latest turn/completed" eats a previous turn's stale notification and fakes completion.
+- **data: URLs work**: codex accepts `{type:'image', url:'data:…'}` and forwards it verbatim to the backend as `input_image` — no temp files, ever. ACP gates images behind the agent's advertised `promptCapabilities.image`; degrade to a text note, never write images to disk.
+- **Windows**: npm CLI shims are `.cmd` — `spawn` needs `shell:true` there (args contain no metacharacters). On stop, close stdin before kill so shim-wrapped agents exit.
+- **ACP v2**: `session/prompt` only ACKNOWLEDGES; completion arrives via `state_update {state:'idle', stopReason}` (`end_turn`/`max_tokens`/`refusal`/`cancelled`). `session/request_permission` options carry `kind` (`allow_once|allow_always|reject_once|reject_always`) — map the client's once/always/deny by kind onto the agent's own `optionId`, and while cancelling, pending permission requests MUST be answered `{outcome:{outcome:'cancelled'}}`. Images require the agent's advertised `promptCapabilities.image`. `initialize` must be the first message and `protocolVersion` is matched strictly (2).
+
+## Testing conventions
+
+- Tests drive the REAL adapter and REAL HTTP server against scripted fake agents (`test/fake-codex-app-server.mjs`, `test/fake-acp-agent.mjs`) — executable shebang scripts speaking JSONL on stdio, with prompt markers (APPROVE/SLOW/FAIL/IMG) triggering the interesting paths. No codex/claude install, no network.
+- Keep test buffers tiny; CI boxes are small.
+- Undici gotchas (do not rediscover): cancelling an SSE reader does NOT tear down the socket — abort the fetch SIGNAL in disconnect tests; a locally-constructed `Response` body does not end reads on signal abort — race `reader.read()` against an abort promise.
+- `node --test test/` (directory form) mis-parses as a main module on several Node builds — always go through the package.json glob.
+
+## Git workflow & branch protection
+
+`main` is protected (mirroring the browsa repo): classic require-PR (0 approvals) + a ruleset (no deletion / no force-push / required check `Test` / PR thread resolution / extra approval for unattributed changes). Workflow: commit on `dev` → push → PR to `main` → wait for the `Test` check → squash merge.
+
+Traps already paid for:
+- **Commits MUST be authored with a GitHub-attributed email** or the ruleset's `require_extra_approval_for_unattributed_changes` blocks the merge with no useful error. Repo-local git config is set to `Billy <35189812+xiaohuzai@users.noreply.github.com>` — keep it.
+- The ruleset's required check name must match the workflow job name EXACTLY (`Test`); matrix jobs (`Test (18)`…) never match.
+- Repo-local `git config` also matters because a bare identity (e.g. container defaults) is unattributed.
+
+## Conventions
+
+- Commits: conventional-commit style, Chinese or English bodies both fine; squash-merge through PRs, never push to main.
+- READMEs are bilingual (`README.md` EN + `README.zh-CN.md`), section-aligned — update both together.
+- The npm package (`browsa-agent-bridge`) is parked: name/description are neutralized in `package.json` but publishing is the owner's call. Do not publish without an explicit instruction.
+- The `4MB` request-body cap is deliberate (bounds inline base64 images); `images` arrays are capped at 8.
+- Security posture: loopback bind only, `Host` header allowlist (DNS-rebinding), optional bearer token, CORS reflects loopback origins only (`--cors-origin '*'` is the explicit opt-in, to be paired with `--token`).
+
+## Roadmap (agreed direction)
+
+1. Live verification of both adapters against real agents (codex done for the wire; claude-code-acp / gemini pending — needs a subscription machine).
+2. ACP-over-WebSocket front (the RFD's compliance minimum is WebSocket-only servers — clients MUST support WS).
+3. Streamable HTTP profile (requires HTTP/2) + ACP stdio front (`agent-bridge acp` as a spawned agent for editors).
+4. Submit to the ACP Registry.
