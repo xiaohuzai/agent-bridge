@@ -27,5 +27,7 @@ jobs:
       # Zero npm dependencies — no install step. The suite spawns a scripted
       # fake `codex app-server` (stdio JSONL) through the real adapter and
       # exercises the real HTTP+SSE server, so it needs no network either.
+      # npm test (not a bare `node --test test/` — directory args mis-parse
+      # as a main module on some Node builds); the glob lives in package.json.
       - name: Run tests
-        run: node --test test/
+        run: npm test
