@@ -26,6 +26,7 @@ const sessions = new Set();
 // terminator ({stopReason, usage}). v2 mode: ack + state_update idle.
 const V1 = process.argv[2] === 'v1';
 const pendingPrompt = new Map(); // sessionId → pending session/prompt rpc id
+const hangSessions = new Set();  // v1: sessions whose prompt must NEVER be answered (wedged-shim simulation)
 
 function finish(sessionId, stopReason) {
   if (V1) {
@@ -100,6 +101,7 @@ function handle(j) {
       }
       if (text.includes('SLOW')) {
         send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'slow ' } } } });
+        if (text.includes('HANG')) hangSessions.add(sessionId); // worst-case shim: never answers the pending prompt, even on cancel
         return; // idle until cancelled
       }
       if (text.includes('FAIL')) {
@@ -118,6 +120,7 @@ function handle(j) {
       err('FAKE_CANCELLED');
       if (V1) {
         for (const [sid, id] of pendingPrompt) {
+          if (hangSessions.has(sid)) continue; // wedged shim: no answer, ever
           pendingPrompt.delete(sid);
           send({ jsonrpc: '2.0', id, result: { stopReason: 'cancelled' } });
         }
