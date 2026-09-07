@@ -44,9 +44,9 @@ export OPENAI_API_KEY=sk-...   # ② or an OpenAI API key
 # 1. Get the bridge — zero dependencies; a clone is enough, no npm install
 git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 
-# 2. Start it — codex, or any ACP v2 agent
+# 2. Start it — codex, or any ACP v2 agent (per-agent install & login: docs/agents.md)
 node cli.mjs codex --port 3948 --approval on-request   # codex via its app-server; approval events route to the client
-node cli.mjs acp -- claude-code-acp      # claude code? one command.
+node cli.mjs acp -- claude-code-acp      # claude code — note: install the claude-code-acp shim first
 node cli.mjs acp -- gemini --experimental-acp   # any ACP agent command works
 
 # 3. Talk to it — curl is a complete client:
@@ -215,7 +215,7 @@ node cli.mjs acp -- <agent command…>  # any ACP v2 agent; everything after `--
 | Images | data:/https URLs taken directly | require the agent's advertised `promptCapabilities.image`, else degrade to text |
 | Good for | codex | claude code, gemini, opencode… any ACP v2 agent |
 
-A few optional event fields vary by agent (e.g. the `approval` event carries `cwd` for codex, the agent's own option list for ACP); core fields and semantics are identical.
+A few optional event fields vary by agent (e.g. the `approval` event carries `cwd` for codex, the agent's own option list for ACP); core fields and semantics are identical. **Per-agent install, login, and behavior notes** (e.g. claude code needs the `claude-code-acp` shim installed first) live in [docs/agents.md](./docs/agents.md).
 
 **Speak ACP v2? Zero code** — `node cli.mjs acp -- <command>` spawns any ACP agent and maps turns, streaming, tool calls, approvals, and usage onto the protocol above: claude code via `acp -- claude-code-acp`, gemini via `acp -- gemini --experimental-acp`, likewise opencode, kimi, qwen and friends. Images require the agent's advertised `promptCapabilities.image`, otherwise they degrade to a text note (never written to disk). ACP v2 compliance is currently exercised against a scripted agent in CI; first-hand runs against real claude-code-acp / gemini are on the roadmap.
 
