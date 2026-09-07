@@ -9,7 +9,10 @@
 //
 //   GET  /health              → {ok:true, agent, version, proto:1}
 //   GET  /sessions            → {ok:true, sessions:[{sessionId, busy}]}
-//   POST /turns               body {text, sessionId?} → SSE stream:
+//   POST /turns               body {text, sessionId?, images?} → SSE stream:
+//       images: optional array of strings — https:// URLs or data: URLs
+//       (base64). They ride through to the agent as image inputs; the JSON
+//       body cap (4MB) bounds their total size.
 //       data: {"type":"start","sessionId":"…","turnId":"…"}
 //       data: {"type":"delta","text":"…"}
 //       data: {"type":"tool","name":"command","status":"started","detail":"…"}
@@ -96,6 +99,14 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
           res.end(JSON.stringify({ ok: false, error: 'text required' }));
           return;
         }
+        if (body.images !== undefined) {
+          if (!Array.isArray(body.images) || body.images.some((u) => typeof u !== 'string' || !u.trim()) || body.images.length > 8) {
+            res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
+            res.end(JSON.stringify({ ok: false, error: 'images must be an array of ≤8 URL strings' }));
+            return;
+          }
+          body.images = body.images.map((u) => u.trim());
+        }
         await handleTurn(req, res, body, cors);
         return;
       }
@@ -170,7 +181,12 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
       if (e.type === 'done' || e.type === 'aborted' || e.type === 'error') finish();
     };
     try {
-      const { sessionId: sid } = await adapter.startTurn({ text: body.text, sessionId: liveSession, onEvent });
+      const { sessionId: sid } = await adapter.startTurn({
+        text: body.text,
+        sessionId: liveSession,
+        images: Array.isArray(body.images) ? body.images : undefined,
+        onEvent,
+      });
       liveSession = sid || liveSession;
       // The client may have aborted while the turn was being admitted —
       // the close handler ran with liveSession still null. Interrupt now.

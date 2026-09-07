@@ -101,9 +101,11 @@ function handle(j) {
         complete(threadId, turnId, 'failed', []);
         return;
       }
-      send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'm1', delta: 'FAKE_' } });
-      send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'm1', delta: 'reply' } });
-      complete(threadId, turnId, 'completed', [{ type: 'agentMessage', id: 'm1', text: 'FAKE_reply' }]);
+      const nImages = (j.params?.input || []).filter((it) => it.type === 'image').length;
+      const reply = nImages ? `FAKE_reply IMAGES:${nImages} URL:${(j.params.input.find((it) => it.type === 'image').url || '').slice(0, 30)}` : 'FAKE_reply';
+      send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'm1', delta: reply.slice(0, 5) } });
+      send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'm1', delta: reply.slice(5) } });
+      complete(threadId, turnId, 'completed', [{ type: 'agentMessage', id: 'm1', text: reply }]);
       break;
     }
     default:

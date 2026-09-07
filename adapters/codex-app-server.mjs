@@ -245,8 +245,11 @@ export class CodexAppServerAdapter {
   }
 
   /** Run one agent turn. Resolves as soon as the turn is ADMITTED (turn id
-   * known); events flow through onEvent until done/aborted/error. */
-  async startTurn({ text, sessionId, onEvent }) {
+   * known); events flow through onEvent until done/aborted/error.
+   * images: optional array of https:/data: URLs — codex accepts data: URLs
+   * directly (verified live 2026-09-07: they ride through to the model
+   * backend as input_image parts, no temp files needed). */
+  async startTurn({ text, sessionId, images, onEvent }) {
     await this.ensureChild();
     let threadId = sessionId || null;
     if (threadId && !this.threads.has(threadId)) {
@@ -286,7 +289,10 @@ export class CodexAppServerAdapter {
         : undefined;
       r = await this.rpc('turn/start', {
         threadId,
-        input: [{ type: 'text', text }],
+        input: [
+          { type: 'text', text },
+          ...(Array.isArray(images) ? images.map((url) => ({ type: 'image', url })) : []),
+        ],
         ...(sandboxPolicy ? { sandboxPolicy } : {}),
       });
     } catch (e) {

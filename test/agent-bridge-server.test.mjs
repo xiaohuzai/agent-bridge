@@ -199,6 +199,28 @@ test('agent failure surfaces as an SSE error event', async () => {
   sse.cancel();
 });
 
+test('images ride through to the agent input (data: URLs, no temp files)', async () => {
+  const res = await post('/turns', {
+    text: 'what is this?',
+    images: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='],
+  });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  assert.match(done.data.full, /IMAGES:1/, 'fake codex must report the image count');
+  assert.match(done.data.full, /URL:data:image\/png;base64,/, 'the data: URL must survive intact');
+  sse.cancel();
+});
+
+test('images: invalid shapes are rejected with 400 (non-array, non-string, >8)', async () => {
+  for (const images of ['nope', [42], new Array(9).fill('data:image/png;base64,AA==')]) {
+    const res = await post('/turns', { text: 'x', images });
+    assert.equal(res.status, 400, `images=${JSON.stringify(images).slice(0, 30)} must be a 400`);
+  }
+  const ok = await post('/turns', { text: 'x', images: [] });
+  assert.equal(ok.status, 200, 'empty images array is valid');
+  ok.body?.cancel?.();
+});
+
 test('POST /turns without text → 400; unknown path → 404', async () => {
   const bad = await post('/turns', {});
   assert.equal(bad.status, 400);

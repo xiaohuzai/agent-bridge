@@ -66,6 +66,7 @@ curl -N -X POST http://127.0.0.1:3948/turns \
 GET  /health                   → {ok:true, agent, version, proto:1}
 GET  /sessions                 → {ok:true, sessions:[{sessionId, busy}]}   ← 客户端重启后找回会话 id
 POST /turns                    → SSE：start / delta / tool / approval / usage / done / aborted / error
+                               body：{text, sessionId?, images?} —— images 为 https:/data: URL（≤8 张）
 POST /approvals/:requestId     → {ok:true}
 ```
 
@@ -146,7 +147,7 @@ npm test          # 真 adapter + 真 HTTP server，对打一个脚本化的假 
 
 ## 已知边界（v1）
 
-- 图片尚未转发给 agent。
+- 请求总体积上限 4MB（内联 base64 图片被限制在几 MB 内）。
 - codex 的 `request_user_input` 工具会被桥拒绝（回合可继续）。
 - 网络抖动触发的重试会重发整条 prompt——agent 侧可能把一个回合跑两遍。
 - 回合是 live-only 的：断开的客户端无法重新加入同一个回合。
