@@ -222,3 +222,32 @@ test('v1 agent: cancel settles the turn via the prompt response (stopReason canc
   const settled = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
   assert.equal(settled.sessions[0]?.busy, false, 'v1 turn must settle after cancel');
 });
+
+test('v1 wedged shim (never answers the prompt after cancel): interrupt settles locally, follow-up turn works', async () => {
+  // Worst case, live-verified against codex-acp 1.10.0: after session/cancel
+  // the shim NEVER answers the pending session/prompt rpc — without a local
+  // settle the session stays busy:true forever and the next turn dies with
+  // "a turn is already in flight for this session".
+  await stopServer();
+  await startServer({ command: [FAKE_ACP, 'v1'] });
+  const ctrl = new AbortController();
+  const res = await post('/turns', { text: 'SLOW and HANG please' }, {}, ctrl.signal);
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'delta');
+  ctrl.abort();
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4000) {
+    const now = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+    if (now.sessions[0]?.busy === false) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const settled = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+  assert.equal(settled.sessions[0]?.busy, false, 'local settle must free the session even when the shim never answers');
+  // follow-up turn on the SAME session must succeed
+  const res2 = await post('/turns', { text: 'hi', sessionId: settled.sessions[0].sessionId });
+  const sse2 = sseReader(res2.body);
+  await sse2.readUntil((f) => f.data?.type === 'start');
+  const done2 = await sse2.readUntil((f) => f.data?.type === 'done');
+  assert.equal(done2.data.full, 'ACP_reply');
+  sse2.cancel();
+});

@@ -324,6 +324,17 @@ export class AcpStdioAdapter {
     } catch (e) {
       this.opts.log(`[acp] cancel failed: ${e.message}`);
     }
+    // The shim is NOT required to answer the pending session/prompt rpc
+    // after a cancel (codex-acp 1.10.0 doesn't — live-verified), and the
+    // response could take up to claude-agent-acp's 30s force-cancel grace.
+    // Settle the entry locally so the session is never stuck "in flight"
+    // and later turns on it can proceed. If the shim does answer late, the
+    // finished guard makes it a no-op.
+    if (!t.finished) {
+      t.finished = true;
+      t.promptInFlight = false;
+      t.events?.({ type: 'aborted' });
+    }
   }
 
   /** Answer a pending permission request. choice ∈ 'once'|'always'|'deny',
