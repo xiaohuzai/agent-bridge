@@ -1,11 +1,11 @@
-// test/agent-bridge-server.test.mjs — the agent-bridge HTTP surface (BAP)
-// driven end-to-end through the REAL CodexAppServerAdapter talking to
-// test/fake-codex-app-server.mjs (a scripted `codex app-server` stand-in), so
-// spawn/JSONL framing, SSE streaming, approval relay, and the
-// disconnect→interrupt path are all exercised without a real codex install.
+// test/agent-bridge-server.test.mjs — the agent-bridge HTTP surface (wire
+// protocol v1) driven end-to-end through the REAL CodexAppServerAdapter
+// talking to test/fake-codex-app-server.mjs (a scripted `codex app-server`
+// stand-in), so spawn/JSONL framing, SSE streaming, approval relay, the
+// sessions listing, CORS handling, and the disconnect→interrupt path are all
+// exercised without a real codex install.
 //
-// Keeps buffers tiny (a few dozen bytes per event) per the repo's 4GB-box
-// test-memory constraint.
+// Keeps buffers tiny (a few dozen bytes per event) per low-memory CI boxes.
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,14 +27,14 @@ let adapter;
 let port;
 let logs;
 
-async function startServer({ token } = {}) {
+async function startServer({ token, corsOrigin } = {}) {
   logs = [];
   // spawn() honors shebangs on Linux, so the fake script itself is the binary.
   adapter = new CodexAppServerAdapter({
     codexBin: FAKE_CODEX,
     log: (m) => logs.push(m),
   });
-  server = createBridgeServer({ adapter, agent: 'codex', version: 'test', token, log: (m) => logs.push(m) });
+  server = createBridgeServer({ adapter, agent: 'codex', version: 'test', token, corsOrigin, log: (m) => logs.push(m) });
   await new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => {
       port = server.address().port;
@@ -204,4 +204,60 @@ test('POST /turns without text → 400; unknown path → 404', async () => {
   assert.equal(bad.status, 400);
   const nf = await fetch(`http://127.0.0.1:${port}/nope`);
   assert.equal(nf.status, 404);
+});
+
+test('CORS: loopback origins are reflected, foreign origins get no ACAO header', async () => {
+  const local = await fetch(`http://127.0.0.1:${port}/health`, { headers: { Origin: 'http://localhost:3000' } });
+  assert.equal(local.headers.get('access-control-allow-origin'), 'http://localhost:3000');
+  const loopbackIp = await fetch(`http://127.0.0.1:${port}/health`, { headers: { Origin: 'https://127.0.0.1:5173' } });
+  assert.equal(loopbackIp.headers.get('access-control-allow-origin'), 'https://127.0.0.1:5173');
+  const evil = await fetch(`http://127.0.0.1:${port}/health`, { headers: { Origin: 'https://evil.example.com' } });
+  assert.equal(evil.headers.get('access-control-allow-origin'), null, 'non-loopback origin must NOT get an ACAO header');
+});
+
+test('CORS: OPTIONS preflight answered without auth, 204 + allow headers', async () => {
+  const pre = await fetch(`http://127.0.0.1:${port}/turns`, {
+    method: 'OPTIONS',
+    headers: { Origin: 'http://localhost:5173', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type, authorization' },
+  });
+  assert.equal(pre.status, 204);
+  assert.equal(pre.headers.get('access-control-allow-origin'), 'http://localhost:5173');
+  assert.match(pre.headers.get('access-control-allow-headers') || '', /authorization/i);
+  assert.match(pre.headers.get('access-control-allow-methods') || '', /POST/);
+});
+
+test('CORS: corsOrigin "*" opens every origin (pair with a token in real use)', async () => {
+  await stopServer();
+  await startServer({ corsOrigin: '*' });
+  const res = await fetch(`http://127.0.0.1:${port}/health`, { headers: { Origin: 'https://anywhere.example.com' } });
+  assert.equal(res.headers.get('access-control-allow-origin'), '*');
+});
+
+test('GET /sessions lists known sessions and live busy state', async () => {
+  // Empty before any turn.
+  const empty = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+  assert.deepEqual(empty.sessions, []);
+  // A completed turn leaves its session listed, not busy.
+  const res1 = await post('/turns', { text: 'hi' });
+  const sse1 = sseReader(res1.body);
+  const start1 = await sse1.readUntil((f) => f.data?.type === 'start');
+  await sse1.readUntil((f) => f.data?.type === 'done');
+  const after = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+  assert.deepEqual(after.sessions, [{ sessionId: start1.data.sessionId, busy: false }]);
+  // A slow turn shows busy:true, and back to false after the interrupt.
+  const ctrl = new AbortController();
+  const res2 = await post('/turns', { text: 'SLOW please', sessionId: start1.data.sessionId }, {}, ctrl.signal);
+  const sse2 = sseReader(res2.body);
+  await sse2.readUntil((f) => f.data?.type === 'delta');
+  const busy = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+  assert.deepEqual(busy.sessions, [{ sessionId: start1.data.sessionId, busy: true }]);
+  ctrl.abort();
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4000) {
+    const now = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+    if (now.sessions[0]?.busy === false) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const settled = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+  assert.equal(settled.sessions[0].busy, false, 'after abort the session must settle to busy:false');
 });

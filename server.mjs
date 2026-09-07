@@ -1,12 +1,14 @@
-// agent-bridge/server.mjs — the browsa Agent Protocol (BAP) HTTP surface.
+// agent-bridge/server.mjs — the agent-bridge wire protocol (version 1) over HTTP.
 //
-// One tiny, stable, vendor-neutral contract between a chat UI (browsa) and a
-// LOCAL agent process the bridge owns. A chat UI implements this once; every
-// new CLI agent is just another adapter behind it (adapters/codex-app-server.mjs
-// today, claude-code next). The agent keeps its own per-session transcript —
-// the client sends only the user's turn.
+// One tiny, stable, vendor-neutral contract between ANY client (a browser
+// extension, an editor plugin, a script, your own UI — anything that can POST
+// JSON and read SSE) and a LOCAL agent process the bridge owns. A client
+// implements this once; every new CLI agent is just another adapter behind it
+// (adapters/codex-app-server.mjs today, claude code next). The agent keeps its
+// own per-session transcript — the client sends only the user's turn.
 //
 //   GET  /health              → {ok:true, agent, version, proto:1}
+//   GET  /sessions            → {ok:true, sessions:[{sessionId, busy}]}
 //   POST /turns               body {text, sessionId?} → SSE stream:
 //       data: {"type":"start","sessionId":"…","turnId":"…"}
 //       data: {"type":"delta","text":"…"}
@@ -20,47 +22,81 @@
 //   POST /approvals/:requestId  body {choice:'once'|'always'|'deny'} → {ok:true}
 //
 // Session ids are ASSIGNED BY THE ADAPTER on the first turn (start event) and
-// passed back by the client on later turns. Security posture: binds
-// 127.0.0.1 only, rejects non-loopback Host headers (DNS-rebinding), optional
-// shared bearer token. Aborting = closing the POST /turns connection; the
-// bridge notices the disconnect and interrupts the agent turn server-side.
+// passed back by the client on later turns; GET /sessions recovers them after
+// a client restart. Security posture: binds 127.0.0.1 only, rejects
+// non-loopback Host headers (DNS-rebinding), optional shared bearer token.
+// CORS: browser clients on loopback origins (http(s)://localhost:* and
+// http(s)://127.0.0.1:*) are served Access-Control-Allow-Origin reflections so
+// plain web pages can talk to the bridge; other origins get no ACAO header
+// (pass corsOrigin:'*' to open up — pair it with --token). Aborting = closing
+// the POST /turns connection; the bridge notices the disconnect and
+// interrupts the agent turn server-side. Turns are live-only: there is no
+// replay of a turn you disconnected from.
 
 import http from 'node:http';
 
 const HEARTBEAT_MS = 15000;
 
-export function createBridgeServer({ adapter, agent, version, token, log = () => {} }) {
+/** CORS for one request: reflect loopback origins (any port), honor the
+ * '*' override, everyone else gets no ACAO header (the browser blocks them). */
+function corsHeaders(req, corsOrigin) {
+  const origin = String(req.headers.origin || '');
+  let allow = null;
+  if (corsOrigin === '*') allow = '*';
+  else if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) allow = origin;
+  if (!allow) return {};
+  return {
+    'Access-Control-Allow-Origin': allow,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
+}
+
+export function createBridgeServer({ adapter, agent, version, token, corsOrigin = 'loopback', log = () => {} }) {
   const server = http.createServer(async (req, res) => {
     try {
+      const cors = corsHeaders(req, corsOrigin);
       // DNS-rebinding guard: only loopback Host headers.
       const host = String(req.headers.host || '').split(':')[0].toLowerCase();
       if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1' && host !== '[::1]') {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.writeHead(403, { 'Content-Type': 'application/json', ...cors });
         res.end(JSON.stringify({ ok: false, error: 'loopback only' }));
+        return;
+      }
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, cors);
+        res.end();
         return;
       }
       if (token) {
         const auth = String(req.headers.authorization || '');
         if (auth !== `Bearer ${token}`) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.writeHead(401, { 'Content-Type': 'application/json', ...cors });
           res.end(JSON.stringify({ ok: false, error: 'bad token' }));
           return;
         }
       }
       const url = new URL(req.url, 'http://x');
       if (req.method === 'GET' && url.pathname === '/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.writeHead(200, { 'Content-Type': 'application/json', ...cors });
         res.end(JSON.stringify({ ok: true, agent, version, proto: 1 }));
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/sessions') {
+        res.writeHead(200, { 'Content-Type': 'application/json', ...cors });
+        res.end(JSON.stringify({ ok: true, sessions: adapter.listSessions() }));
         return;
       }
       if (req.method === 'POST' && url.pathname === '/turns') {
         const body = await readJson(req);
         if (!body || typeof body.text !== 'string' || !body.text.trim()) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
           res.end(JSON.stringify({ ok: false, error: 'text required' }));
           return;
         }
-        await handleTurn(req, res, body);
+        await handleTurn(req, res, body, cors);
         return;
       }
       if (req.method === 'POST' && url.pathname.startsWith('/approvals/')) {
@@ -68,21 +104,21 @@ export function createBridgeServer({ adapter, agent, version, token, log = () =>
         const body = await readJson(req);
         const choice = body?.choice;
         if (!['once', 'always', 'deny'].includes(choice)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
           res.end(JSON.stringify({ ok: false, error: "choice must be 'once'|'always'|'deny'" }));
           return;
         }
         try {
           adapter.respondApproval(requestId, choice);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.writeHead(200, { 'Content-Type': 'application/json', ...cors });
           res.end(JSON.stringify({ ok: true }));
         } catch (e) {
-          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.writeHead(409, { 'Content-Type': 'application/json', ...cors });
           res.end(JSON.stringify({ ok: false, error: e.message }));
         }
         return;
       }
-      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.writeHead(404, { 'Content-Type': 'application/json', ...cors });
       res.end(JSON.stringify({ ok: false, error: 'not found' }));
     } catch (e) {
       log(`[bridge] ${req.method} ${req.url} → ${e.message}`);
@@ -95,11 +131,12 @@ export function createBridgeServer({ adapter, agent, version, token, log = () =>
     }
   });
 
-  async function handleTurn(req, res, body) {
+  async function handleTurn(req, res, body, cors) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      ...cors,
     });
     const ev = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch (_) {} };
     let finished = false;
@@ -111,13 +148,13 @@ export function createBridgeServer({ adapter, agent, version, token, log = () =>
     };
     // Keepalives during silent agent stretches; also defeats buffering.
     const hb = setInterval(() => { try { res.write(': ka\n\n'); } catch (_) {} }, HEARTBEAT_MS);
-    // Client disconnect (Esc / panel closed / SW death) = abort: interrupt
-    // the agent turn so it never keeps running headless. MUST listen on the
-    // RESPONSE stream: req 'close' fires as soon as the request message is
-    // fully consumed (Node >=16 semantics) — an immediate false abort that
-    // swallows the whole turn. The session id may only become known when
-    // startTurn returns (first turn = client sent none), so it's tracked on
-    // a mutable, not read from the request body alone.
+    // Client disconnect (tab closed / panel closed / process death) = abort:
+    // interrupt the agent turn so it never keeps running headless. MUST
+    // listen on the RESPONSE stream: req 'close' fires as soon as the request
+    // message is fully consumed (Node >=16 semantics) — an immediate false
+    // abort that swallows the whole turn. The session id may only become
+    // known when startTurn returns (first turn = client sent none), so it's
+    // tracked on a mutable, not read from the request body alone.
     let liveSession = typeof body.sessionId === 'string' ? body.sessionId : null;
     res.on('close', () => {
       if (!finished && liveSession) {

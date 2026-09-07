@@ -87,7 +87,7 @@ export class CodexAppServerAdapter {
       this.child = null;
     });
     await this.rpc('initialize', {
-      clientInfo: { name: 'agent-bridge', title: 'agent-bridge (browsa)', version: '1.0.0' },
+      clientInfo: { name: 'agent-bridge', title: 'agent-bridge', version: '1.0.0' },
     }, INIT_TIMEOUT_MS);
   }
 
@@ -333,6 +333,15 @@ export class CodexAppServerAdapter {
       decision = v2 ? 'accept' : 'approved';
     }
     this.#write({ jsonrpc: '2.0', id: Number(requestId), result: { decision } });
+  }
+
+  /** Known sessions for GET /sessions: lets a client recover session ids
+   * after its own restart. busy = a turn is currently in flight. */
+  listSessions() {
+    return [...this.threads.entries()].map(([sessionId, t]) => ({
+      sessionId,
+      busy: !!(t && !t.finished),
+    }));
   }
 
   stop() {
