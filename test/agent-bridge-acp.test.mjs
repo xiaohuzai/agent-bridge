@@ -22,10 +22,10 @@ let adapter;
 let port;
 let logs;
 
-async function startServer() {
+async function startServer({ command } = {}) {
   logs = [];
   adapter = new AcpStdioAdapter({
-    command: [FAKE_ACP],
+    command: command || [FAKE_ACP],
     cwd: '/tmp',
     log: (m) => logs.push(m),
   });
@@ -166,4 +166,22 @@ test('refusal stopReason surfaces as a normal done with the failure visible', as
   const done = await sse.readUntil((f) => f.data?.type === 'done');
   assert.equal(done.data.finishReason, '');
   sse.cancel();
+});
+
+test('missing agent command → friendly SSE error, bridge survives (no uncaughtException)', async () => {
+  // Same trap as the codex adapter: a typo'd `acp -- <command>` must surface
+  // as a clean SSE error (install hint), never an uncaughtException that
+  // kills the bridge. This test passing at all proves the crash is gone.
+  await stopServer();
+  await startServer({ command: ['definitely-not-installed-xyz'] });
+  const res = await post('/turns', { text: 'hi' });
+  const err = await sseReader(res.body).readUntil((f) => f.data?.type === 'error');
+  assert.match(err.data.message, /agent command not found/);
+  assert.match(err.data.message, /acp --/);
+  // Bridge still alive and retrying errors cleanly.
+  const health = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
+  assert.equal(health.ok, true);
+  const res2 = await post('/turns', { text: 'hi again' });
+  const err2 = await sseReader(res2.body).readUntil((f) => f.data?.type === 'error');
+  assert.match(err2.data.message, /agent command not found/);
 });

@@ -80,6 +80,20 @@ export class AcpStdioAdapter {
       this.child = null;
       this.ready = false;
     });
+    // A spawn failure (agent command not installed / typo'd) arrives as an
+    // async 'error' event — without a listener it is an uncaughtException
+    // that kills the whole bridge. Reject the in-flight rpcs with an install
+    // hint (relayed as the turn's SSE error) and allow a later retry.
+    this.child.on('error', (err) => {
+      const msg = err.code === 'ENOENT'
+        ? `agent command not found: '${command[0]}' — install it, or pass an existing command after 'acp --'`
+        : `failed to start agent '${command[0]}': ${err.message}`;
+      log(`[acp] ${msg}`);
+      for (const [, p] of this.pending) p.reject(new Error(msg));
+      this.pending.clear();
+      this.child = null;
+      this.ready = false;
+    });
     const res = await this.rpc('initialize', {
       protocolVersion: ACP_VERSION,
       info: { name: 'agent-bridge', title: 'agent-bridge', version: '1.0.0' },

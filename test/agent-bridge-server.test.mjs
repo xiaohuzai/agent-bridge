@@ -27,11 +27,11 @@ let adapter;
 let port;
 let logs;
 
-async function startServer({ token, corsOrigin } = {}) {
+async function startServer({ token, corsOrigin, codexBin } = {}) {
   logs = [];
   // spawn() honors shebangs on Linux, so the fake script itself is the binary.
   adapter = new CodexAppServerAdapter({
-    codexBin: FAKE_CODEX,
+    codexBin: codexBin || FAKE_CODEX,
     log: (m) => logs.push(m),
   });
   server = createBridgeServer({ adapter, agent: 'codex', version: 'test', token, corsOrigin, log: (m) => logs.push(m) });
@@ -282,4 +282,24 @@ test('GET /sessions lists known sessions and live busy state', async () => {
   }
   const settled = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
   assert.equal(settled.sessions[0].busy, false, 'after abort the session must settle to busy:false');
+});
+
+test('missing codex binary → friendly SSE error, bridge survives (no uncaughtException)', async () => {
+  // Regression guard for the first-run trap: without a child 'error'
+  // listener, spawn ENOENT arrives as an uncaughtException that kills the
+  // whole bridge (/health looks fine, the first turn kills the daemon). If
+  // this test passes at all, no uncaughtException escaped the adapter.
+  await stopServer();
+  await startServer({ codexBin: '/nonexistent/codex-binary-xyz' });
+  const res = await post('/turns', { text: 'hi' });
+  const err = await sseReader(res.body).readUntil((f) => f.data?.type === 'error');
+  assert.match(err.data.message, /codex CLI not found/);
+  assert.match(err.data.message, /--codex-bin/);
+  // The daemon is still alive: health answers, and a retry errors cleanly
+  // again (no hang, no crash, no stack trace anywhere).
+  const health = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
+  assert.equal(health.ok, true);
+  const res2 = await post('/turns', { text: 'hi again' });
+  const err2 = await sseReader(res2.body).readUntil((f) => f.data?.type === 'error');
+  assert.match(err2.data.message, /codex CLI not found/);
 });
