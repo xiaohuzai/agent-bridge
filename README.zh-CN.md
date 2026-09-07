@@ -203,6 +203,19 @@ node cli.mjs acp -- <agent 命令…>     # 任何 ACP v2 智能体；`--` 之�
 
 ## 接入智能体
 
+**两种启动方式，一套客户端接口**——起桥的命令和旗标随 agent 而异，但起好之后，客户端面对的是同一套线缆协议：四个端点、同一事件词表、同一审批往返。browsa 等客户端不需要（也没有任何办法）区分桥后面坐的是谁：
+
+| | codex 模式 | acp 模式 |
+|---|---|---|
+| 启动命令 | `node cli.mjs codex --port 3948 --approval on-request` | `node cli.mjs acp -- <agent 命令>` |
+| agent 说的协议 | codex 私有 app-server JSON-RPC | ACP v2（stdio，NDJSON） |
+| 审批何时发生 | 你用 `--approval` 配策略（默认 never：不问） | agent 自己的权限体系决定，桥一律转发 |
+| 沙箱 | 桥下发（`--sandbox` / `--network`） | 由 agent 自己的策略管理 |
+| 图片 | 直接吃 data:/https URL | 须 agent 声明 `promptCapabilities.image`，否则降级为文本 |
+| 适用 | codex | claude code、gemini、opencode…… 任何说 ACP v2 的 agent |
+
+个别事件的可选字段随 agent 略有差异（如 `approval` 事件里 codex 带 `cwd`、ACP 带它自己的选项列表），核心字段与语义完全一致。
+
 **说 ACP v2？零代码**——`node cli.mjs acp -- <命令>` 拉起任意 ACP 智能体，把回合、流式、工具调用、审批、用量全部映射到上面的协议：claude code 用 `acp -- claude-code-acp`，gemini 用 `acp -- gemini --experimental-acp`，opencode、kimi、qwen 等同理。图片须 agent 声明 `promptCapabilities.image`，否则自动降级为文本提示（绝不落盘）。目前 ACP v2 兼容由 CI 中的脚本化假 agent 演练；对真实 claude-code-acp / gemini 的实机验证在路线图上。
 
 **ACP 是什么**：Agent Client Protocol，Zed 发起的开放标准（[agentclientprotocol.com](https://agentclientprotocol.com)），"LSP for agents"——客户端把 agent CLI 作为子进程拉起，JSON-RPC 2.0 走 stdio（NDJSON），设计上**不绑端口**；官方远程传输（WebSocket / Streamable HTTP）尚在 RFD 阶段。本桥的 acp 模式扮演的是 ACP **客户端**；对使用方暴露的始终是上面那套 HTTP+SSE 协议。等官方远程传输定稿，桥会再加一个 ACP-over-WebSocket 门面，让现成 ACP 客户端零改动接入。

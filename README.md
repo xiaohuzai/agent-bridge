@@ -204,6 +204,19 @@ node cli.mjs acp -- <agent command…>  # any ACP v2 agent; everything after `--
 
 ## Adding an agent
 
+**Two ways to start the bridge, one client interface** — the start command and flags vary by agent, but once the bridge is up, clients face the same wire protocol: four endpoints, one event vocabulary, the same approval round trip. A client like browsa never needs to (and has no way to) distinguish which agent sits behind the bridge:
+
+| | codex mode | acp mode |
+|---|---|---|
+| Start command | `node cli.mjs codex --port 3948 --approval on-request` | `node cli.mjs acp -- <agent command>` |
+| Protocol the agent speaks | codex's private app-server JSON-RPC | ACP v2 (stdio, NDJSON) |
+| When approvals happen | you set the policy with `--approval` (default never: no asks) | the agent's own permission system decides; the bridge always relays |
+| Sandboxing | issued by the bridge (`--sandbox` / `--network`) | governed by the agent's own policy |
+| Images | data:/https URLs taken directly | require the agent's advertised `promptCapabilities.image`, else degrade to text |
+| Good for | codex | claude code, gemini, opencode… any ACP v2 agent |
+
+A few optional event fields vary by agent (e.g. the `approval` event carries `cwd` for codex, the agent's own option list for ACP); core fields and semantics are identical.
+
 **Speak ACP v2? Zero code** — `node cli.mjs acp -- <command>` spawns any ACP agent and maps turns, streaming, tool calls, approvals, and usage onto the protocol above: claude code via `acp -- claude-code-acp`, gemini via `acp -- gemini --experimental-acp`, likewise opencode, kimi, qwen and friends. Images require the agent's advertised `promptCapabilities.image`, otherwise they degrade to a text note (never written to disk). ACP v2 compliance is currently exercised against a scripted agent in CI; first-hand runs against real claude-code-acp / gemini are on the roadmap.
 
 **What is ACP?** The Agent Client Protocol, an open standard started by Zed ([agentclientprotocol.com](https://agentclientprotocol.com)) — "LSP for agents": the client spawns the agent CLI as a subprocess and the two speak JSON-RPC 2.0 over stdio (NDJSON). By design it binds **no port**; the official remote transport (WebSocket / Streamable HTTP) is still an RFD. The bridge's acp mode acts as the ACP **client**; what the bridge exposes to its users is always the HTTP+SSE protocol above. Once the official remote transport lands, the bridge plans an ACP-over-WebSocket front so existing ACP clients can connect unchanged.
