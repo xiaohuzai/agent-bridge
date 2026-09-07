@@ -20,6 +20,26 @@ const err = (s) => process.stderr.write(s + '\n');
 
 const sessions = new Set();
 
+// v1 mode (argv 'v1'): the OFFICIAL shims' dialect (agentclientprotocol/
+// codex-acp, claude-agent-acp) — initialize replies protocolVersion 1, there
+// is NO prompt ack, and the session/prompt RPC response IS the turn
+// terminator ({stopReason, usage}). v2 mode: ack + state_update idle.
+const V1 = process.argv[2] === 'v1';
+const pendingPrompt = new Map(); // sessionId → pending session/prompt rpc id
+
+function finish(sessionId, stopReason) {
+  if (V1) {
+    const id = pendingPrompt.get(sessionId);
+    if (id !== undefined) {
+      pendingPrompt.delete(sessionId);
+      // usage shape as captured live from codex-acp 1.10.0
+      send({ jsonrpc: '2.0', id, result: { stopReason, usage: { totalTokens: 10, inputTokens: 8, cachedReadTokens: 0, outputTokens: 2, thoughtTokens: 0 } } });
+    }
+  } else {
+    idle(sessionId, stopReason);
+  }
+}
+
 function idle(sessionId, stopReason) {
   send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'state_update', state: 'idle', ...(stopReason ? { stopReason } : {}) } } });
 }
@@ -46,12 +66,12 @@ function handle(j) {
     const sessionId = sessions.values().next().value;
     send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc1', title: 'sensitive op', status: 'completed' } } });
     send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ACP_reply' } } } });
-    idle(sessionId, 'end_turn');
+    finish(sessionId, 'end_turn');
     return;
   }
   switch (j.method) {
     case 'initialize':
-      send({ jsonrpc: '2.0', id: j.id, result: { protocolVersion: 2, info: { name: 'fake-acp', version: '0' }, capabilities: { promptCapabilities: { image: true } } } });
+      send({ jsonrpc: '2.0', id: j.id, result: { protocolVersion: V1 ? 1 : 2, info: { name: 'fake-acp', version: '0' }, capabilities: { promptCapabilities: { image: true } } } });
       break;
     case 'session/new':
       sessions.add('acp-sess-1');
@@ -65,7 +85,8 @@ function handle(j) {
       const blocks = j.params?.prompt || [];
       const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join(' ');
       const images = blocks.filter((b) => b.type === 'image');
-      send({ jsonrpc: '2.0', id: j.id, result: {} }); // v2: acceptance only
+      if (V1) pendingPrompt.set(sessionId, j.id); // v1: no ack — the response finishes the turn
+      else send({ jsonrpc: '2.0', id: j.id, result: {} }); // v2: acceptance only
       if (text.includes('APPROVE')) {
         send({
           jsonrpc: '2.0', id: 900, method: 'session/request_permission',
@@ -83,19 +104,24 @@ function handle(j) {
       }
       if (text.includes('FAIL')) {
         send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc9', title: 'boom', status: 'failed' } } });
-        idle(sessionId, 'refusal');
+        finish(sessionId, 'refusal');
         return;
       }
       let reply = 'ACP_reply';
       if (images.length) reply += ` IMG:${images.length} MIME:${images[0]?.mimeType || '-'}`;
       send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: reply } } } });
-      send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'usage_update', used: 33, size: 1000 } } });
-      idle(sessionId, 'end_turn');
+      if (!V1) send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'usage_update', used: 33, size: 1000 } } });
+      finish(sessionId, 'end_turn');
       break;
     }
     case 'session/cancel':
       err('FAKE_CANCELLED');
-      if (sessions.size) idle(sessions.values().next().value, 'cancelled');
+      if (V1) {
+        for (const [sid, id] of pendingPrompt) {
+          pendingPrompt.delete(sid);
+          send({ jsonrpc: '2.0', id, result: { stopReason: 'cancelled' } });
+        }
+      } else if (sessions.size) idle(sessions.values().next().value, 'cancelled');
       if (j.id !== undefined) send({ jsonrpc: '2.0', id: j.id, result: {} });
       break;
     default:

@@ -1,31 +1,54 @@
 // agent-bridge/adapters/acp-stdio.mjs — GENERIC adapter for ANY ACP agent.
 //
-// Spawns an arbitrary command that speaks the Agent Client Protocol v2
+// Spawns an arbitrary command that speaks the Agent Client Protocol
 // (JSONL JSON-RPC over stdio) and translates it to the bridge's four core
 // methods. One implementation covers the whole ACP agent ecosystem:
-// claude-code-acp, codex-acp, gemini --experimental-acp, opencode, hermes,
+// claude-agent-acp, codex-acp, gemini --experimental-acp, opencode, hermes,
 // kimi, qwen, … — new agents are a CLI flag, not new code.
 //
-// Wire facts below come from the OFFICIAL v2 JSON schema
-// (agentclientprotocol/agent-client-protocol, schema/v2/schema.json):
-//   initialize  {protocolVersion:2, info:{name,title,version}, capabilities:{}}
-//              → {protocolVersion, capabilities:{promptCapabilities:{image}?}}
-//   session/new {cwd, mcpServers:[]} → {sessionId}
-//   session/resume {sessionId, cwd} → {sessionId}   (restore after restart)
-//   session/prompt {sessionId, prompt:ContentBlock[]} → {}   (ACCEPTANCE ONLY —
-//       completion is reported via the `state_update` session update)
+// VERSION NEGOTIATION (live-verified 2026-09-07 against the two OFFICIAL
+// shims — agentclientprotocol/codex-acp 1.10.0 and claude-agent-acp 0.75.1):
+// both answer initialize with protocolVersion 1 no matter what the client
+// requests. The bridge therefore requests 2 and ACCEPTS 1 or 2; anything
+// else is refused.
+//
+// Wire facts (official schema + live frames; v1 facts captured from
+// codex-acp driving codex-cli 0.149.1 through a volcengine gateway):
+//   initialize  {protocolVersion:2, clientCapabilities:{}}
+//              → {protocolVersion:1|2, agentCapabilities:{promptCapabilities:
+//                 {image}?}, agentInfo, authMethods?}   (the Zed shim of the
+//                 pre-official era put promptCapabilities under `capabilities`
+//                 instead — both are read)
+//   session/new {cwd, mcpServers:[]} → {sessionId}   (codex-acp also returns
+//                 models.availableModels — ignored)
+//   session/resume {sessionId, cwd} → {sessionId}   (restore after restart;
+//                 exists on BOTH official shims — claude-agent-acp passes it
+//                 down as `claude -p --resume <id>`)
+//   session/prompt {sessionId, prompt:ContentBlock[]} — completion depends on
+//       the negotiated version:
+//       v2 → {} (ACCEPTANCE ONLY); the turn ends via `state_update` idle
+//       v1 → the RPC RESPONSE IS THE TURN TERMINATOR:
+//             {stopReason:'end_turn', usage:{totalTokens, inputTokens,
+//             cachedReadTokens, outputTokens, thoughtTokens}} — usage maps to
+//             prompt_tokens/completion_tokens; 'cancelled' on the response
+//             (after session/cancel) surfaces as aborted. The rpc therefore
+//             runs with NO timeout in v1 — a fixed one would kill every long
+//             turn (a trivial reply took 17s through a real gateway).
 //   session/cancel  NOTIFICATION {sessionId}   — and while a permission
 //       request is pending, the client MUST answer it with
 //       {outcome:{outcome:'cancelled'}}.
-//   session/update NOTIFICATION {sessionId, update:{sessionUpdate:…}}:
+//   session/update NOTIFICATION {sessionId, update:{sessionUpdate:…}} (same
+//       shapes in v1 and v2):
 //       agent_message_chunk {content:{type:'text',text}} → delta
 //       tool_call_update {toolCallId,title?,status:pending|in_progress|
 //         completed|failed|cancelled} → tool events
-//       usage_update {used,size?,cost?} → usage (context tokens; there is no
-//         per-turn output count in ACP — completion_tokens is reported as 0)
-//       state_update {state:'idle', stopReason?} → TURN END:
+//       usage_update {used,size?,cost?} → usage (v2; context tokens — there
+//         is no per-turn output count, completion_tokens reported as 0)
+//       state_update {state:'idle', stopReason?} → TURN END (v2):
 //         end_turn→done · max_tokens→done(finishReason 'length') ·
 //         cancelled→aborted · refusal→done (the refusal text is the reply)
+//       unknown updates (available_commands_update, session_info_update,
+//         _auth/status_update, …) are ignored
 //   session/request_permission REQUEST {sessionId,title?,description?,options:
 //       [{optionId,name,kind:allow_once|allow_always|reject_once|reject_always}]}
 //       → {outcome:{outcome:'selected',optionId}} (kind-matched to the
@@ -40,7 +63,7 @@ import { spawn } from 'node:child_process';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
-const ACP_VERSION = 2;
+const REQUESTED_ACP_VERSION = 2; // we speak 1–2; the agent picks ≤ requested
 
 export class AcpStdioAdapter {
   constructor({
@@ -95,14 +118,18 @@ export class AcpStdioAdapter {
       this.ready = false;
     });
     const res = await this.rpc('initialize', {
-      protocolVersion: ACP_VERSION,
-      info: { name: 'agent-bridge', title: 'agent-bridge', version: '1.0.0' },
-      capabilities: {},
+      protocolVersion: REQUESTED_ACP_VERSION,
+      clientCapabilities: {},
     }, INIT_TIMEOUT_MS);
-    if (res?.protocolVersion !== ACP_VERSION) {
-      throw new Error(`acp agent speaks protocolVersion ${JSON.stringify(res?.protocolVersion)}, bridge requires ${ACP_VERSION}`);
+    const version = res?.protocolVersion;
+    if (version !== 1 && version !== 2) {
+      throw new Error(`acp agent speaks protocolVersion ${JSON.stringify(version)}, bridge supports 1–2`);
     }
-    this.promptImage = !!res?.capabilities?.promptCapabilities?.image;
+    this.acpVersion = version;
+    this.opts.log(`[acp] negotiated ACP v${version}`);
+    // promptCapabilities lives under agentCapabilities on the official shims
+    // and under capabilities on the older Zed shim — read both.
+    this.promptImage = !!(res?.agentCapabilities?.promptCapabilities?.image ?? res?.capabilities?.promptCapabilities?.image);
     this.ready = true;
   }
 
@@ -207,13 +234,16 @@ export class AcpStdioAdapter {
   rpc(method, params, timeoutMs = RPC_TIMEOUT_MS) {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      // timeoutMs <= 0 means "no timer": a v1 session/prompt rpc stays
+      // pending for the WHOLE turn (its response IS the completion), so a
+      // fixed timeout would kill every long turn.
+      const timer = timeoutMs > 0 ? setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`acp rpc timeout: ${method}`));
-      }, timeoutMs);
+      }, timeoutMs) : null;
       this.pending.set(id, {
-        resolve: (v) => { clearTimeout(timer); resolve(v); },
-        reject: (e) => { clearTimeout(timer); reject(e); },
+        resolve: (v) => { if (timer) clearTimeout(timer); resolve(v); },
+        reject: (e) => { if (timer) clearTimeout(timer); reject(e); },
       });
       this.#write({ jsonrpc: '2.0', id, method, params });
     });
@@ -256,18 +286,24 @@ export class AcpStdioAdapter {
     onEvent({ type: 'start', sessionId: sid, turnId: '' });
     let r;
     try {
-      r = await this.rpc('session/prompt', { sessionId: sid, prompt: blocks });
+      // v1: the response IS the completion — no timeout, cancellable only
+      // via session/cancel (which makes the shim answer with stopReason
+      // 'cancelled'). v2: the rpc is an acceptance ack — normal timeout.
+      r = await this.rpc('session/prompt', { sessionId: sid, prompt: blocks }, this.acpVersion === 1 ? 0 : RPC_TIMEOUT_MS);
     } catch (e) {
       this.sessions.delete(sid);
       onEvent({ type: 'error', message: e.message });
       return { sessionId: sid, turnId: '' };
     }
     if (r && typeof r.stopReason === 'string') {
-      // v1-style agent answered synchronously despite v2 handshake.
+      // v1 completion: the prompt response carries the final stopReason and
+      // the turn's usage (v2 completes via state_update instead).
       entry.promptInFlight = false;
+      if (r.usage) entry.usage = { prompt_tokens: r.usage.inputTokens ?? 0, completion_tokens: r.usage.outputTokens ?? 0 };
       if (!entry.finished) {
         entry.finished = true;
-        onEvent({ type: 'done', full: entry.full, usage: entry.usage, finishReason: r.stopReason === 'max_tokens' ? 'length' : '' });
+        if (r.stopReason === 'cancelled') onEvent({ type: 'aborted' });
+        else onEvent({ type: 'done', full: entry.full, usage: entry.usage, finishReason: r.stopReason === 'max_tokens' ? 'length' : '' });
       }
     }
     return { sessionId: sid, turnId: '' };

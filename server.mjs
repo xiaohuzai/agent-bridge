@@ -177,6 +177,11 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
     });
     const onEvent = (e) => {
       if (finished) return;
+      // The session id can arrive BEFORE startTurn returns — v1-style agents
+      // (both official ACP shims) keep the session/prompt rpc pending for the
+      // whole turn, so a disconnect mid-turn must already know the session to
+      // interrupt. Patch it here, not only after startTurn resolves.
+      if (e.type === 'start' && e.sessionId) liveSession = e.sessionId;
       ev(e);
       if (e.type === 'done' || e.type === 'aborted' || e.type === 'error') finish();
     };

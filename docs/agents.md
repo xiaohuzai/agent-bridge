@@ -8,8 +8,9 @@ Verification status at a glance (honesty first — tell us what works or breaks,
 
 | Agent | How to start | Live-verified |
 |---|---|---|
-| codex | `codex` mode (bespoke adapter) | ✅ yes (codex-cli 0.149.1) |
-| claude code | `acp -- claude-code-acp` | ⏳ in progress |
+| codex | `codex` mode (bespoke adapter, **primary**) | ✅ yes (codex-cli 0.149.1) |
+| codex | `acp -- codex-acp` (official shim) | ⚠️ real turn through the bridge ✅; drops the answer text on non-streaming backends (upstream bug, see below) |
+| claude code | `acp -- claude-agent-acp` (official shim, primary) | ⏳ handshake / version negotiation / error path verified; real turns pending Mac run |
 | gemini | `acp -- gemini --experimental-acp` | ❓ schema-level only |
 | pi / opencode / kimi / qwen etc. | `acp -- <their ACP command>` | ❓ schema-level only |
 
@@ -43,10 +44,10 @@ node cli.mjs codex --port 3948 --approval on-request
 
 ## claude code
 
-**Key prerequisite: claude code does not speak ACP natively.** It needs a translator shim — Zed's officially maintained `claude-code-acp` (very thin: it does not contain claude and has no login of its own; it drives your installed, logged-in claude code through Anthropic's official Agent SDK). The chain:
+**Key prerequisite: claude code does not speak ACP natively.** It needs a translator shim — `claude-agent-acp`, maintained by the ACP organization itself (very thin: it does not contain claude and has no login of its own; it drives your installed, logged-in claude code through Anthropic's official Agent SDK). The chain:
 
 ```
-agent-bridge ──ACP v2 (stdio)──► claude-code-acp ──Agent SDK──► claude code
+agent-bridge ──ACP v1 (stdio; the bridge negotiates)──► claude-agent-acp ──Agent SDK──► claude code
 ```
 
 **Install & sign in**:
@@ -54,23 +55,29 @@ agent-bridge ──ACP v2 (stdio)──► claude-code-acp ──Agent SDK──
 ```bash
 npm i -g @anthropic-ai/claude-code    # claude code itself (if not installed)
 claude                                # first run completes login (subscription or API key)
-npm i -g @zed-industries/claude-code-acp   # the ACP shim (maintained by Zed)
+npm i -g @agentclientprotocol/claude-agent-acp   # the ACP shim (maintained by the ACP org)
 ```
 
 **Start**:
 
 ```bash
-node cli.mjs acp -- claude-code-acp
+node cli.mjs acp -- claude-agent-acp
 # equivalent without a global install:
-node cli.mjs acp -- npx -y @zed-industries/claude-code-acp
+node cli.mjs acp -- npx -y @agentclientprotocol/claude-agent-acp
+# alternative: Zed's older shim @zed-industries/claude-code-acp (binary claude-code-acp) works too
 ```
 
 **Behavior notes**:
 
 - **There is no `--approval` flag to set** — when approvals happen is decided by claude's own permission system: tool calls outside its allowlist trigger a request, and `always` = claude remembers the allowance (its persistence). The bridge always relays.
 - **There is no `--sandbox`** — safety policy belongs to claude; the bridge does not interfere.
-- Session recovery across bridge restarts goes through ACP `session/resume`; whether claude-code-acp fully supports it is being verified on real machines right now.
-- Image support depends on the `promptCapabilities.image` it advertises; without it, images degrade to a text note (never written to disk).
+- Session recovery across bridge restarts: the official shim supports ACP `session/resume` (claude-agent-acp passes it down as `claude -p --resume`; method existence verified live).
+- Image support depends on the `promptCapabilities.image` it advertises (claude-agent-acp advertises `image: true`); without it, images degrade to a text note (never written to disk).
+- Unauthenticated behavior verified live: the session is created normally and the turn ends with a clean `Authentication required` SSE error.
+
+## codex via the official ACP shim (alternative route)
+
+`node cli.mjs acp -- codex-acp` (`npm i -g @agentclientprotocol/codex-acp`) also puts codex behind the bridge — verified end-to-end on 2026-09-07 with a real turn through a volcengine gateway (start → done + usage). **But there is an upstream defect**: on non-streaming backends (which send `item/completed` without prior deltas — e.g. the deepseek gateway), the final answer text is dropped entirely — the turn ends `end_turn` with an empty `full` (codex-acp `return null`s the completed agentMessage item and only forwards deltas). The bespoke adapter above remains the primary recommendation (it has the completed-items fallback and is unaffected).
 
 ## Other ACP v2 agents
 

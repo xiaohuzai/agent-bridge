@@ -46,7 +46,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 
 # 2. Start it — codex, or any ACP v2 agent (per-agent install & login: docs/agents.md)
 node cli.mjs codex --port 3948 --approval on-request   # codex via its app-server; approval events route to the client
-node cli.mjs acp -- claude-code-acp      # claude code — note: install the claude-code-acp shim first
+node cli.mjs acp -- claude-agent-acp     # claude code — install the official claude-agent-acp shim first
 node cli.mjs acp -- gemini --experimental-acp   # any ACP agent command works
 
 # 3. Talk to it — curl is a complete client:
@@ -215,9 +215,9 @@ node cli.mjs acp -- <agent command…>  # any ACP v2 agent; everything after `--
 | Images | data:/https URLs taken directly | require the agent's advertised `promptCapabilities.image`, else degrade to text |
 | Good for | codex | claude code, gemini, opencode… any ACP v2 agent |
 
-A few optional event fields vary by agent (e.g. the `approval` event carries `cwd` for codex, the agent's own option list for ACP); core fields and semantics are identical. **Per-agent install, login, and behavior notes** (e.g. claude code needs the `claude-code-acp` shim installed first) live in [docs/agents.md](./docs/agents.md).
+A few optional event fields vary by agent (e.g. the `approval` event carries `cwd` for codex, the agent's own option list for ACP); core fields and semantics are identical. **Per-agent install, login, and behavior notes** (e.g. claude code needs the `claude-agent-acp` shim installed first) live in [docs/agents.md](./docs/agents.md).
 
-**Speak ACP v2? Zero code** — `node cli.mjs acp -- <command>` spawns any ACP agent and maps turns, streaming, tool calls, approvals, and usage onto the protocol above: claude code via `acp -- claude-code-acp`, gemini via `acp -- gemini --experimental-acp`, likewise opencode, kimi, qwen and friends. Images require the agent's advertised `promptCapabilities.image`, otherwise they degrade to a text note (never written to disk). ACP v2 compliance is currently exercised against a scripted agent in CI; first-hand runs against real claude-code-acp / gemini are on the roadmap.
+**Speak ACP v2? Zero code** — `node cli.mjs acp -- <command>` spawns any ACP agent and maps turns, streaming, tool calls, approvals, and usage onto the protocol above: claude code via `acp -- claude-agent-acp`, gemini via `acp -- gemini --experimental-acp`, likewise opencode, kimi, qwen and friends. Images require the agent's advertised `promptCapabilities.image`, otherwise they degrade to a text note (never written to disk). The adapter speaks ACP v1 **and** v2 (negotiated at initialize) and has been live-verified against the official codex-acp shim; claude real-turn runs are underway.
 
 **What is ACP?** The Agent Client Protocol, an open standard started by Zed ([agentclientprotocol.com](https://agentclientprotocol.com)) — "LSP for agents": the client spawns the agent CLI as a subprocess and the two speak JSON-RPC 2.0 over stdio (NDJSON). By design it binds **no port**; the official remote transport (WebSocket / Streamable HTTP) is still an RFD. The bridge's acp mode acts as the ACP **client**; what the bridge exposes to its users is always the HTTP+SSE protocol above. Once the official remote transport lands, the bridge plans an ACP-over-WebSocket front so existing ACP clients can connect unchanged.
 
@@ -241,7 +241,7 @@ npm test          # real adapter + real HTTP server vs a scripted fake codex
 - codex's `request_user_input` tool is declined by the bridge (the turn can proceed without it).
 - A network-flake retry re-submits the whole prompt — the agent may run a turn twice.
 - Turns are live-only: a client that disconnects cannot rejoin the same turn.
-- The generic ACP adapter targets ACP **v2** (schema-verified); it has been exercised against a scripted agent in CI — first-hand runs against real claude-code-acp / gemini are the next milestone.
+- The generic ACP adapter negotiates protocolVersion 1–2 at initialize (both OFFICIAL shims — codex-acp, claude-agent-acp — speak v1) and has been live-verified end-to-end against official codex-acp with a real model turn; claude real-turn runs are the next milestone.
 
 ## License
 

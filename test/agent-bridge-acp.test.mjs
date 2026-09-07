@@ -185,3 +185,40 @@ test('missing agent command → friendly SSE error, bridge survives (no uncaught
   const err2 = await sseReader(res2.body).readUntil((f) => f.data?.type === 'error');
   assert.match(err2.data.message, /agent command not found/);
 });
+
+test('official-style v1 agent: version negotiation + prompt-response completion with usage', async () => {
+  // The OFFICIAL shims (agentclientprotocol/codex-acp, claude-agent-acp) speak
+  // protocolVersion 1: initialize negotiates down, there is no prompt ack,
+  // and the prompt RPC response IS the turn terminator carrying stopReason
+  // and usage (captured live from codex-acp 1.10.0 on 2026-09-07).
+  await stopServer();
+  await startServer({ command: [FAKE_ACP, 'v1'] });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'start');
+  const delta = await sse.readUntil((f) => f.data?.type === 'delta');
+  assert.equal(delta.data.text, 'ACP_reply');
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  assert.equal(done.data.full, 'ACP_reply');
+  assert.deepEqual(done.data.usage, { prompt_tokens: 8, completion_tokens: 2 });
+  sse.cancel();
+});
+
+test('v1 agent: cancel settles the turn via the prompt response (stopReason cancelled)', async () => {
+  await stopServer();
+  await startServer({ command: [FAKE_ACP, 'v1'] });
+  const ctrl = new AbortController();
+  const res = await post('/turns', { text: 'SLOW please' }, {}, ctrl.signal);
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'delta');
+  ctrl.abort(); // disconnect = interrupt → session/cancel → the fake answers
+  // the pending prompt with stopReason 'cancelled' → the turn must settle.
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4000) {
+    const now = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+    if (now.sessions[0]?.busy === false) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const settled = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+  assert.equal(settled.sessions[0]?.busy, false, 'v1 turn must settle after cancel');
+});
