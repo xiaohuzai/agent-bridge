@@ -8,8 +8,9 @@ agent-bridge 对客户端只有一套接口；agent 之间的差异全部在**�
 
 | agent | 启动方式 | 实机验证 |
 |---|---|---|
-| codex | `codex` 模式（专用 adapter） | ✅ 已验证（codex-cli 0.149.1） |
-| claude code | `acp -- claude-code-acp` | ⏳ 实机验证进行中 |
+| codex | `codex` 模式（专用 adapter，**主推荐**） | ✅ 已验证（codex-cli 0.149.1） |
+| codex | `acp -- codex-acp`（官方壳） | ⚠️ 过桥真回合 ✅；非流式后端丢答案文本（上游缺陷，见下） |
+| claude code | `acp -- claude-agent-acp`（官方壳，主推荐） | ⏳ 握手/版本协商/错误路径已实测，真回合待 Mac 实测 |
 | gemini | `acp -- gemini --experimental-acp` | ❓ 仅 schema 级 |
 | pi / opencode / kimi / qwen 等 | `acp -- <各自的 ACP 命令>` | ❓ 仅 schema 级 |
 
@@ -42,10 +43,10 @@ node cli.mjs codex --port 3948 --approval on-request
 
 ## claude code
 
-**关键前提：claude code 本体不会说 ACP**。需要一个翻译壳——Zed 官方维护的 `claude-code-acp`（很薄，不含 claude 本体、不单独登录；底层用 Anthropic 官方 Agent SDK 驱动你已装好的 claude code）。链路是：
+**关键前提：claude code 本体不会说 ACP**。需要一个翻译壳——ACP 官方组织维护的 `claude-agent-acp`（很薄，不含 claude 本体、不单独登录；底层用 Anthropic 官方 Agent SDK 驱动你已装好的 claude code）。链路是：
 
 ```
-agent-bridge ──ACP v2 (stdio)──► claude-code-acp ──Agent SDK──► claude code
+agent-bridge ──ACP v1 (stdio，桥自动协商)──► claude-agent-acp ──Agent SDK──► claude code
 ```
 
 **安装与登录**：
@@ -53,23 +54,29 @@ agent-bridge ──ACP v2 (stdio)──► claude-code-acp ──Agent SDK──
 ```bash
 npm i -g @anthropic-ai/claude-code    # claude code 本体（若未装）
 claude                                # 首次运行完成登录（订阅或 API key）
-npm i -g @zed-industries/claude-code-acp   # ACP 翻译壳（Zed 官方维护）
+npm i -g @agentclientprotocol/claude-agent-acp   # ACP 翻译壳（ACP 官方组织维护）
 ```
 
 **启动**：
 
 ```bash
-node cli.mjs acp -- claude-code-acp
+node cli.mjs acp -- claude-agent-acp
 # 免全局安装的等价写法：
-node cli.mjs acp -- npx -y @zed-industries/claude-code-acp
+node cli.mjs acp -- npx -y @agentclientprotocol/claude-agent-acp
+# 备选：Zed 维护的旧壳 @zed-industries/claude-code-acp（命令 claude-code-acp）同样可用
 ```
 
 **行为要点**：
 
 - **没有 `--approval` 旗标可配**——什么时候发审批由 claude 自己的权限体系决定：allowlist 之外的工具调用才问，`always` = claude 记住放行（它的持久化）。桥一律转发。
 - **没有 `--sandbox`**——安全策略归 claude 自己管，桥不干预。
-- 桥重启后会话恢复走 ACP `session/resume`；claude-code-acp 是否完整支持，实机验证中。
-- 图片能力取决于它向 ACP 声明的 `promptCapabilities.image`；没声明会自动降级为文本提示（不落盘）。
+- 桥重启后会话恢复：官方壳支持 ACP `session/resume`（claude-agent-acp 会透传成 `claude -p --resume`，已实测方法存在）。
+- 图片能力取决于它向 ACP 声明的 `promptCapabilities.image`（claude-agent-acp 已声明 `image: true`）；没声明会自动降级为文本提示（不落盘）。
+- 无凭证时表现已实测：session 正常创建，回合以干净的 `Authentication required` SSE error 结束。
+
+## codex 的 ACP 备选路线（官方壳）
+
+`node cli.mjs acp -- codex-acp`（`npm i -g @agentclientprotocol/codex-acp`）也能把 codex 挂进桥——2026-09-07 已过桥实测真回合（volcengine 网关，start → done + usage 全通）。**但有一个上游缺陷**：非流式后端（只发 `item/completed` 不发 delta，例如 deepseek 网关）会把最终答案文本整个丢掉——turn 以 `end_turn` 结束但 `full` 为空（codex-acp 对 completed 的 agentMessage 直接 `return null`，只转发 delta）。主推荐仍是专用 adapter 路线（有 completed-items 兜底，不受影响）。
 
 ## 其他 ACP v2 agent
 
