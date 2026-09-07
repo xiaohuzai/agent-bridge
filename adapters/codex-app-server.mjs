@@ -86,6 +86,21 @@ export class CodexAppServerAdapter {
       this.pending.clear();
       this.child = null;
     });
+    // A spawn failure (ENOENT: codex not installed, EACCES: not executable)
+    // surfaces as an async 'error' event — WITHOUT a listener Node turns it
+    // into an uncaughtException that kills the whole bridge (first-run trap:
+    // /health looks fine, the first turn kills the daemon). Reject the
+    // in-flight rpcs with an install hint (server.mjs relays it as the
+    // turn's SSE error event) and null the child so a later turn can retry.
+    this.child.on('error', (err) => {
+      const msg = err.code === 'ENOENT'
+        ? `codex CLI not found: '${codexBin}' — install the codex CLI (it must be on PATH), or pass --codex-bin /path/to/codex`
+        : `failed to start codex '${codexBin}': ${err.message}`;
+      log(`[codex] ${msg}`);
+      for (const [, p] of this.pending) p.reject(new Error(msg));
+      this.pending.clear();
+      this.child = null;
+    });
     await this.rpc('initialize', {
       clientInfo: { name: 'agent-bridge', title: 'agent-bridge', version: '1.0.0' },
     }, INIT_TIMEOUT_MS);
