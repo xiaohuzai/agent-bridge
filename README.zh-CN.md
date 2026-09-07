@@ -44,7 +44,7 @@ export OPENAI_API_KEY=sk-...   # ② 或 OpenAI API key
 git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 
 # 2. 启动——codex，或任何 ACP v2 智能体
-node cli.mjs codex --port 3948            # codex（走它的 app-server）
+node cli.mjs codex --port 3948 --approval on-request   # codex（走它的 app-server）；审批事件路由给客户端
 node cli.mjs acp -- claude-code-acp      # 接 claude code？一行命令。
 node cli.mjs acp -- gemini --experimental-acp   # 任何 ACP agent 命令都行
 
@@ -84,7 +84,7 @@ data: {"type":"tool","name":"command","status":"started","detail":"npm test"}
 data: {"type":"approval","requestId":"42","tool":"command","command":"npm install","cwd":"/repo"}
 ```
 
-收到 `approval` 说明智能体想跑一条需要放行的命令。**在本回合流还开着的时候**应答（另开一个终端也行）：
+收到 `approval` 说明智能体想跑一条需要放行的命令。**在本回合流还开着的时候**应答（另开一个终端也行）。`approval` 事件只在桥以 `--approval on-request` 启动时出现——快速开始里的命令已带上；默认 `never` 时没有审批环节，命令要么在沙箱内直接执行、要么被拒绝：
 
 ```bash
 # ③ 应答审批：choice ∈ once | always | deny

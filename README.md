@@ -45,7 +45,7 @@ export OPENAI_API_KEY=sk-...   # ② or an OpenAI API key
 git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 
 # 2. Start it — codex, or any ACP v2 agent
-node cli.mjs codex --port 3948            # codex via its app-server
+node cli.mjs codex --port 3948 --approval on-request   # codex via its app-server; approval events route to the client
 node cli.mjs acp -- claude-code-acp      # claude code? one command.
 node cli.mjs acp -- gemini --experimental-acp   # any ACP agent command works
 
@@ -85,7 +85,7 @@ data: {"type":"tool","name":"command","status":"started","detail":"npm test"}
 data: {"type":"approval","requestId":"42","tool":"command","command":"npm install","cwd":"/repo"}
 ```
 
-An `approval` event means the agent wants to run something that needs permission. Answer it **while the turn's stream is still open** (another terminal is fine):
+An `approval` event means the agent wants to run something that needs permission. Answer it **while the turn's stream is still open** (another terminal is fine). `approval` events only arrive when the bridge is started with `--approval on-request` — the Quick start command already includes it; with the default `never` there is no approval step: commands either run inside the sandbox or get refused:
 
 ```bash
 # ③ Answer the approval: choice ∈ once | always | deny
