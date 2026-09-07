@@ -92,6 +92,7 @@ None of these are live-verified yet — report your results (good or bad) and we
 ## Troubleshooting
 
 - **When reporting a problem, include the `[acp]` / `[bridge]` lines from the bridge terminal** — they cover the handshake negotiation, session create/resume, each turn's prompt and response (with stopReason and usage), permission requests, and ignored unknown notifications, and pinpoint which layer failed.
+- **The turn streams `Reconnecting... waiting for network` and keeps retrying** — codex cannot reach its model backend. The most common cause: a custom provider authenticates via an **environment variable** (the `env_key` in config.toml, e.g. `OPENAI_API_KEY`), and that variable must be exported in the terminal where you start the bridge (`echo $OPENAI_API_KEY` to check) — the bridge inherits the starting shell's environment only, and every terminal window is its own environment. Export it, then restart the bridge **in that same terminal**.
 - `codex CLI not found: 'codex' …` / `agent command not found: '…'` — the agent binary isn't installed or isn't on PATH; install it, or point at it with `--codex-bin` / a different command.
 - No approval events in codex mode — you didn't start with `--approval on-request`.
 - An old conversation errors after you swapped the agent behind the bridge — session ids are agent-private (a codex thread id is not a claude session id); clear the chat history and start fresh.
