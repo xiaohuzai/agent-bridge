@@ -43,9 +43,9 @@ export OPENAI_API_KEY=sk-...   # ② 或 OpenAI API key
 # 1. 拿到桥——零依赖，clone 下来就能跑，无需 npm install
 git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 
-# 2. 启动——codex，或任何 ACP v2 智能体
+# 2. 启动——codex，或任何 ACP v2 智能体（各 agent 的安装与登录详见 docs/agents.zh-CN.md）
 node cli.mjs codex --port 3948 --approval on-request   # codex（走它的 app-server）；审批事件路由给客户端
-node cli.mjs acp -- claude-code-acp      # 接 claude code？一行命令。
+node cli.mjs acp -- claude-code-acp      # 接 claude code——注意需先装 claude-code-acp 翻译壳
 node cli.mjs acp -- gemini --experimental-acp   # 任何 ACP agent 命令都行
 
 # 3. 对话——一条 curl 就是一个完整客户端
@@ -214,7 +214,7 @@ node cli.mjs acp -- <agent 命令…>     # 任何 ACP v2 智能体；`--` 之�
 | 图片 | 直接吃 data:/https URL | 须 agent 声明 `promptCapabilities.image`，否则降级为文本 |
 | 适用 | codex | claude code、gemini、opencode…… 任何说 ACP v2 的 agent |
 
-个别事件的可选字段随 agent 略有差异（如 `approval` 事件里 codex 带 `cwd`、ACP 带它自己的选项列表），核心字段与语义完全一致。
+个别事件的可选字段随 agent 略有差异（如 `approval` 事件里 codex 带 `cwd`、ACP 带它自己的选项列表），核心字段与语义完全一致。**每个 agent 的安装、登录与专属注意事项**（比如接 claude code 需要先装 `claude-code-acp` 翻译壳）见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md)。
 
 **说 ACP v2？零代码**——`node cli.mjs acp -- <命令>` 拉起任意 ACP 智能体，把回合、流式、工具调用、审批、用量全部映射到上面的协议：claude code 用 `acp -- claude-code-acp`，gemini 用 `acp -- gemini --experimental-acp`，opencode、kimi、qwen 等同理。图片须 agent 声明 `promptCapabilities.image`，否则自动降级为文本提示（绝不落盘）。目前 ACP v2 兼容由 CI 中的脚本化假 agent 演练；对真实 claude-code-acp / gemini 的实机验证在路线图上。
 
