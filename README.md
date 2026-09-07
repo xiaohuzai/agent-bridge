@@ -66,6 +66,7 @@ Four rules are the whole client contract:
 GET  /health                   → {ok:true, agent, version, proto:1}
 GET  /sessions                 → {ok:true, sessions:[{sessionId, busy}]}   ← recover ids after a client restart
 POST /turns                    → SSE: start / delta / tool / approval / usage / done / aborted / error
+                               body: {text, sessionId?, images?} — images are https:/data: URLs (≤8)
 POST /approvals/:requestId     → {ok:true}
 ```
 
@@ -146,7 +147,7 @@ npm test          # real adapter + real HTTP server vs a scripted fake codex
 
 ## Known limitations (v1)
 
-- Images are not forwarded to the agent yet.
+- Total request size is capped at 4MB (bounds inline base64 images to a few MB).
 - codex's `request_user_input` tool is declined by the bridge (the turn can proceed without it).
 - A network-flake retry re-submits the whole prompt — the agent may run a turn twice.
 - Turns are live-only: a client that disconnects cannot rejoin the same turn.
