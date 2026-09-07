@@ -43,9 +43,11 @@ export OPENAI_API_KEY=sk-...   # ② 或 OpenAI API key（无需订阅、无需 
 #    wire_api = "responses"，仅说 chat-completions 的端点会被 codex 本身拒绝
 #    （桥不限制这个）。
 
-# 1. 启动桥
-npx browsa-agent-bridge codex --port 3948      # npm 包
-node cli.mjs codex --port 3948                 # 或直接跑仓库检出
+# 1. 启动桥——codex，或任何支持 Agent Client Protocol v2 的智能体
+npx browsa-agent-bridge codex --port 3948          # codex（走它的 app-server）
+node cli.mjs acp -- claude-code-acp --port 3948    # 任何 ACP agent 命令都行：
+node cli.mjs acp -- gemini --experimental-acp     # claude-code-acp、codex-acp、
+                                                   # opencode、hermes、kimi、qwen…
 
 # 2. 对话——一条 curl 就是一个完整的客户端：
 curl -N -X POST http://127.0.0.1:3948/turns \
@@ -131,7 +133,9 @@ browsa-agent-bridge codex [options]
 
 ## 接入新 agent
 
-[`adapters/`](./adapters) 里一个文件一个 agent，实现四个方法——`startTurn`、`interrupt`、`respondApproval`、`stop`——再到 `cli.mjs` 注册一行。claude code 是下一个 adapter（`claude -p --input-format stream-json --output-format stream-json` + `--resume`）；没有审批或流式的 agent 也能用——协议会优雅降级（全文随 `done` 一次到达，安全沙箱默认生效）。
+**说 ACP v2？那已经不用接了**——`agent-bridge acp -- <你的 agent 命令>` 就是通用 adapter：stdio 拉起任意 ACP 智能体，把回合、流式增量、工具调用、用量、权限请求全部映射到桥的核心。零代码。
+
+原生协议比 ACP 更丰富的 agent 才值得写专用 adapter（[`adapters/`](./adapters) 一个文件，实现 `startTurn` / `interrupt` / `respondApproval` / `stop` 四个方法 + `cli.mjs` 注册一行）——codex 就有一个，因为它的 app-server 协议实测强于走 codex-acp（审批词表、每回合沙箱策略都是真机实捕的）。没有审批或流式的 agent 也能用——协议会优雅降级（全文随 `done` 一次到达，安全沙箱默认生效）。
 
 ## 平台支持
 
@@ -151,6 +155,7 @@ npm test          # 真 adapter + 真 HTTP server，对打一个脚本化的假 
 - codex 的 `request_user_input` 工具会被桥拒绝（回合可继续）。
 - 网络抖动触发的重试会重发整条 prompt——agent 侧可能把一个回合跑两遍。
 - 回合是 live-only 的：断开的客户端无法重新加入同一个回合。
+- 通用 ACP adapter 面向 ACP **v2**（依官方 schema 实现），CI 里以脚本化假 agent 演练；对真实 claude-code-acp / gemini 的实机验证是下一个里程碑。
 
 ## 许可
 
