@@ -18,9 +18,8 @@
 
 ```mermaid
 flowchart LR
-    C["any client<br/>extension · editor · script · your UI"] -->|"HTTP + SSE"| B["agent-bridge<br/>zero-dependency Node daemon"]
-    B -->|"JSON-RPC over stdio"| K["codex app-server<br/>(codex CLI)"]
-    B -->|"ACP v1–v2 over stdio"| A["claude-agent-acp → claude code<br/>or any ACP v2 agent"]
+    C["any client<br/>extension · editor · script · your UI"] -->|"HTTP + SSE"| B["agent-bridge"]
+    B -->|drives| A["coding agents<br/>codex · claude code · …"]
 ```
 
 One small, versioned HTTP+SSE protocol (v1) in front; the agent keeps its own transcript, sessions and approvals behind it. Change one line of config to change the agent — client code never notices.
