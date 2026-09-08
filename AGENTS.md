@@ -29,7 +29,7 @@ fronts (what clients speak)              core            adapters (what agents s
    Streamable HTTP per the official RFD)
 ```
 
-`cli.mjs` picks an adapter: `agent-bridge codex [options]` or `agent-bridge acp -- <command…>` (everything after `--` belongs to the agent command). The server is adapter-agnostic — it only calls four methods: `startTurn({text, sessionId, images, onEvent})`, `interrupt(sessionId)`, `respondApproval(requestId, choice)`, `stop()`. `onEvent` emits `{type: 'start'|'delta'|'tool'|'approval'|'usage'|'done'|'aborted'|'error'}`.
+`cli.mjs` picks an adapter: `agent-bridge codex [options]`, `agent-bridge acp -- <command…>` (everything after `--` belongs to the agent command), or `agent-bridge serve --config agents.json` — many bridges in one process, one per known agent, each on its own port + api key. The agent NAME registry (`agents-registry.mjs`) is the single source of truth for serve configs and client-side pickers (browsa mirrors it); long-tail agents join by adding a line there, not by loosening the config. The auth flag is `--api-key` (`--token` kept as an alias). The server is adapter-agnostic — it only calls four methods: `startTurn({text, sessionId, images, onEvent})`, `interrupt(sessionId)`, `respondApproval(requestId, choice)`, `stop()`. `onEvent` emits `{type: 'start'|'delta'|'tool'|'approval'|'usage'|'done'|'aborted'|'error'}`.
 
 The authoritative wire-protocol contract is the header comment of `server.mjs`. Core invariants:
 - Session ids are assigned by the adapter on the first turn and reported on the `start` event; the client stores and returns them. Sessions must survive a bridge restart (resume from the agent's own persistence).
@@ -76,7 +76,7 @@ Traps already paid for:
 - READMEs are bilingual (`README.md` EN + `README.zh-CN.md`), section-aligned — update both together.
 - The npm package (`browsa-agent-bridge`) is parked: name/description are neutralized in `package.json` but publishing is the owner's call. Do not publish without an explicit instruction.
 - The `4MB` request-body cap is deliberate (bounds inline base64 images); `images` arrays are capped at 8.
-- Security posture: loopback bind by default; `--bind` opts into non-loopback and the CLI then REQUIRES `--token` (refuses to start otherwise); the `Host` header allowlist (DNS-rebinding guard) applies only to loopback binds — remote binds are hostname-legit and gated by the token; CORS reflects loopback origins only (`--cors-origin '*'` is the explicit opt-in, to be paired with `--token`). The bridge speaks plain HTTP — TLS belongs in a reverse proxy (server.mjs sends `X-Accel-Buffering: no` so SSE streams unbuffered behind nginx/caddy).
+- Security posture: loopback bind by default; `--bind` opts into non-loopback and the CLI then REQUIRES `--api-key` (refuses to start otherwise); the `Host` header allowlist (DNS-rebinding guard) applies only to loopback binds — remote binds are hostname-legit and gated by the token; CORS reflects loopback origins only (`--cors-origin '*'` is the explicit opt-in, to be paired with `--api-key`). The bridge speaks plain HTTP — TLS belongs in a reverse proxy (server.mjs sends `X-Accel-Buffering: no` so SSE streams unbuffered behind nginx/caddy).
 
 ## Roadmap (agreed direction)
 
