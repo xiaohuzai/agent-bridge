@@ -23,7 +23,7 @@ flowchart LR
     B -->|"ACP v1–v2 over stdio"| A["claude-agent-acp → claude code<br/>or any ACP v2 agent"]
 ```
 
-One small, versioned HTTP+SSE protocol (v1) in front; the agent keeps its own transcript, sessions and approvals behind it. Change the start command to change the agent — client code never notices.
+One small, versioned HTTP+SSE protocol (v1) in front; the agent keeps its own transcript, sessions and approvals behind it. Change one line of config to change the agent — client code never notices.
 
 ## Install
 
@@ -45,7 +45,22 @@ Per-agent details, behavior notes and troubleshooting: [docs/agents.md](./docs/a
 
 ## Configure
 
-A single agent needs no config file — flags are enough (next section). To run **several agents on one machine**, write one JSON config and start them all with one command. A working starter ships with the repo:
+Every bridge — single or many — is an entry in one JSON config file; that is the only way to start the bridge. A working starter ships with the repo:
+
+```bash
+cp agents.example.json agents.json && chmod 600 agents.json
+```
+
+```json
+{
+  "bridges": [
+    { "name": "codex",  "port": 3948, "apiKey": "", "sandbox": "workspace-write", "approval": "on-request" },
+    { "name": "claude", "port": 3949, "apiKey": "" }
+  ]
+}
+```
+
+A single agent is the same thing with one entry — keep only the codex line, for example.
 
 ```bash
 cp agents.example.json agents.json && chmod 600 agents.json
@@ -71,16 +86,14 @@ cp agents.example.json agents.json && chmod 600 agents.json
 
 ## Start
 
+One command. It reads `./agents.json` by default:
+
 ```bash
-# ① one codex
-node cli.mjs codex --port 3948 --approval on-request
-# ② one claude code — or any ACP v2 agent after the `--`
-node cli.mjs acp --port 3948 -- claude-agent-acp
-# ③ several agents at once, from the config file
-node cli.mjs serve --config agents.json
+node cli.mjs serve
+# or: node cli.mjs serve --config /path/to/agents.json
 ```
 
-Every bridge prints its address and waits. Useful flags: `--port` (default 3948) · `--cwd` · `--api-key` (alias `--token`) · `--bind` (default 127.0.0.1) · `--cors-origin loopback|*` — codex only: `--sandbox read-only|workspace-write|danger-full-access`, `--network`, `--approval never|on-request|untrusted`, `--codex-bin`, `--codex-home`. Ctrl+C stops everything.
+Every bridge in the file starts and prints its address; Ctrl+C stops them all. Only two flags exist: `--config` (default `./agents.json`) and `--bind` (default `127.0.0.1`) — every other knob is a config-file field (see the table above).
 
 ## The API — four endpoints
 
@@ -140,7 +153,7 @@ Rules worth knowing:
 
 - `done` / `aborted` / `error` are the terminal events; `": ka"` lines are heartbeats — ignore them.
 - **To cancel, hang up**: closing the `/turns` connection interrupts the agent — nothing keeps running headless.
-- codex mode needs `--approval on-request` to emit `approval` events (ACP agents ask on their own); with the default `never`, commands either run inside the sandbox or are refused.
+- codex entries need `"approval": "on-request"` to emit `approval` events (ACP agents ask on their own); with the default `"never"`, commands either run inside the sandbox or are refused.
 - The session id survives bridge restarts (the agent resumes from its own storage); session ids are agent-private — pointing a client at a different agent means starting a new conversation.
 
 ### Write your own client
@@ -181,9 +194,8 @@ The authoritative contract — edge rules like first-turn session assignment and
 Three steps:
 
 ```bash
-# ① on the server — bind beyond loopback (an api key is REQUIRED; the CLI refuses otherwise)
-node cli.mjs codex --bind 0.0.0.0 --api-key $(openssl rand -hex 16) --approval on-request
-#    or serve mode: fill apiKey for EVERY entry in agents.json, then:
+# ① on the server — fill apiKey for EVERY entry in agents.json (required beyond
+#    loopback; the CLI refuses keyless entries otherwise), then bind beyond loopback:
 node cli.mjs serve --config agents.json --bind 0.0.0.0
 
 # ② in your cloud console / firewall — open the port (the bridge cannot do this for you)
