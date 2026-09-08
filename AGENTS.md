@@ -80,7 +80,7 @@ Traps already paid for:
 
 ## Roadmap (agreed direction)
 
-1. Live verification of both adapters against real agents (codex done for the wire — native adapter AND the official codex-acp shim; claude: handshake/version-negotiation/error-path verified via official claude-agent-acp in the container, real turns pending on the user's Mac — no Anthropic credentials in the dev container; gemini not planned yet).
+1. Live verification of both adapters against real agents — codex: done for the wire (native adapter AND the official codex-acp shim). claude: real turns verified on the user's Mac 2026-09-08 (streaming, session continuity, usage, approvals) via the official claude-agent-acp; handshake/version-negotiation/error-path verified in the container; disconnect-interrupt and bridge-restart resume test-covered but not exercised live. gemini not planned yet.
 2. ACP-over-WebSocket front (the RFD's compliance minimum is WebSocket-only servers — clients MUST support WS).
 3. Streamable HTTP profile (requires HTTP/2) + ACP stdio front (`agent-bridge acp` as a spawned agent for editors).
 4. Submit to the ACP Registry.

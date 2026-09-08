@@ -10,7 +10,7 @@ agent-bridge 对客户端只有一套接口；agent 之间的差异全部在**�
 |---|---|---|
 | codex | `codex` 模式（专用 adapter，**主推荐**） | ✅ 已验证（codex-cli 0.149.1） |
 | codex | `acp -- codex-acp`（官方壳） | ⚠️ 过桥真回合 ✅；非流式后端丢答案文本（上游缺陷，见下） |
-| claude code | `acp -- claude-agent-acp`（官方壳，主推荐） | ⏳ 握手/版本协商/错误路径已实测，真回合待 Mac 实测 |
+| claude code | `acp -- claude-agent-acp`（官方壳，主推荐） | ✅ macOS 实机 2026-09-08——真回合（流式完整）、会话连续、usage、审批流程；断连中断与桥重启续会话有测试覆盖，实机未跑 |
 | gemini | `acp -- gemini --experimental-acp` | ❓ 仅 schema 级 |
 | pi / opencode / kimi / qwen 等 | `acp -- <各自的 ACP 命令>` | ❓ 仅 schema 级 |
 
