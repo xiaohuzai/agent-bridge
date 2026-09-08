@@ -16,6 +16,12 @@
 //     ]
 //   }
 //
+// `acp: true` on an entry opts it into the ACP-over-WebSocket FRONT: the
+// bridge additionally speaks ACP v1 at `ws://<host>:<port>/acp` so ACP
+// clients (editors, acpx, acp-ui, …) can attach without learning the v1
+// wire — see acp-front-ws.mjs and docs/design-acp-front.zh-CN.md. Default
+// off; the v1 HTTP+SSE surface (server.mjs) is untouched either way.
+//
 // apiKey: empty or omitted = keyless (fine on loopback binds; non-loopback
 // binds refuse keyless entries, same posture as single-agent mode).
 //
@@ -28,6 +34,7 @@ import { homedir } from 'node:os';
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createBridgeServer } from './server.mjs';
+import { attachAcpFront } from './acp-front-ws.mjs';
 import { CodexAppServerAdapter } from './adapters/codex-app-server.mjs';
 import { AcpStdioAdapter } from './adapters/acp-stdio.mjs';
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
@@ -98,6 +105,7 @@ export function validateConfig(cfg) {
     if (b.sandbox !== undefined && !SANDBOXES.includes(b.sandbox)) errors.push(`${at}: "sandbox" must be one of ${SANDBOXES.join(' | ')}`);
     if (b.approval !== undefined && !APPROVALS.includes(b.approval)) errors.push(`${at}: "approval" must be one of ${APPROVALS.join(' | ')}`);
     if (b.corsOrigin !== undefined && b.corsOrigin !== '*') errors.push(`${at}: "corsOrigin" must be "*" or omitted (loopback only)`);
+    if (b.acp !== undefined && typeof b.acp !== 'boolean') errors.push(`${at}: "acp" must be a boolean (opts the bridge into the ACP-over-WebSocket front at /acp)`);
 
     seenNames.add(name);
     seenPorts.add(port);
@@ -126,6 +134,7 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
   const running = [];
   const stop = () => {
     for (const r of running) {
+      try { r.front?.dispose(); } catch (_) {} // WS sockets first: Node's connection accounting does not cover upgraded sockets
       try { r.adapter.stop(); } catch (_) {}
       try { r.server.closeAllConnections?.(); } catch (_) {}
       try { r.server.close(); } catch (_) {}
@@ -166,6 +175,19 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
         bindAddress: bind,
         log: (m) => log(`${label} ${m}`),
       });
+      // Opt-in ACP front: an `upgrade` listener on the SAME server, filtered
+      // to path /acp. Purely additive — v1 requests never see it.
+      let front = null;
+      if (b.acp) {
+        front = attachAcpFront(server, {
+          adapter,
+          agent,
+          version,
+          token: b.apiKey,
+          bindAddress: bind,
+          log: (m) => log(`${label} ${m}`),
+        });
+      }
       await new Promise((resolve, reject) => {
         const fail = (err) => {
           server.removeListener('error', onError);
@@ -181,7 +203,7 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
         const why = err.code === 'EADDRINUSE' ? `port ${b.port} is already in use` : err.message;
         throw new Error(`bridge "${b.name}" failed to start: ${why}`);
       });
-      running.push({ name: b.name, adapter, server, port: b.port, hasKey: !!b.apiKey });
+      running.push({ name: b.name, adapter, server, port: b.port, hasKey: !!b.apiKey, acp: !!b.acp, front });
     }
   } catch (e) {
     stop();
@@ -190,7 +212,7 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
   return {
     banner: [
       `agent-bridge serve: ${running.length} bridge${running.length === 1 ? '' : 's'} on http://${bind === '0.0.0.0' ? '0.0.0.0 (all interfaces)' : bind}`,
-      ...running.map((r) => `  ${r.name.padEnd(10)} :${r.port}  (${r.hasKey ? 'apiKey required' : 'no api key — loopback only'})`),
+      ...running.map((r) => `  ${r.name.padEnd(10)} :${r.port}  (${r.hasKey ? 'apiKey required' : 'no api key — loopback only'})${r.acp ? `  ·  acp: ws://${bind === '0.0.0.0' ? '127.0.0.1' : bind}:${r.port}/acp` : ''}`),
       ...(LOOPBACKS.includes(bind) ? [] : ['  WARNING   : non-loopback bind — every request must carry the apiKey, and traffic is plain HTTP until you put a TLS reverse proxy in front.']),
     ],
     adapters: running.map((r) => r.adapter),

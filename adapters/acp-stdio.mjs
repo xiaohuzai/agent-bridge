@@ -238,8 +238,8 @@ export class AcpStdioAdapter {
         t.finished = true;
         const stop = u.stopReason;
         if (stop === 'cancelled') t.events?.({ type: 'aborted' });
-        else if (stop === 'refusal') t.events?.({ type: 'done', full: t.full, usage: t.usage, finishReason: '' });
-        else t.events?.({ type: 'done', full: t.full, usage: t.usage, finishReason: stop === 'max_tokens' ? 'length' : '' });
+        else if (stop === 'refusal') t.events?.({ type: 'done', full: t.full, usage: t.usage, finishReason: '', stopReason: 'refusal' });
+        else t.events?.({ type: 'done', full: t.full, usage: t.usage, finishReason: stop === 'max_tokens' ? 'length' : '', stopReason: stop });
         break;
       }
       default:
@@ -287,6 +287,20 @@ export class AcpStdioAdapter {
     return sid;
   }
 
+  /** Create a session WITHOUT a turn. The ACP WebSocket front (acp-front-ws)
+   * calls this so `session/new` can return a real, restart-resumable id: the
+   * id IS the agent-side ACP session id, so a later prompt after a bridge
+   * restart takes the normal session/resume path. Registers a settled stub
+   * entry so the follow-up startTurn skips a redundant resume round-trip. */
+  async createSession() {
+    await this.ensureChild();
+    const sid = await this.#ensureSession(undefined);
+    if (!this.sessions.has(sid)) {
+      this.sessions.set(sid, { sessionId: sid, full: '', finished: true, promptInFlight: false, events: null });
+    }
+    return sid;
+  }
+
   async startTurn({ text, sessionId, images, onEvent }) {
     const sid = await this.#ensureSession(sessionId);
     const t = this.sessions.get(sid) || {};
@@ -329,7 +343,7 @@ export class AcpStdioAdapter {
       if (!entry.finished) {
         entry.finished = true;
         if (r.stopReason === 'cancelled') onEvent({ type: 'aborted' });
-        else onEvent({ type: 'done', full: entry.full, usage: entry.usage, finishReason: r.stopReason === 'max_tokens' ? 'length' : '' });
+        else onEvent({ type: 'done', full: entry.full, usage: entry.usage, finishReason: r.stopReason === 'max_tokens' ? 'length' : '', stopReason: r.stopReason });
       }
     }
     return { sessionId: sid, turnId: '' };

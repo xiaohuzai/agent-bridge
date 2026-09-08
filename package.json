@@ -11,6 +11,8 @@
     "cli.mjs",
     "server.mjs",
     "serve.mjs",
+    "wire-ws.mjs",
+    "acp-front-ws.mjs",
     "agents-registry.mjs",
     "agents.example.json",
     "adapters/",
