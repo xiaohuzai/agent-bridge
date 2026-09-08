@@ -91,6 +91,10 @@ npm i -g @agentclientprotocol/claude-agent-acp   # ACP 翻译壳（ACP 官方组
 
 这些都还没实机验证——把你的结果（好的坏的）带回来，我们更新表格。
 
+## ACP 客户端（门）
+
+每个条目还可以额外直接服务 ACP 客户端：写上 `"acp": true`，桥就在 `ws://<host>:<port>/acp` 说 ACP v1（`initialize` → `session/new` → `session/prompt`；审批请求以 `session/request_permission` 原样送达客户端，带 agent 自己的选项）。同端口、与 v1 相同的 apiKey 与 Host 规则；客户端 `session/new` 里的 cwd 会被忽略——agent 跑在条目配置的 `cwd`。设计说明见 [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md)。
+
 ## 故障排查
 
 - **报问题时把桥终端里 `[acp]` / `[bridge]` 开头的行一起贴上**——它们覆盖了握手协商、会话创建/恢复、每回合的 prompt 与响应（含 stopReason 和 usage）、审批请求、以及被忽略的未知通知，能直接定位问题在哪一层。

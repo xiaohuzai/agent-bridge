@@ -69,6 +69,7 @@ cp agents.example.json agents.json && chmod 600 agents.json
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
 | `cwd` | 可选；默认 = 起 serve 的所在目录（`~` 与相对路径自动解析） |
+| `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见下一节） |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优 |
 
 **为什么要有注册表？** ACP 生态各家的实现参差不齐——协议版本、图片/审批/流式支持各异，并没有一个大家都遵循的框架。一个名字要进入注册表，必须先过桥上的真实回合验证——所以「已支持」是本仓库背书的宣称，而不是碰运气。接入新 agent = 验证一个回合，加一行。
@@ -83,6 +84,10 @@ node cli.mjs serve
 ```
 
 配置里的每个桥都会启动并打印自己的地址；Ctrl+C 全停。旗标只有两个：`--config`（默认 `./agents.json`）和 `--bind`（默认 `127.0.0.1`）——其余旋钮全是配置文件字段（见上表）。
+
+## ACP 客户端（可选）
+
+除四个 v1 端点外，桥还可以直接说 Agent Client Protocol：条目里写 `"acp": true`，ACP 客户端（Zed 系编辑器、`acpx`、acp-ui……）即可连接 `ws://<host>:<port>/acp`——同端口、同一把 apiKey、同样的审批流。上面的 v1 接口不受影响；这是默认关闭的可选门。设计细节见 [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md)。
 
 ## 接口——四个端点
 
