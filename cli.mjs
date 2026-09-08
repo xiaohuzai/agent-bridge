@@ -16,6 +16,7 @@
 // Then point any client of the wire protocol (see server.mjs header) at
 // http://127.0.0.1:3948.
 
+import { resolve } from 'node:path';
 import { createBridgeServer } from './server.mjs';
 import { CodexAppServerAdapter } from './adapters/codex-app-server.mjs';
 import { AcpStdioAdapter } from './adapters/acp-stdio.mjs';
@@ -133,7 +134,7 @@ if (mode === 'serve') {
     }
     adapter = new AcpStdioAdapter({
       command: agentCommand,
-      cwd: args.cwd || process.cwd(),
+      cwd: resolve(args.cwd || process.cwd()),
       log: (m) => console.error(m),
     });
     agent = `acp:${agentCommand[0]}`;
@@ -141,7 +142,7 @@ if (mode === 'serve') {
     adapter = new CodexAppServerAdapter({
       codexBin: args.codexBin || 'codex',
       codexHome: args.codexHome,
-      cwd: args.cwd || process.cwd(),
+      cwd: resolve(args.cwd || process.cwd()),
       sandbox: args.sandbox,
       network: !!args.network,
       approval: args.approval,

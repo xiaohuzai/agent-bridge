@@ -254,7 +254,7 @@ node cli.mjs serve --config agents.json
 - **每个桥必须配 `port`；`apiKey` 回环下可选**——不写（或留空 `""`）就以无键方式跑，和单 agent 模式完全一致；加了非回环 `--bind` 才强制要 key。一个进程承载全部桥，Ctrl+C 全停。
 - **不想自己写配置？** 复制仓库里的 [`agents.example.json`](./agents.example.json)——回环下开箱即跑（`node cli.mjs serve --config agents.example.json`）；要出远端时再把 key 填上。
 - **`command: [...]` 覆盖注册表的默认命令**——比如 claude 用 `npx -y @agentclientprotocol/claude-agent-acp`、或壳装在自定义路径。agent 身份仍由 `name` 决定。
-- 每条可选：`cwd`（支持 `~/` 展开）、`sandbox`、`approval`、`network`、`codexBin`、`codexHome`、`corsOrigin: "*"`。
+- 每条可选：`cwd`（默认：起桥所在目录；支持 `~/` 展开，相对路径自动转绝对——ACP 壳拒绝相对路径）、`sandbox`、`approval`、`network`、`codexBin`、`codexHome`、`corsOrigin: "*"`。
 - 任一端口绑定失败则整体启动失败，并报出是哪个桥（不会半起半挂）。配置文件里是全部 api key——请 `chmod 600`（权限过松 serve 会警告）。
 - 可与 `--bind` 组合：`node cli.mjs serve --config agents.json --bind 0.0.0.0` 把所有桥暴露到局域网/VPN（见[远程访问](#远程访问)）。
 - 开机自启/崩溃重启**有意不做**——用 systemd unit 或 launchd 包住这一条命令即可。

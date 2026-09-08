@@ -150,6 +150,15 @@ test('serve: port conflict fails fast, names the bridge, shuts down the ones tha
   assert.equal(gone, 0, 'the earlier bridge must have been shut down');
 });
 
+test('validateConfig: cwd becomes absolute (ACP shims reject relative paths)', () => {
+  const cfg = validateConfig({ bridges: [
+    { name: 'claude', port: 1, apiKey: 'k', cwd: './sub' },
+    { name: 'codex', port: 2, apiKey: 'k' }, // omitted → the serve start directory
+  ] });
+  assert.ok(cfg.bridges[0].cwd.endsWith('/sub') && cfg.bridges[0].cwd.startsWith('/'), `relative cwd must resolve: ${cfg.bridges[0].cwd}`);
+  assert.ok(cfg.bridges[1].cwd.startsWith('/'), `default cwd must be absolute: ${cfg.bridges[1].cwd}`);
+});
+
 test('serve: keyless entry (empty apiKey) runs unauthenticated on loopback', async () => {
   const p1 = await freePort();
   const cfg = validateConfig({ bridges: [{ name: 'claude', port: p1, apiKey: '', command: [FAKE_ACP] }] });

@@ -255,7 +255,7 @@ Rules:
 - **`port` is required per bridge; `apiKey` is optional on loopback** — omit it (or leave `""`) to run keyless, exactly like single-agent mode; it becomes required the moment you add a non-loopback `--bind`. One process hosts all bridges, Ctrl+C stops them all.
 - **Don't want to author a file?** Copy [`agents.example.json`](./agents.example.json) — it runs as-is on loopback (`node cli.mjs serve --config agents.example.json`); fill the keys in when you go remote.
 - **`command: [...]` overrides the registry's default spawn** — e.g. claude via `npx -y @agentclientprotocol/claude-agent-acp`, or a shim at a custom path. The agent stays whatever `name` says.
-- Optional per entry: `cwd` (`~/` expands), `sandbox`, `approval`, `network`, `codexBin`, `codexHome`, `corsOrigin: "*"`.
+- Optional per entry: `cwd` (default: the directory you started serve from; `~/` expands, relative paths resolve to absolute — ACP shims reject relative), `sandbox`, `approval`, `network`, `codexBin`, `codexHome`, `corsOrigin: "*"`.
 - A port that fails to bind fails the whole start, naming the bridge (no half-started set). The config file holds every api key — `chmod 600` it (serve warns on loose permissions).
 - Combines with `--bind`: `node cli.mjs serve --config agents.json --bind 0.0.0.0` puts every bridge on the LAN/VPN (see [Remote access](#remote-access)).
 - Boot persistence / crash restart is deliberately out of scope — wrap the one command in a systemd unit or launchd job.
