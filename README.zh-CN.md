@@ -18,9 +18,8 @@
 
 ```mermaid
 flowchart LR
-    C["任何客户端<br/>扩展 · 编辑器 · 脚本 · 你的 UI"] -->|"HTTP + SSE"| B["agent-bridge<br/>零依赖 Node 守护进程"]
-    B -->|"stdio JSON-RPC"| K["codex app-server<br/>（codex CLI）"]
-    B -->|"stdio ACP v1–v2"| A["claude-agent-acp → claude code<br/>或任何 ACP v2 智能体"]
+    C["任何客户端<br/>扩展 · 编辑器 · 脚本 · 你的 UI"] -->|"HTTP + SSE"| B["agent-bridge"]
+    B -->|驱动| A["编码智能体<br/>codex · claude code · …"]
 ```
 
 前面是一套小的、带版本的 HTTP+SSE 协议（v1）；智能体在后面自管对话记录、会话与审批。改一行配置就换一个智能体——客户端代码毫无感知。
