@@ -74,7 +74,8 @@ options:
 serve-only:
   --config FILE         JSON config: {"bridges":[…]} — name must be a known
                         agent (see agents-registry.mjs); every bridge needs
-                        port + apiKey; command: overrides the default spawn
+                        a port; apiKey is optional on loopback and required
+                        for non-loopback binds; command overrides the spawn
 codex-specific:
   --sandbox MODE        read-only | workspace-write | danger-full-access (default read-only)
   --network             allow network access inside a workspace-write sandbox

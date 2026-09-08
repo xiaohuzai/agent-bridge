@@ -1,8 +1,8 @@
 // agent-bridge/serve.mjs — `agent-bridge serve --config agents.json`: start
-// MANY bridges (one per agent, each on its own port with its own api key)
-// in one process. Each entry is a full, isolated bridge: its own adapter,
-// its own agent subprocess, its own sessions. Process-level supervision
-// (boot persistence, crash restart) belongs to systemd/launchd, not here.
+// MANY bridges (one per agent, each on its own port) in one process. Each
+// entry is a full, isolated bridge: its own adapter, its own agent
+// subprocess, its own sessions. Process-level supervision (boot persistence,
+// crash restart) belongs to systemd/launchd, not here.
 //
 // Config shape (JSON; `name` must be a KNOWN_AGENTS name):
 //
@@ -10,11 +10,14 @@
 //     "bridges": [
 //       { "name": "codex",  "port": 3948, "apiKey": "…", "cwd": "~/work",
 //         "sandbox": "workspace-write", "approval": "on-request" },
-//       { "name": "claude", "port": 3949, "apiKey": "…", "cwd": "~/work" },
+//       { "name": "claude", "port": 3949, "apiKey": "", "cwd": "~/work" },
 //       { "name": "claude2","port": 3950, "apiKey": "…", "cwd": "~/other",
 //         "command": ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] }
 //     ]
 //   }
+//
+// apiKey: empty or omitted = keyless (fine on loopback binds; non-loopback
+// binds refuse keyless entries, same posture as single-agent mode).
 //
 // Resolution order for the spawn command: explicit `command` > registry
 // default > error. Everything else is per-entry validation with all errors
@@ -81,7 +84,7 @@ export function validateConfig(cfg) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) errors.push(`${at}: "port" must be an integer 1–65535`);
     else if (seenPorts.has(port)) errors.push(`${at}: duplicate port ${port}`);
 
-    if (typeof b.apiKey !== 'string' || !b.apiKey.trim()) errors.push(`${at}: "apiKey" is required in serve mode (every bridge gets its own)`);
+    if (b.apiKey !== undefined && typeof b.apiKey !== 'string') errors.push(`${at}: "apiKey" must be a string (empty or omitted = keyless, loopback only)`);
 
     if (b.command !== undefined) {
       if (!Array.isArray(b.command) || !b.command.length || b.command.some((c) => typeof c !== 'string' || !c.trim())) {
@@ -97,7 +100,11 @@ export function validateConfig(cfg) {
 
     seenNames.add(name);
     seenPorts.add(port);
-    out.push({ ...b, cwd: expandHome(b.cwd) });
+    out.push({
+      ...b,
+      cwd: expandHome(b.cwd),
+      apiKey: typeof b.apiKey === 'string' && b.apiKey.trim() ? b.apiKey.trim() : undefined,
+    });
   });
   if (errors.length) throw new Error(`invalid config:\n  - ${errors.join('\n  - ')}`);
   return { bridges: out };
@@ -106,6 +113,12 @@ export function validateConfig(cfg) {
 /** Start every bridge in the config. Throws (after stopping whatever did
  * start) if any port fails to bind. Returns a handle with a stop(). */
 export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', log = () => {} } = {}) {
+  // Keyless entries are fine on loopback, refused the moment the serve goes
+  // beyond the machine — same posture as single-agent mode.
+  const keyless = cfg.bridges.filter((b) => !b.apiKey).map((b) => b.name);
+  if (!LOOPBACKS.includes(bind) && keyless.length) {
+    throw new Error(`bridge(s) without apiKey: ${keyless.join(', ')} — a key is required when binding non-loopback (omit --bind to stay loopback)`);
+  }
   const running = [];
   const stop = () => {
     for (const r of running) {
@@ -164,7 +177,7 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
         const why = err.code === 'EADDRINUSE' ? `port ${b.port} is already in use` : err.message;
         throw new Error(`bridge "${b.name}" failed to start: ${why}`);
       });
-      running.push({ name: b.name, adapter, server, port: b.port });
+      running.push({ name: b.name, adapter, server, port: b.port, hasKey: !!b.apiKey });
     }
   } catch (e) {
     stop();
@@ -173,7 +186,7 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
   return {
     banner: [
       `agent-bridge serve: ${running.length} bridge${running.length === 1 ? '' : 's'} on http://${bind === '0.0.0.0' ? '0.0.0.0 (all interfaces)' : bind}`,
-      ...running.map((r) => `  ${r.name.padEnd(10)} :${r.port}  (apiKey required)`),
+      ...running.map((r) => `  ${r.name.padEnd(10)} :${r.port}  (${r.hasKey ? 'apiKey required' : 'no api key — loopback only'})`),
       ...(LOOPBACKS.includes(bind) ? [] : ['  WARNING   : non-loopback bind — every request must carry the apiKey, and traffic is plain HTTP until you put a TLS reverse proxy in front.']),
     ],
     adapters: running.map((r) => r.adapter),
