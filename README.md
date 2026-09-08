@@ -87,7 +87,12 @@ Every bridge in the file starts and prints its address; Ctrl+C stops them all. O
 
 ## ACP clients (optional)
 
-Besides the four v1 endpoints, a bridge can also speak the Agent Client Protocol itself: set `"acp": true` on the entry and ACP clients (Zed-style editors, `acpx`, acp-ui, …) connect to `ws://<host>:<port>/acp` — same port, same api key, same approval flow. The v1 API above is unchanged; this is an opt-in extra door, off by default. Design details: [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md) (zh-CN).
+Besides the four v1 endpoints, a bridge can also speak the Agent Client Protocol itself — in two ways:
+
+- **Remote**: set `"acp": true` on the entry and ACP clients connect to `ws://<host>:<port>/acp` — same port, same api key, same approval flow. The v1 API above is unchanged; this is an opt-in extra door, off by default.
+- **Spawned**: `node cli.mjs acp <entry-name>` presents that config entry as an ACP v1 agent on stdio — the door for clients that launch agents as local commands (Zed, vscode-acp, …). Protocol on stdout, logs on stderr, no port opened.
+
+Design details: [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md) (zh-CN).
 
 ## The API — four endpoints
 

@@ -1,7 +1,7 @@
 {
   "name": "browsa-agent-bridge",
   "version": "0.1.0",
-  "description": "Local daemon that turns CLI coding agents (codex, claude code, … any ACP agent) into an HTTP+SSE chat backend any client can drive — plus an opt-in ACP-over-WebSocket endpoint for ACP-native clients. Zero dependencies.",
+  "description": "Local daemon that turns CLI coding agents (codex, claude code, … any ACP agent) into an HTTP+SSE chat backend any client can drive — plus opt-in ACP doors: a WebSocket endpoint for ACP clients and a spawnable stdio agent mode. Zero dependencies.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -12,7 +12,9 @@
     "server.mjs",
     "serve.mjs",
     "wire-ws.mjs",
+    "acp-front.mjs",
     "acp-front-ws.mjs",
+    "acp-front-stdio.mjs",
     "agents-registry.mjs",
     "agents.example.json",
     "adapters/",

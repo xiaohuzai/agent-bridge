@@ -1,6 +1,6 @@
 # ACP front 设计稿（WS 优先）
 
-状态：**已实现**（2026-09-08，WS profile 随 `wire-ws.mjs` + `acp-front-ws.mjs` 交付；§9 的决定点 1/2/4 按建议落地，3 为记录在案的已知缺口）。战略背景见 AGENTS.md「Roadmap (dual-door strategy)」：v1 是内置极简门（冻结），ACP 是公众门。本稿是第 2 步「ACP-over-WebSocket front」的设计。
+状态：**已实现**（2026-09-08）。WS profile 随 `wire-ws.mjs` + `acp-front-ws.mjs` 交付；stdio 门（`acp-front.mjs` 传输无关会话 + `acp-front-stdio.mjs`，`agent-bridge acp <条目>` 作为可被编辑器 spawn 的 ACP agent）随后交付。§9 的决定点 1/2/4 按建议落地，3 为记录在案的已知缺口。战略背景见 AGENTS.md「Roadmap (dual-door strategy)」：v1 是内置极简门（冻结），ACP 是公众门。
 
 ---
 

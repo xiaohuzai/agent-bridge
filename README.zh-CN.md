@@ -87,7 +87,12 @@ node cli.mjs serve
 
 ## ACP 客户端（可选）
 
-除四个 v1 端点外，桥还可以直接说 Agent Client Protocol：条目里写 `"acp": true`，ACP 客户端（Zed 系编辑器、`acpx`、acp-ui……）即可连接 `ws://<host>:<port>/acp`——同端口、同一把 apiKey、同样的审批流。上面的 v1 接口不受影响；这是默认关闭的可选门。设计细节见 [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md)。
+除四个 v1 端点外，桥还可以直接说 Agent Client Protocol——两种方式：
+
+- **远程**：条目里写 `"acp": true`，ACP 客户端连接 `ws://<host>:<port>/acp`——同端口、同一把 apiKey、同样的审批流。上面的 v1 接口不受影响；这是默认关闭的可选门。
+- **被 spawn**：`node cli.mjs acp <条目名>` 把该配置条目变成 stdio 上的 ACP v1 agent——这是给"把 agent 当本地命令启动"的客户端（Zed、vscode-acp……）用的门。stdout 只走协议，日志走 stderr，不开任何端口。
+
+设计细节见 [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md)。
 
 ## 接口——四个端点
 

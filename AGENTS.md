@@ -25,11 +25,13 @@ fronts (what clients speak)              core            adapters (what agents s
 ├── server.mjs  — wire protocol v1  ──►  sessions/  ◄── adapters/codex-app-server.mjs
 │   HTTP+SSE: /health /sessions          turns/          (codex app-server JSON-RPC)
 │   /turns /approvals/:id                approvals       adapters/acp-stdio.mjs
-└── (planned: ACP WebSocket +                            (ANY ACP v2 agent command)
-   Streamable HTTP per the official RFD)
+├── acp-front-ws.mjs — ACP v1 over                       (ANY ACP v2 agent command)
+│   WebSocket at /acp (opt-in "acp": true)
+└── acp-front-stdio.mjs — ACP v1 over stdio
+    (`agent-bridge acp <entry>` — the bridge as a spawnable agent)
 ```
 
-`cli.mjs` has ONE mode: `agent-bridge serve [--config agents.json] [--bind ADDR]` — every bridge (single or many) is an entry in the config file, one per known agent, each on its own port (apiKey optional on loopback, required for non-loopback binds; `agents.example.json` ships as a working starter). The agent NAME registry (`agents-registry.mjs`) is the single source of truth for serve configs and client-side pickers (browsa mirrors it); long-tail agents join by adding a line there, not by loosening the config. Auth is the per-bridge `apiKey` config field. The server is adapter-agnostic — it only calls four methods: `startTurn({text, sessionId, images, onEvent})`, `interrupt(sessionId)`, `respondApproval(requestId, choice)`, `stop()`. `onEvent` emits `{type: 'start'|'delta'|'tool'|'approval'|'usage'|'done'|'aborted'|'error'}`.
+`cli.mjs` has two modes over the same config file: `serve [--config agents.json] [--bind ADDR]` (default) starts every bridge — one per known agent, each on its own port (apiKey optional on loopback, required for non-loopback binds; `agents.example.json` ships as a working starter) — and `acp <entry> [--config FILE]` spawns ONE config entry as an ACP v1 agent on stdio (for clients that launch agents as local commands; stdout = protocol only, logs = stderr, no port opened). The agent NAME registry (`agents-registry.mjs`) is the single source of truth for serve configs and client-side pickers (browsa mirrors it); long-tail agents join by adding a line there, not by loosening the config. Auth is the per-bridge `apiKey` config field (serve/WS only — the stdio door is local by construction). The server is adapter-agnostic — it only calls four methods: `startTurn({text, sessionId, images, onEvent})`, `interrupt(sessionId)`, `respondApproval(requestId, choice)`, `stop()`. `onEvent` emits `{type: 'start'|'delta'|'tool'|'approval'|'usage'|'done'|'aborted'|'error'}`.
 
 The authoritative wire-protocol contract is the header comment of `server.mjs`. Core invariants:
 - Session ids are assigned by the adapter on the first turn and reported on the `start` event; the client stores and returns them. Sessions must survive a bridge restart (resume from the agent's own persistence).
@@ -85,5 +87,5 @@ Adoption strategy: the goal is broad third-party adoption. v1 stays the built-in
 
 1. Live verification of both adapters against real agents — codex: done for the wire (native adapter AND the official codex-acp shim). claude: real turns verified on the user's Mac 2026-09-08 (streaming, session continuity, usage, approvals) via the official claude-agent-acp; handshake/version-negotiation/error-path verified in the container; disconnect-interrupt and bridge-restart resume test-covered but not exercised live. gemini not planned yet.
 2. ACP-over-WebSocket front: per-bridge `/acp` path on the bridge's EXISTING port, opt-in via a per-bridge config flag — additive only, browsa/v1 untouched. **SHIPPED 2026-09-08** (`wire-ws.mjs` + `acp-front-ws.mjs`; the RFD's compliance minimum is WebSocket-only servers — clients MUST support WS). The streamable-HTTP profile waits for the official reference implementation (Goose).
-3. ACP stdio front (`agent-bridge acp` as a spawned agent for editors) — per-bridge granularity: each agents.json entry is one spawnable ACP agent.
+3. ACP stdio front (`agent-bridge acp` as a spawned agent for editors) — per-bridge granularity: each agents.json entry is one spawnable ACP agent. **SHIPPED 2026-09-08** (`acp-front.mjs` shared session + `acp-front-stdio.mjs`; entries may omit `port` when the config is only used for acp mode).
 4. Submit to the ACP Registry — ONLY after 3: the registry lists agents only, and the stdio front is what makes the bridge itself one.
