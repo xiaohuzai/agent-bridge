@@ -62,19 +62,6 @@ cp agents.example.json agents.json && chmod 600 agents.json
 
 A single agent is the same thing with one entry — keep only the codex line, for example.
 
-```bash
-cp agents.example.json agents.json && chmod 600 agents.json
-```
-
-```json
-{
-  "bridges": [
-    { "name": "codex",  "port": 3948, "apiKey": "", "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "" }
-  ]
-}
-```
-
 | Field | Meaning |
 |---|---|
 | `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`) |
@@ -83,6 +70,8 @@ cp agents.example.json agents.json && chmod 600 agents.json
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
 | `cwd` | optional; default = the directory you start serve from (`~` and relative paths are resolved) |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | optional, codex-specific tuning |
+
+**Why a registry?** ACP implementations across the ecosystem vary widely — protocol versions, image/permission/streaming support; there is no framework everyone follows. A name enters the registry only after a real, live-verified turn through the bridge, so "supported" is a claim this repo stands behind, not a coin flip. New agent = verify a turn, add one line.
 
 ## Start
 
