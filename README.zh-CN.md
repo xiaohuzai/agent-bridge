@@ -6,7 +6,7 @@
 
 <p align="center">
   在自己的机器上跑 CLI 编码智能体，用<em>任何</em>客户端与它对话——<br/>
-  浏览器扩展、编辑器、脚本、你自己的 UI 都行。你的订阅就是后端，不需要任何 API key。
+  浏览器扩展、编辑器、脚本、你自己的 UI 都行。你的订阅就是后端——不需要任何模型 API key。
 </p>
 
 <p align="center">
@@ -22,12 +22,12 @@
 
 ```
 任何客户端 —— 扩展 / 编辑器 / 脚本 / 你自己的 UI
-   │  普通 HTTP 到 127.0.0.1 —— POST JSON，读 SSE
+   │  普通 HTTP（默认 127.0.0.1）—— POST JSON，读 SSE
    ▼
-agent-bridge  ◄── 你在终端启动的这个进程（约 400 行，零依赖）
-   │  JSONL over stdio
-   ▼
-codex app-server  ──►  你的 ChatGPT/Codex 登录，或你自己的模型配置
+agent-bridge  ◄── 你在终端启动的这个进程（几个小文件，零依赖）
+   │  JSON-RPC over stdio
+   ├─► codex app-server  ──►  你的 ChatGPT/Codex 登录，或你自己的模型配置
+   └─► claude-agent-acp  ──►  claude code……或任何 ACP v2 智能体（gemini、opencode 等）
 ```
 
 ## 快速开始
@@ -47,6 +47,9 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 node cli.mjs codex --port 3948 --approval on-request   # codex（走它的 app-server）；审批事件路由给客户端
 node cli.mjs acp -- claude-agent-acp     # 接 claude code——需先装官方 claude-agent-acp 壳
 node cli.mjs acp -- gemini --experimental-acp   # 任何 ACP agent 命令都行
+#    ……或者用一份配置文件同时起多个（见下文「一台机器，多个智能体」）——
+#    仓库自带可直接跑的起步配置（codex + claude，回环）：
+node cli.mjs serve --config agents.example.json
 
 # 3. 对话——一条 curl 就是一个完整客户端
 curl -N -X POST http://127.0.0.1:3948/turns \
@@ -261,7 +264,7 @@ node cli.mjs serve --config agents.json
 
 ## 接入智能体
 
-**两种启动方式，一套客户端接口**——起桥的命令和旗标随 agent 而异，但起好之后，客户端面对的是同一套线缆协议：四个端点、同一事件词表、同一审批往返。browsa 等客户端不需要（也没有任何办法）区分桥后面坐的是谁：
+**三种启动方式，一套客户端接口**——`codex` 和 `acp` 各带一个 agent，`serve` 一次带一群（见 CLI 参考）。起桥的命令和旗标随 agent 而异，但起好之后，客户端面对的是同一套线缆协议：四个端点、同一事件词表、同一审批往返。browsa 等客户端不需要（也没有任何办法）区分桥后面坐的是谁：
 
 | | codex 模式 | acp 模式 |
 |---|---|---|

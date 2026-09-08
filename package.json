@@ -1,7 +1,7 @@
 {
   "name": "browsa-agent-bridge",
   "version": "0.1.0",
-  "description": "Local bridge that turns CLI agents (codex today; claude code & more next) into a localhost HTTP+SSE chat backend for any client. Zero dependencies.",
+  "description": "Local daemon that turns CLI coding agents (codex, claude code, … any ACP v2 agent) into an HTTP+SSE chat backend any client can drive. Zero dependencies.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -30,6 +30,8 @@
     "agent",
     "codex",
     "claude",
+    "acp",
+    "agent-client-protocol",
     "bridge",
     "gateway",
     "cli",
