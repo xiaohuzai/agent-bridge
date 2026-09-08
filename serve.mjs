@@ -51,8 +51,10 @@ function expandHome(p) {
   return p;
 }
 
-/** Parse + validate the config file. Throws ONE error listing ALL problems. */
-export function loadConfig(path) {
+/** Parse + validate the config file. Throws ONE error listing ALL problems.
+ * `requirePort: false` serves the `acp` stdio front, where entries don't
+ * listen on any port. */
+export function loadConfig(path, { requirePort = true } = {}) {
   let raw;
   try {
     raw = readFileSync(path, 'utf8');
@@ -65,10 +67,10 @@ export function loadConfig(path) {
   } catch (e) {
     throw new Error(`config ${path} is not valid JSON: ${e.message}`);
   }
-  return validateConfig(cfg);
+  return validateConfig(cfg, { requirePort });
 }
 
-export function validateConfig(cfg) {
+export function validateConfig(cfg, { requirePort = true } = {}) {
   const errors = [];
   if (!cfg || typeof cfg !== 'object' || !Array.isArray(cfg.bridges) || cfg.bridges.length === 0) {
     throw new Error('config must be a JSON object like {"bridges":[ … ]} with at least one entry');
@@ -88,9 +90,14 @@ export function validateConfig(cfg) {
     else if (!spec) errors.push(`${at}: unknown agent "${name}" — known agents: ${knownAgentNames().join(', ')} (long-tail agents: add a line to agents-registry.mjs)`);
     else if (seenNames.has(name)) errors.push(`${at}: duplicate name "${name}"`);
 
+    // `port` is a serve-mode concern (each bridge listens on its own port).
+    // The `acp` stdio front spawns one entry as an agent — no port involved —
+    // so entries may omit it when the config is only used that way.
     const port = b.port;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) errors.push(`${at}: "port" must be an integer 1–65535`);
-    else if (seenPorts.has(port)) errors.push(`${at}: duplicate port ${port}`);
+    if (requirePort) {
+      if (!Number.isInteger(port) || port < 1 || port > 65535) errors.push(`${at}: "port" must be an integer 1–65535`);
+      else if (seenPorts.has(port)) errors.push(`${at}: duplicate port ${port}`);
+    }
 
     if (b.apiKey !== undefined && typeof b.apiKey !== 'string') errors.push(`${at}: "apiKey" must be a string (empty or omitted = keyless, loopback only)`);
 
@@ -122,6 +129,36 @@ export function validateConfig(cfg) {
   return { bridges: out };
 }
 
+/** Construct the adapter for one validated config entry — shared by serve
+ * (one HTTP bridge per entry) and the `acp` stdio front (the entry spawned
+ * as an ACP agent by an editor). */
+export function adapterFor(b, { log = () => {} } = {}) {
+  const spec = KNOWN_AGENTS[b.name];
+  const wrappedLog = (m) => log(`[${b.name}] ${m}`);
+  if (spec.kind === 'codex') {
+    return {
+      agent: b.name,
+      adapter: new CodexAppServerAdapter({
+        codexBin: b.codexBin || 'codex',
+        codexHome: b.codexHome,
+        cwd: b.cwd || process.cwd(),
+        sandbox: b.sandbox || 'read-only',
+        network: !!b.network,
+        approval: b.approval || 'never',
+        log: wrappedLog,
+      }),
+    };
+  }
+  return {
+    agent: b.name,
+    adapter: new AcpStdioAdapter({
+      command: b.command || spec.command,
+      cwd: b.cwd || process.cwd(),
+      log: wrappedLog,
+    }),
+  };
+}
+
 /** Start every bridge in the config. Throws (after stopping whatever did
  * start) if any port fails to bind. Returns a handle with a stop(). */
 export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', log = () => {} } = {}) {
@@ -143,29 +180,7 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
   };
   try {
     for (const b of cfg.bridges) {
-      const spec = KNOWN_AGENTS[b.name];
-      const label = `[${b.name}]`;
-      let adapter;
-      let agent;
-      if (spec.kind === 'codex') {
-        adapter = new CodexAppServerAdapter({
-          codexBin: b.codexBin || 'codex',
-          codexHome: b.codexHome,
-          cwd: b.cwd || process.cwd(),
-          sandbox: b.sandbox || 'read-only',
-          network: !!b.network,
-          approval: b.approval || 'never',
-          log: (m) => log(`${label} ${m}`),
-        });
-        agent = b.name;
-      } else {
-        adapter = new AcpStdioAdapter({
-          command: b.command || spec.command,
-          cwd: b.cwd || process.cwd(),
-          log: (m) => log(`${label} ${m}`),
-        });
-        agent = b.name;
-      }
+      const { adapter, agent } = adapterFor(b, { log });
       const server = createBridgeServer({
         adapter,
         agent,
@@ -173,7 +188,7 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
         token: b.apiKey,
         corsOrigin: b.corsOrigin === '*' ? '*' : 'loopback',
         bindAddress: bind,
-        log: (m) => log(`${label} ${m}`),
+        log: (m) => log(`[${b.name}] ${m}`),
       });
       // Opt-in ACP front: an `upgrade` listener on the SAME server, filtered
       // to path /acp. Purely additive — v1 requests never see it.
@@ -185,7 +200,7 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
           version,
           token: b.apiKey,
           bindAddress: bind,
-          log: (m) => log(`${label} ${m}`),
+          log: (m) => log(`[${b.name}] ${m}`),
         });
       }
       await new Promise((resolve, reject) => {

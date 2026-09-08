@@ -96,6 +96,8 @@ None of these are live-verified yet — report your results (good or bad) and we
 
 Every entry can additionally serve ACP clients directly: add `"acp": true` and the bridge exposes `ws://<host>:<port>/acp` speaking ACP v1 (`initialize` → `session/new` → `session/prompt`; permission requests arrive as `session/request_permission` with the agent's own options). Same port, same apiKey and Host rules as v1; the client's `session/new` cwd is ignored — the agent runs in the entry's `cwd`. Design notes: [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md).
 
+Spawn-style clients that launch agents as local commands (Zed, vscode-acp, …) use the stdio door instead: `node cli.mjs acp <entry-name> [--config agents.json]` — that one entry becomes an ACP v1 agent on stdio (protocol on stdout, logs on stderr, no port opened; the entry may omit `port`).
+
 ## Troubleshooting
 
 - **When reporting a problem, include the `[acp]` / `[bridge]` lines from the bridge terminal** — they cover the handshake negotiation, session create/resume, each turn's prompt and response (with stopReason and usage), permission requests, and ignored unknown notifications, and pinpoint which layer failed.
