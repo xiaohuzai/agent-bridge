@@ -40,7 +40,8 @@ if (args.help) {
 options:
   --config FILE   JSON config: {"bridges":[…]} — name must be a known agent
                   (agents-registry.mjs); every bridge needs a port; apiKey is
-                  optional on loopback and required for non-loopback binds
+                  optional on loopback and required for non-loopback binds;
+                  "acp": true on an entry also serves ACP clients at ws://…/acp
   --bind ADDR     bind address (default 127.0.0.1; e.g. 0.0.0.0 for LAN/VPN)`);
   process.exit(0);
 }

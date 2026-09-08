@@ -75,12 +75,15 @@ Traps already paid for:
 - Commits: conventional-commit style, Chinese or English bodies both fine; squash-merge through PRs, never push to main.
 - READMEs are bilingual (`README.md` EN + `README.zh-CN.md`), section-aligned — update both together.
 - The npm package (`browsa-agent-bridge`) is parked: name/description are neutralized in `package.json` but publishing is the owner's call. Do not publish without an explicit instruction.
+- The v1 wire protocol is **FROZEN** — browsa is the pinned reference client (owner decision 2026-09-08): additive-only changes (new optional config fields/endpoints are fine; renames, removals, or event-semantic changes need a v2, never a v1 edit). New protocol surfaces (the planned ACP fronts) are separate doors on separate paths with opt-in config — they must not disturb v1 routes, events, or defaults. The existing test suite is the browsa-compatibility regression net; any change that breaks it is a v1 break.
 - The `4MB` request-body cap is deliberate (bounds inline base64 images); `images` arrays are capped at 8.
 - Security posture: loopback bind by default; `--bind` opts into non-loopback and every config entry then REQUIRES `apiKey` (the CLI refuses to start otherwise); the `Host` header allowlist (DNS-rebinding guard) applies only to loopback binds — remote binds are hostname-legit and gated by the token; CORS reflects loopback origins only (`corsOrigin: "*"` per entry is the explicit opt-in, to be paired with api keys). The bridge speaks plain HTTP — TLS belongs in a reverse proxy (server.mjs sends `X-Accel-Buffering: no` so SSE streams unbuffered behind nginx/caddy).
 
-## Roadmap (agreed direction)
+## Roadmap (dual-door strategy — owner decision 2026-09-08)
+
+Adoption strategy: the goal is broad third-party adoption. v1 stays the built-in minimal door for browsa-style clients (FROZEN — see Conventions); the PUBLIC door is ACP. The adapters already speak ACP toward agents; the fronts below let ACP clients speak it toward the bridge — third parties adopt the bridge without ever learning v1. Design draft: `docs/design-acp-front.zh-CN.md`.
 
 1. Live verification of both adapters against real agents — codex: done for the wire (native adapter AND the official codex-acp shim). claude: real turns verified on the user's Mac 2026-09-08 (streaming, session continuity, usage, approvals) via the official claude-agent-acp; handshake/version-negotiation/error-path verified in the container; disconnect-interrupt and bridge-restart resume test-covered but not exercised live. gemini not planned yet.
-2. ACP-over-WebSocket front (the RFD's compliance minimum is WebSocket-only servers — clients MUST support WS).
-3. Streamable HTTP profile (requires HTTP/2) + ACP stdio front (the bridge itself exposed as a spawned ACP agent for editors).
-4. Submit to the ACP Registry.
+2. ACP-over-WebSocket front: per-bridge `/acp` path on the bridge's EXISTING port, opt-in via a per-bridge config flag — additive only, browsa/v1 untouched. **SHIPPED 2026-09-08** (`wire-ws.mjs` + `acp-front-ws.mjs`; the RFD's compliance minimum is WebSocket-only servers — clients MUST support WS). The streamable-HTTP profile waits for the official reference implementation (Goose).
+3. ACP stdio front (`agent-bridge acp` as a spawned agent for editors) — per-bridge granularity: each agents.json entry is one spawnable ACP agent.
+4. Submit to the ACP Registry — ONLY after 3: the registry lists agents only, and the stdio front is what makes the bridge itself one.

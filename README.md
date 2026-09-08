@@ -69,6 +69,7 @@ A single agent is the same thing with one entry — keep only the codex line, fo
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
 | `cwd` | optional; default = the directory you start serve from (`~` and relative paths are resolved) |
+| `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket front (see the next section) |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | optional, codex-specific tuning |
 
 **Why a registry?** ACP implementations across the ecosystem vary widely — protocol versions, image/permission/streaming support; there is no framework everyone follows. A name enters the registry only after a real, live-verified turn through the bridge, so "supported" is a claim this repo stands behind, not a coin flip. New agent = verify a turn, add one line.
@@ -83,6 +84,10 @@ node cli.mjs serve
 ```
 
 Every bridge in the file starts and prints its address; Ctrl+C stops them all. Only two flags exist: `--config` (default `./agents.json`) and `--bind` (default `127.0.0.1`) — every other knob is a config-file field (see the table above).
+
+## ACP clients (optional)
+
+Besides the four v1 endpoints, a bridge can also speak the Agent Client Protocol itself: set `"acp": true` on the entry and ACP clients (Zed-style editors, `acpx`, acp-ui, …) connect to `ws://<host>:<port>/acp` — same port, same api key, same approval flow. The v1 API above is unchanged; this is an opt-in extra door, off by default. Design details: [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md) (zh-CN).
 
 ## The API — four endpoints
 

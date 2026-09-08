@@ -19,6 +19,9 @@
 //       data: {"type":"approval","requestId":"…","tool":"command","command":"…","cwd":"…"}
 //       data: {"type":"usage","prompt_tokens":N,"completion_tokens":M}
 //       data: {"type":"done","full":"…"}          ← turn finished normally
+//             (additive: optional "stopReason" — the raw ACP stopReason,
+//             e.g. 'refusal' — may appear on done events; v1 clients that
+//             don't read it are unaffected)
 //       data: {"type":"aborted"}                  ← turn was interrupted
 //       data: {"type":"error","message":"…"}
 //       (": ka" comment lines are keepalives during silent stretches)
