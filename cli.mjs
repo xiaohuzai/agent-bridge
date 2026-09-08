@@ -16,6 +16,21 @@
 
 import { loadConfig, startServe, configPermissionsWarning, adapterFor } from './serve.mjs';
 import { runAcpStdio } from './acp-front-stdio.mjs';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// The shipped starter lives next to this file — both in a repo checkout and
+// inside a globally installed npm package. The missing-config hint must point
+// THERE: a global install's cwd does not contain agents.example.json.
+const SHIPPED_STARTER = fileURLToPath(new URL('./agents.example.json', import.meta.url));
+
+function missingConfigHint(configPath, message) {
+  if (!/cannot read config/.test(message) || configPath !== 'agents.json') return '';
+  if (existsSync(SHIPPED_STARTER)) {
+    return `\n  No agents.json here — copy the shipped starter first:\n  cp ${SHIPPED_STARTER} agents.json`;
+  }
+  return `\n  No agents.json here — the config format is documented at https://github.com/xiaohuzai/agent-bridge#configure`;
+}
 
 function parseArgs(argv) {
   const args = {};
@@ -84,10 +99,7 @@ if (args.mode === 'acp') {
       process.exit(1);
     }
   } catch (e) {
-    const hint = /cannot read config/.test(e.message) && configPath === 'agents.json'
-      ? `\n  No agents.json here — copy the shipped starter first:  cp agents.example.json agents.json`
-      : '';
-    console.error(e.message + hint);
+    console.error(e.message + missingConfigHint(configPath, e.message));
     process.exit(1);
   }
   const { adapter, agent } = adapterFor(entry, { log: (m) => console.error(m) });
@@ -97,10 +109,7 @@ if (args.mode === 'acp') {
   try {
     running = await startServe(loadConfig(configPath), { bind, version: '1.0.0', log: (m) => console.error(m) });
   } catch (e) {
-    const hint = /cannot read config/.test(e.message) && configPath === 'agents.json'
-      ? `\n  No agents.json here — copy the shipped starter first:  cp agents.example.json agents.json`
-      : '';
-    console.error(e.message + hint);
+    console.error(e.message + missingConfigHint(configPath, e.message));
     process.exit(1);
   }
   for (const line of running.banner) console.log(line);
