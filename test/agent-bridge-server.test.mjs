@@ -27,16 +27,16 @@ let adapter;
 let port;
 let logs;
 
-async function startServer({ token, corsOrigin, codexBin } = {}) {
+async function startServer({ token, corsOrigin, codexBin, bindAddress } = {}) {
   logs = [];
   // spawn() honors shebangs on Linux, so the fake script itself is the binary.
   adapter = new CodexAppServerAdapter({
     codexBin: codexBin || FAKE_CODEX,
     log: (m) => logs.push(m),
   });
-  server = createBridgeServer({ adapter, agent: 'codex', version: 'test', token, corsOrigin, log: (m) => logs.push(m) });
+  server = createBridgeServer({ adapter, agent: 'codex', version: 'test', token, corsOrigin, bindAddress, log: (m) => logs.push(m) });
   await new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, bindAddress || '127.0.0.1', () => {
       port = server.address().port;
       resolve();
     });
@@ -112,6 +112,23 @@ test('security: non-loopback Host header is rejected with 403', async () => {
     req.end();
   });
   assert.equal(status, 403);
+});
+
+test('security: non-loopback bind skips the Host allowlist; the token gate applies', async () => {
+  await stopServer();
+  await startServer({ token: 'sekrit', bindAddress: '0.0.0.0' });
+  const raw = (headers) => new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: '/health', headers, method: 'GET' }, (res) => {
+      res.resume();
+      resolve(res.statusCode);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+  // A legit remote hostname must NOT hit the loopback 403 — the missing
+  // token is what gets it rejected (401), proving the gate is the token.
+  assert.equal(await raw({ Host: 'bridge.example.com' }), 401);
+  assert.equal(await raw({ Host: 'bridge.example.com', Authorization: 'Bearer sekrit' }), 200);
 });
 
 test('security: bearer token enforced when configured', async () => {

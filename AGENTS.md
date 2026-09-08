@@ -76,7 +76,7 @@ Traps already paid for:
 - READMEs are bilingual (`README.md` EN + `README.zh-CN.md`), section-aligned — update both together.
 - The npm package (`browsa-agent-bridge`) is parked: name/description are neutralized in `package.json` but publishing is the owner's call. Do not publish without an explicit instruction.
 - The `4MB` request-body cap is deliberate (bounds inline base64 images); `images` arrays are capped at 8.
-- Security posture: loopback bind only, `Host` header allowlist (DNS-rebinding), optional bearer token, CORS reflects loopback origins only (`--cors-origin '*'` is the explicit opt-in, to be paired with `--token`).
+- Security posture: loopback bind by default; `--bind` opts into non-loopback and the CLI then REQUIRES `--token` (refuses to start otherwise); the `Host` header allowlist (DNS-rebinding guard) applies only to loopback binds — remote binds are hostname-legit and gated by the token; CORS reflects loopback origins only (`--cors-origin '*'` is the explicit opt-in, to be paired with `--token`). The bridge speaks plain HTTP — TLS belongs in a reverse proxy (server.mjs sends `X-Accel-Buffering: no` so SSE streams unbuffered behind nginx/caddy).
 
 ## Roadmap (agreed direction)
 

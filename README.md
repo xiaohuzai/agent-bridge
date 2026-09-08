@@ -190,7 +190,8 @@ node cli.mjs acp -- <agent command…>  # any ACP v2 agent; everything after `--
 
 | Option | Meaning |
 |---|---|
-| `--port N` | listen port (default 3948, loopback only) |
+| `--port N` | listen port (default 3948) |
+| `--bind ADDR` | bind address (default `127.0.0.1`; non-loopback binds require `--token` — see [Remote access](#remote-access)) |
 | `--cwd DIR` | agent workspace (default: current directory) |
 | `--token TOKEN` | require this bearer token on every request |
 | `--cors-origin MODE` | loopback (default) \| `*` (any origin; use with `--token`) |
@@ -201,6 +202,32 @@ node cli.mjs acp -- <agent command…>  # any ACP v2 agent; everything after `--
 | `--codex-home DIR` | **codex only**: CODEX_HOME override (default: ~/.codex) |
 
 **Safe defaults**: read-only sandbox + `--approval never`. The agent can read and reason but commands that would escape the sandbox are refused. Give it write access with `--sandbox workspace-write` (add `--network` if it needs the net). Want to approve each escape from your client's UI? `--approval on-request`. In acp mode, sandboxing and permissions are governed by the agent's own policy, and its permission requests are always routed to the client.
+
+### Remote access
+
+By default the bridge binds `127.0.0.1` only. `--bind` opens it up — and the CLI refuses a non-loopback bind without `--token`:
+
+```bash
+# LAN / VPN / tailnet
+node cli.mjs codex --bind 0.0.0.0 --token $(openssl rand -hex 16)
+```
+
+Notes for non-loopback binds:
+
+- **Public internet: put TLS in front.** The bridge speaks plain HTTP — every request (token included) is cleartext until TLS is terminated somewhere. The cleanest deployment keeps the bridge on loopback and lets a reverse proxy own the certificate:
+  ```caddy
+  # Caddyfile — TLS + SSE-friendly proxying; no --bind needed at all
+  bridge.example.com {
+      reverse_proxy 127.0.0.1:3948 {
+          header_up Host 127.0.0.1:3948   # satisfy the loopback Host allowlist
+          flush_interval -1               # stream SSE immediately
+      }
+  }
+  ```
+  (nginx works too: the bridge sends `X-Accel-Buffering: no`, so SSE arrives unbuffered; keep proxy read timeouts ≥ 30 s — heartbeats fire every 15 s.)
+- **`--bind 0.0.0.0` + `--token`** is for trusted networks (LAN/VPN). On a loopback bind, a non-loopback `Host` header is rejected (DNS-rebinding guard); on non-loopback binds that check is skipped — hostnames are legit there and the token is the gate.
+- **Web pages on other origins** still get no CORS headers (unchanged rules: loopback origins reflected; `--cors-origin '*'` to open up, pair with `--token`). Browser extensions don't need CORS.
+- **The token is a shared static credential** — no expiry, no per-device keys. Whoever holds it runs the agent with the server's credentials and filesystem. Use a long random value and rotate when in doubt; for purely personal use an SSH tunnel (`ssh -N -L 3948:127.0.0.1:3948 host`) remains the zero-config option.
 
 ## Adding an agent
 
@@ -217,7 +244,7 @@ node cli.mjs acp -- <agent command…>  # any ACP v2 agent; everything after `--
 
 A few optional event fields vary by agent (e.g. the `approval` event carries `cwd` for codex, the agent's own option list for ACP); core fields and semantics are identical. **Per-agent install, login, and behavior notes** (e.g. claude code needs the `claude-agent-acp` shim installed first) live in [docs/agents.md](./docs/agents.md).
 
-**Speak ACP v2? Zero code** — `node cli.mjs acp -- <command>` spawns any ACP agent and maps turns, streaming, tool calls, approvals, and usage onto the protocol above: claude code via `acp -- claude-agent-acp`, gemini via `acp -- gemini --experimental-acp`, likewise opencode, kimi, qwen and friends. Images require the agent's advertised `promptCapabilities.image`, otherwise they degrade to a text note (never written to disk). The adapter speaks ACP v1 **and** v2 (negotiated at initialize) and has been live-verified against the official codex-acp shim; claude real-turn runs are underway.
+**Speak ACP v2? Zero code** — `node cli.mjs acp -- <command>` spawns any ACP agent and maps turns, streaming, tool calls, approvals, and usage onto the protocol above: claude code via `acp -- claude-agent-acp`, gemini via `acp -- gemini --experimental-acp`, likewise opencode, kimi, qwen and friends. Images require the agent's advertised `promptCapabilities.image`, otherwise they degrade to a text note (never written to disk). The adapter speaks ACP v1 **and** v2 (negotiated at initialize) and has been live-verified end-to-end — real model turns through the bridge — against the official codex-acp and claude-agent-acp shims.
 
 **What is ACP?** The Agent Client Protocol, an open standard started by Zed ([agentclientprotocol.com](https://agentclientprotocol.com)) — "LSP for agents": the client spawns the agent CLI as a subprocess and the two speak JSON-RPC 2.0 over stdio (NDJSON). By design it binds **no port**; the official remote transport (WebSocket / Streamable HTTP) is still an RFD. The bridge's acp mode acts as the ACP **client**; what the bridge exposes to its users is always the HTTP+SSE protocol above. Once the official remote transport lands, the bridge plans an ACP-over-WebSocket front so existing ACP clients can connect unchanged.
 
@@ -241,7 +268,7 @@ npm test          # real adapter + real HTTP server vs a scripted fake codex
 - codex's `request_user_input` tool is declined by the bridge (the turn can proceed without it).
 - A network-flake retry re-submits the whole prompt — the agent may run a turn twice.
 - Turns are live-only: a client that disconnects cannot rejoin the same turn.
-- The generic ACP adapter negotiates protocolVersion 1–2 at initialize (both OFFICIAL shims — codex-acp, claude-agent-acp — speak v1) and has been live-verified end-to-end against official codex-acp with a real model turn; claude real-turn runs are the next milestone.
+- The generic ACP adapter negotiates protocolVersion 1–2 at initialize (both OFFICIAL shims — codex-acp, claude-agent-acp — speak v1) and has been live-verified end-to-end — real model turns through the bridge — against official codex-acp and claude-agent-acp.
 
 ## License
 

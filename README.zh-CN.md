@@ -189,7 +189,8 @@ node cli.mjs acp -- <agent 命令…>     # 任何 ACP v2 智能体；`--` 之�
 
 | 参数 | 说明 |
 |---|---|
-| `--port N` | 监听端口（默认 3948，只绑回环） |
+| `--port N` | 监听端口（默认 3948） |
+| `--bind ADDR` | 绑定地址（默认 `127.0.0.1`；非回环绑定强制要求 `--token`——见[远程访问](#远程访问)） |
 | `--cwd DIR` | 智能体工作区（默认：当前目录） |
 | `--token TOKEN` | 所有请求要求此 bearer token |
 | `--cors-origin MODE` | loopback（默认）\| `*`（任意来源；请配 `--token`） |
@@ -200,6 +201,32 @@ node cli.mjs acp -- <agent 命令…>     # 任何 ACP v2 智能体；`--` 之�
 | `--codex-home DIR` | **codex 专用**：CODEX_HOME 覆盖（默认：~/.codex） |
 
 **安全默认值**：read-only 沙箱 + `--approval never`。智能体可以读、可以推理，但要逃逸沙箱的命令会被拒绝。想让它写文件：`--sandbox workspace-write`（需要联网再加 `--network`）。想在你的客户端 UI 里逐条批准：`--approval on-request`。ACP 模式下沙箱与权限由 agent 自己的策略管理，它的权限请求总是路由给客户端。
+
+### 远程访问
+
+默认只绑 `127.0.0.1`。`--bind` 把它放开——且 CLI 会拒绝不带 `--token` 的非回环绑定：
+
+```bash
+# 局域网 / VPN / tailnet
+node cli.mjs codex --bind 0.0.0.0 --token $(openssl rand -hex 16)
+```
+
+非回环绑定的注意事项：
+
+- **公网暴露：前面必须加 TLS。** 桥只说明文 HTTP——在 TLS 被终结之前，所有请求（包括 token）都是明文。最干净的部署是桥继续绑回环，由反向代理持有证书：
+  ```caddy
+  # Caddyfile —— TLS + 对 SSE 友好的转发；完全不需要 --bind
+  bridge.example.com {
+      reverse_proxy 127.0.0.1:3948 {
+          header_up Host 127.0.0.1:3948   # 满足回环 Host 白名单
+          flush_interval -1               # SSE 立即下发，不缓冲
+      }
+  }
+  ```
+  （nginx 同理：桥已发送 `X-Accel-Buffering: no`，SSE 不会被缓冲；代理读超时保持 ≥ 30 秒——桥每 15 秒发一次心跳。）
+- **`--bind 0.0.0.0` + `--token`** 适用于可信网络（局域网/VPN）。回环绑定下，非回环 `Host` 头会被拒（DNS-rebinding 防护）；非回环绑定下该检查被跳过——那里主机名是合法的，token 就是闸门。
+- **其他来源的网页**仍然拿不到 CORS 头（规则不变：只反射回环来源；要放开用 `--cors-origin '*'`，并配 `--token`）。浏览器扩展不需要 CORS。
+- **token 是共享的静态凭证**——不过期、不分设备。谁拿到它，谁就能以服务器上的凭证和文件系统运行这个 agent。务必用足够长的随机值，存疑就轮换；纯个人使用的话，SSH 隧道（`ssh -N -L 3948:127.0.0.1:3948 host`）依旧是最省事的零配置方案。
 
 ## 接入智能体
 
@@ -216,7 +243,7 @@ node cli.mjs acp -- <agent 命令…>     # 任何 ACP v2 智能体；`--` 之�
 
 个别事件的可选字段随 agent 略有差异（如 `approval` 事件里 codex 带 `cwd`、ACP 带它自己的选项列表），核心字段与语义完全一致。**每个 agent 的安装、登录与专属注意事项**（比如接 claude code 需要先装 `claude-agent-acp` 翻译壳）见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md)。
 
-**说 ACP v2？零代码**——`node cli.mjs acp -- <命令>` 拉起任意 ACP 智能体，把回合、流式、工具调用、审批、用量全部映射到上面的协议：claude code 用 `acp -- claude-agent-acp`，gemini 用 `acp -- gemini --experimental-acp`，opencode、kimi、qwen 等同理。图片须 agent 声明 `promptCapabilities.image`，否则自动降级为文本提示（绝不落盘）。adapter 同时说 ACP v1 与 v2（initialize 时协商），并已对官方 codex-acp 壳完成真机全链路验证；claude 真回合验证进行中。
+**说 ACP v2？零代码**——`node cli.mjs acp -- <命令>` 拉起任意 ACP 智能体，把回合、流式、工具调用、审批、用量全部映射到上面的协议：claude code 用 `acp -- claude-agent-acp`，gemini 用 `acp -- gemini --experimental-acp`，opencode、kimi、qwen 等同理。图片须 agent 声明 `promptCapabilities.image`，否则自动降级为文本提示（绝不落盘）。adapter 同时说 ACP v1 与 v2（initialize 时协商），并已对官方 codex-acp 与 claude-agent-acp 壳完成真机真回合全链路验证。
 
 **ACP 是什么**：Agent Client Protocol，Zed 发起的开放标准（[agentclientprotocol.com](https://agentclientprotocol.com)），"LSP for agents"——客户端把 agent CLI 作为子进程拉起，JSON-RPC 2.0 走 stdio（NDJSON），设计上**不绑端口**；官方远程传输（WebSocket / Streamable HTTP）尚在 RFD 阶段。本桥的 acp 模式扮演的是 ACP **客户端**；对使用方暴露的始终是上面那套 HTTP+SSE 协议。等官方远程传输定稿，桥会再加一个 ACP-over-WebSocket 门面，让现成 ACP 客户端零改动接入。
 
@@ -240,7 +267,7 @@ npm test          # 真 adapter + 真 HTTP server，对打一个脚本化的假 
 - codex 的 `request_user_input` 工具会被桥拒绝（回合可继续）。
 - 网络抖动触发的重试会重发整条 prompt——agent 侧可能把一个回合跑两遍。
 - 回合是 live-only 的：断开的客户端无法重新加入同一个回合。
-- 通用 ACP adapter 在 initialize 时协商 protocolVersion 1–2（两个官方壳——codex-acp、claude-agent-acp——都只说 v1），并已对官方 codex-acp 完成真机真回合全链路验证；claude 真回合是下一个里程碑。
+- 通用 ACP adapter 在 initialize 时协商 protocolVersion 1–2（两个官方壳——codex-acp、claude-agent-acp——都只说 v1），并已对这两个官方壳完成真机真回合全链路验证。
 
 ## 许可
 

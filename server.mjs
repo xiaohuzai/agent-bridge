@@ -26,8 +26,12 @@
 //
 // Session ids are ASSIGNED BY THE ADAPTER on the first turn (start event) and
 // passed back by the client on later turns; GET /sessions recovers them after
-// a client restart. Security posture: binds 127.0.0.1 only, rejects
-// non-loopback Host headers (DNS-rebinding), optional shared bearer token.
+// a client restart. Security posture: the caller picks the bind address
+// (cli.mjs defaults to 127.0.0.1 and REQUIRES --token for non-loopback
+// binds); the Host header allowlist (DNS-rebinding guard) is enforced only
+// for loopback binds — a remote bind is reached via legit non-loopback
+// hostnames and is gated by the bearer token instead. The bridge speaks
+// plain HTTP: for public-internet exposure put a TLS reverse proxy in front.
 // CORS: browser clients on loopback origins (http(s)://localhost:* and
 // http(s)://127.0.0.1:*) are served Access-Control-Allow-Origin reflections so
 // plain web pages can talk to the bridge; other origins get no ACAO header
@@ -57,13 +61,17 @@ function corsHeaders(req, corsOrigin) {
   };
 }
 
-export function createBridgeServer({ adapter, agent, version, token, corsOrigin = 'loopback', log = () => {} }) {
+export function createBridgeServer({ adapter, agent, version, token, corsOrigin = 'loopback', bindAddress = '127.0.0.1', log = () => {} }) {
   const server = http.createServer(async (req, res) => {
     try {
       const cors = corsHeaders(req, corsOrigin);
-      // DNS-rebinding guard: only loopback Host headers.
+      // DNS-rebinding guard — a LOCAL-bridge threat (an attacker page makes
+      // the victim's browser resolve a hostname to loopback). Enforced only
+      // for loopback binds; a remote bind is reached via legit non-loopback
+      // hostnames and is gated by the bearer token instead.
+      const loopbackBind = ['127.0.0.1', 'localhost', '::1'].includes(bindAddress);
       const host = String(req.headers.host || '').split(':')[0].toLowerCase();
-      if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1' && host !== '[::1]') {
+      if (loopbackBind && host !== '127.0.0.1' && host !== 'localhost' && host !== '::1' && host !== '[::1]') {
         res.writeHead(403, { 'Content-Type': 'application/json', ...cors });
         res.end(JSON.stringify({ ok: false, error: 'loopback only' }));
         return;
@@ -148,6 +156,9 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      // Tells nginx (and friends) not to buffer this stream when the bridge
+      // sits behind a reverse proxy — without it, deltas arrive in bursts.
+      'X-Accel-Buffering': 'no',
       ...cors,
     });
     const ev = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch (_) {} };
