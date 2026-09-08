@@ -18,15 +18,17 @@
 
 ```mermaid
 flowchart LR
-    C["任何客户端<br/>扩展 · 编辑器 · 脚本 · 你的 UI"] -->|"HTTP + SSE"| B["agent-bridge"]
+    V["v1 客户端<br/>脚本 · browsa · 你的 UI"] -->|"HTTP + SSE"| B["agent-bridge"]
+    W["ACP 客户端<br/>acpx · acp-ui · 移动端"] -->|"WebSocket /acp"| B
+    E["编辑器<br/>Zed · vscode-acp"] -->|"spawn<br/>agent-bridge acp"| B
     B -->|驱动| A["编码智能体<br/>codex · claude code · …"]
 ```
 
-前面是一套小的、带版本的 HTTP+SSE 协议（v1）；智能体在后面自管对话记录、会话与审批。改一行配置就换一个智能体——客户端代码毫无感知。
+一份 JSON 配置，把你的本地编码智能体变成服务——每条配置一个端口、一把 apiKey、一套会话。客户端从三扇门进来：内置极简 HTTP API（v1）、WebSocket 上的 ACP、或 stdio 上被 spawn 的 ACP agent。每一扇门背后，智能体都自管对话记录、会话与审批；改一行配置就换一个智能体——客户端代码毫无感知。
 
 ## 安装
 
-Node ≥ 18。零 npm 依赖——clone 下来就能跑：
+Node ≥ 18——clone 下来就能跑：
 
 ```bash
 git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
@@ -65,11 +67,11 @@ cp agents.example.json agents.json && chmod 600 agents.json
 | 字段 | 说明 |
 |---|---|
 | `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`） |
-| `port` | 必填，每桥唯一 |
+| `port` | serve 必填，每桥唯一（仅用于 `acp` 的条目可省略） |
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
 | `cwd` | 可选；默认 = 起 serve 的所在目录（`~` 与相对路径自动解析） |
-| `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见下一节） |
+| `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见「三扇门」） |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优 |
 
 **为什么要有注册表？** ACP 生态各家的实现参差不齐——协议版本、图片/审批/流式支持各异，并没有一个大家都遵循的框架。一个名字要进入注册表，必须先过桥上的真实回合验证——所以「已支持」是本仓库背书的宣称，而不是碰运气。接入新 agent = 验证一个回合，加一行。
@@ -85,16 +87,28 @@ node cli.mjs serve
 
 配置里的每个桥都会启动并打印自己的地址；Ctrl+C 全停。旗标只有两个：`--config`（默认 `./agents.json`）和 `--bind`（默认 `127.0.0.1`）——其余旋钮全是配置文件字段（见上表）。
 
-## ACP 客户端（可选）
+还有且仅有另一条命令：`node cli.mjs acp <条目名>` 把单个配置条目变成 stdio 上的 ACP agent——见下方「三扇门」。
 
-除四个 v1 端点外，桥还可以直接说 Agent Client Protocol——两种方式：
+## 三扇门
 
-- **远程**：条目里写 `"acp": true`，ACP 客户端连接 `ws://<host>:<port>/acp`——同端口、同一把 apiKey、同样的审批流。上面的 v1 接口不受影响；这是默认关闭的可选门。
-- **被 spawn**：`node cli.mjs acp <条目名>` 把该配置条目变成 stdio 上的 ACP v1 agent——这是给"把 agent 当本地命令启动"的客户端（Zed、vscode-acp……）用的门。stdout 只走协议，日志走 stderr，不开任何端口。
+|  | 内置 HTTP API（v1） | WebSocket 上的 ACP | stdio 上的 ACP |
+|---|---|---|---|
+| 谁在用 | 想要最简的脚本和 UI | 走网络的 ACP 客户端——acpx、acp-ui、移动端 | 把 agent 当本地命令启动的客户端——Zed、vscode-acp |
+| 怎么开 | 始终开启 | 条目写 `"acp": true` | `node cli.mjs acp <条目名>` |
+| 地址 | `http://host:port` | `ws://host:port/acp` | 由客户端启动——无端口 |
+| 生命周期 | 常驻守护；会话跨重启存活 | 相同——多个客户端共享一座桥 | 跟随客户端；关 = 停 |
+| 鉴权 | Bearer apiKey（回环可省） | WS 握手带同一把 apiKey | 无——本地 spawn 即信任 |
 
-设计细节见 [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md)。
+注意：
 
-## 接口——四个端点
+- 两扇 ACP 门说 **ACP v1**——`initialize` → `session/new` → `session/prompt`；权限请求以 `session/request_permission` 送达、带 agent 自己的选项。端口与 apiKey 规则与 v1 相同（stdio 门两者皆不需要）。
+- 客户端 `session/new` 里的 cwd 会被忽略——agent 跑在条目配置的 `cwd`。
+- ACP 门对 v1 零影响：opt-in 配置、独立路径、只增不改。
+- 设计细节：[docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md)。
+
+## 内置 HTTP API（v1）
+
+极简之门——四个端点、一套 SSE 事件词汇，刻意为之并已冻结。已经会说 ACP 的客户端请走上面的 ACP 门；其余所有人从这里开始。
 
 ```mermaid
 sequenceDiagram
@@ -188,6 +202,14 @@ async function turn(text, sessionId) {
 
 权威契约——首回合会话分配、断连语义等边界规则——写在 [`server.mjs`](./server.mjs) 的头注释里。
 
+## 有何不同
+
+- **为多 agent 而生。** 一个守护进程、一份配置文件、N 个 agent——各自端口、各自 apiKey。第一代"单 CLI 配个网页 UI"的项目已经谢幕（归档的归档、弃养的弃养）；活下来的都是多 agent。
+- **审批是一等公民。** 权限请求带着 agent 自己的选项流向客户端，由客户端决定 once / always / deny。知名度最高的多 agent HTTP 桥在服务端替客户端自动回答"总是允许"——我们认为那是 bug，不是 feature。
+- **实机验证的适配器。** codex 走原生 app-server 协议，其余走 ACP 对接官方壳——每一条协议事实都来自真实 agent，不是文档。
+- **零依赖。** 一次 clone，一条命令。没有安装器、没有容器、没有数据库。
+- **两端都是 ACP。** 桥对 agent 说 ACP（stdio 适配器），对客户端也说 ACP（WebSocket / stdio 门）——这也是它有资格进入 ACP Registry 的原因。
+
 ## 部署到远程服务器
 
 三步：
@@ -225,13 +247,22 @@ bridge.example.com {
 
 </details>
 
-## 已知边界（v1）
+## 已知边界
 
-- 请求体上限 4MB；每回合 ≤8 张图。
+所有门共通：
+
 - codex 的 `request_user_input` 工具会被桥拒绝（回合可继续）。
 - 网络抖动触发的重试会重发整条 prompt——agent 侧可能把一个回合跑两遍。
-- 回合只在线：断开的客户端无法重新接入同一个回合。
+
+回合只在线（所有门）：
+
+- 断开的客户端无法重新接入同一个回合；事件流暂不支持续播（官方 ACP 远程传输 RFD 同样推迟了这一点）。
+- 请求体上限 4MB；每回合 ≤8 张图。
+
+协议说明：
+
 - ACP adapter 协商 protocolVersion 1–2（两个官方壳——codex-acp、claude-agent-acp——都说 v1）。
+- ACP-over-WebSocket 门遵循官方远程传输 RFD（状态 Active，尚未定稿）——规范落地后我们会做一次合规校准。
 
 ## 开发
 
