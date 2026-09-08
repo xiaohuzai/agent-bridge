@@ -244,15 +244,14 @@ node cli.mjs serve --config agents.json
   "bridges": [
     { "name": "codex",  "port": 3948, "apiKey": "…", "cwd": "~/work",
       "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "…", "cwd": "~/work" },
-    { "name": "gemini", "port": 3950, "apiKey": "…" }
+    { "name": "claude", "port": 3949, "apiKey": "…", "cwd": "~/work" }
   ]
 }
 ```
 
 Rules:
 
-- **`name` must be a known agent** — the registry in [`agents-registry.mjs`](./agents-registry.mjs) is the single source of truth (today: `codex`, `claude`, `gemini`). A new agent = one line there, and clients like browsa mirror the same table for their picker.
+- **`name` must be a known agent** — the registry in [`agents-registry.mjs`](./agents-registry.mjs) is the single source of truth (today: `codex`, `claude`). A new agent = one line there once it has a live-verified turn, and clients like browsa mirror the same table for their picker.
 - **`port` and `apiKey` are required per bridge** — serve mode has no keyless entries; one process hosts all bridges, Ctrl+C stops them all.
 - **`command: [...]` overrides the registry's default spawn** — e.g. claude via `npx -y @agentclientprotocol/claude-agent-acp`, or a shim at a custom path. The agent stays whatever `name` says.
 - Optional per entry: `cwd` (`~/` expands), `sandbox`, `approval`, `network`, `codexBin`, `codexHome`, `corsOrigin: "*"`.
