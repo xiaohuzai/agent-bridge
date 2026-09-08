@@ -13,7 +13,7 @@ Non-goals (decided, do not re-propose): becoming a chat UI; letting agents contr
 ```bash
 npm test                              # the whole suite (node --test test/*.test.mjs)
 node --test test/agent-bridge-acp.test.mjs   # one file
-npm pack && tar -tzf browsa-agent-bridge-*.tgz   # publish dry-run (files whitelist matters)
+npm pack && tar -tzf xiaohuzai-agent-bridge-*.tgz   # publish dry-run (files whitelist matters)
 ```
 
 No npm dependencies, no build step, no network in tests. CI is a single job named **`Test`** (node 20) running `npm test`.
@@ -76,7 +76,7 @@ Traps already paid for:
 
 - Commits: conventional-commit style, Chinese or English bodies both fine; squash-merge through PRs, never push to main.
 - READMEs are bilingual (`README.md` EN + `README.zh-CN.md`), section-aligned — update both together.
-- The npm package (`browsa-agent-bridge`) is parked: name/description are neutralized in `package.json` but publishing is the owner's call. Do not publish without an explicit instruction.
+- The npm package is `@xiaohuzai/agent-bridge` (bin command: `agent-bridge`); publishing is the owner's call — do not publish without an explicit instruction. Scoped publishes need `npm publish --access public`.
 - The v1 wire protocol is **FROZEN** — browsa is the pinned reference client (owner decision 2026-09-08): additive-only changes (new optional config fields/endpoints are fine; renames, removals, or event-semantic changes need a v2, never a v1 edit). New protocol surfaces (the planned ACP fronts) are separate doors on separate paths with opt-in config — they must not disturb v1 routes, events, or defaults. The existing test suite is the browsa-compatibility regression net; any change that breaks it is a v1 break.
 - The `4MB` request-body cap is deliberate (bounds inline base64 images); `images` arrays are capped at 8.
 - Security posture: loopback bind by default; `--bind` opts into non-loopback and every config entry then REQUIRES `apiKey` (the CLI refuses to start otherwise); the `Host` header allowlist (DNS-rebinding guard) applies only to loopback binds — remote binds are hostname-legit and gated by the token; CORS reflects loopback origins only (`corsOrigin: "*"` per entry is the explicit opt-in, to be paired with api keys). The bridge speaks plain HTTP — TLS belongs in a reverse proxy (server.mjs sends `X-Accel-Buffering: no` so SSE streams unbuffered behind nginx/caddy).
