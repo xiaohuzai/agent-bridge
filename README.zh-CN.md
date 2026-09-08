@@ -71,6 +71,8 @@ cp agents.example.json agents.json && chmod 600 agents.json
 | `cwd` | 可选；默认 = 起 serve 的所在目录（`~` 与相对路径自动解析） |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优 |
 
+**为什么要有注册表？** ACP 生态各家的实现参差不齐——协议版本、图片/审批/流式支持各异，并没有一个大家都遵循的框架。一个名字要进入注册表，必须先过桥上的真实回合验证——所以「已支持」是本仓库背书的宣称，而不是碰运气。接入新 agent = 验证一个回合，加一行。
+
 ## 启动
 
 只有一条命令，默认读 `./agents.json`：
