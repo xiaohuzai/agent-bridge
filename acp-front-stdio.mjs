@@ -17,15 +17,27 @@ import { createAcpFrontSession } from './acp-front.mjs';
 
 export function runAcpStdio({ adapter, agent, version = '0.0.0', log = () => {}, input = process.stdin, output = process.stdout }) {
   let exiting = false;
+  const real = input === process.stdin && output === process.stdout;
   const shutdown = (why, code = 0) => {
     if (exiting) return;
     exiting = true;
+    const hadBusyTurns = session.hasBusyTurns();
     session.destroy();
-    try { adapter.stop(); } catch (_) {}
-    try { output.end(); } catch (_) {}
-    log(`[acp-front] stdio front stopped (${why})`);
-    if (input !== process.stdin || output !== process.stdout) return; // test mode: don't kill the runner
-    setTimeout(() => process.exit(code), 50).unref();
+    const finish = () => {
+      try { adapter.stop(); } catch (_) {}
+      try { output.end(); } catch (_) {}
+      log(`[acp-front] stdio front stopped (${why})`);
+      if (real) setTimeout(() => process.exit(code), 50).unref();
+    };
+    if (hadBusyTurns) {
+      // A turn was in flight: session.destroy() fired interrupt(session/cancel)
+      // — give it a bounded grace window to reach the agent (and the agent's
+      // stderr logs to flush through our pipes) before SIGKILLing the child.
+      // Bounded so a wedged shim can never hold the exit hostage.
+      setTimeout(finish, 800);
+    } else {
+      finish();
+    }
   };
 
   // stdout is the protocol channel — an EPIPE (editor closed our pipe)
@@ -62,7 +74,7 @@ export function runAcpStdio({ adapter, agent, version = '0.0.0', log = () => {},
 
   // Signal handling only in the real process (tests drive streams directly
   // and must not install handlers on the test runner).
-  if (input === process.stdin && output === process.stdout) {
+  if (real) {
     for (const sig of ['SIGINT', 'SIGTERM']) {
       process.on(sig, () => shutdown(sig));
     }

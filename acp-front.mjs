@@ -98,6 +98,14 @@ class AcpFrontSession {
     try { this.wire.close(); } catch (_) {}
   }
 
+  /** True while any session still has a turn in flight — transports that
+   * hard-exit on hang-up (stdio) use this to grant interrupts a grace
+   * window before killing the agent child. */
+  hasBusyTurns() {
+    for (const s of this.sessions.values()) if (s.busy) return true;
+    return false;
+  }
+
   #onClientResponse(j) {
     const entry = this.permissions.get(String(j.id));
     if (!entry) return this.log(`[acp-front] response to unknown rpc id ${j.id}`);
