@@ -1,11 +1,11 @@
 {
-  "name": "browsa-agent-bridge",
+  "name": "@xiaohuzai/agent-bridge",
   "version": "0.1.0",
   "description": "Local daemon that turns CLI coding agents (codex, claude code, … any ACP agent) into an HTTP+SSE chat backend any client can drive — plus opt-in ACP doors: a WebSocket endpoint for ACP clients and a spawnable stdio agent mode. Zero dependencies.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "browsa-agent-bridge": "cli.mjs"
+    "agent-bridge": "cli.mjs"
   },
   "files": [
     "cli.mjs",
@@ -17,6 +17,7 @@
     "acp-front-stdio.mjs",
     "agents-registry.mjs",
     "agents.example.json",
+    "docs/",
     "adapters/",
     "README.md"
   ],
