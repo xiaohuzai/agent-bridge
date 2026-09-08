@@ -6,7 +6,7 @@
 
 <p align="center">
   Run a CLI coding agent on your own machine. Talk to it from <em>any</em> client —<br/>
-  a browser extension, an editor, a script, or your own UI. Your subscription is the backend; no API keys required.
+  a browser extension, an editor, a script, or your own UI. Your subscription is the backend — no model API keys required.
 </p>
 
 <p align="center">
@@ -22,12 +22,12 @@
 
 ```
 any client — extension / editor / script / your own UI
-   │  plain HTTP to 127.0.0.1  — POST JSON, read SSE
+   │  plain HTTP (127.0.0.1 by default) — POST JSON, read SSE
    ▼
-agent-bridge  ◄── the process you start in a terminal (~400 lines, no deps)
-   │  JSONL over stdio
-   ▼
-codex app-server  ──►  your ChatGPT/Codex login, or your own model config
+agent-bridge  ◄── the process you start in a terminal (a few small files, zero deps)
+   │  JSON-RPC over stdio
+   ├─► codex app-server  ──►  your ChatGPT/Codex login or your own model config
+   └─► claude-agent-acp  ──►  claude code … or ANY ACP v2 agent (gemini, opencode, …)
 ```
 
 ## Quick start
@@ -48,6 +48,9 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 node cli.mjs codex --port 3948 --approval on-request   # codex via its app-server; approval events route to the client
 node cli.mjs acp -- claude-agent-acp     # claude code — install the official claude-agent-acp shim first
 node cli.mjs acp -- gemini --experimental-acp   # any ACP agent command works
+#    …or run several agents at once from ONE config file (see "One machine, many
+#    agents" below) — the repo ships a working starter (codex + claude, loopback):
+node cli.mjs serve --config agents.example.json
 
 # 3. Talk to it — curl is a complete client:
 curl -N -X POST http://127.0.0.1:3948/turns \
@@ -262,7 +265,7 @@ Rules:
 
 ## Adding an agent
 
-**Two ways to start the bridge, one client interface** — the start command and flags vary by agent, but once the bridge is up, clients face the same wire protocol: four endpoints, one event vocabulary, the same approval round trip. A client like browsa never needs to (and has no way to) distinguish which agent sits behind the bridge:
+**Three ways to start the bridge, one client interface** — `codex` and `acp` each drive one agent, `serve` starts many at once (see the CLI reference). The start command and flags vary by agent, but once the bridge is up, clients face the same wire protocol: four endpoints, one event vocabulary, the same approval round trip. A client like browsa never needs to (and has no way to) distinguish which agent sits behind the bridge:
 
 | | codex mode | acp mode |
 |---|---|---|
