@@ -122,7 +122,7 @@ curl http://127.0.0.1:3948/sessions
 | `POST /turns` | `{text, sessionId?, images?}`（images ≤8 张 https:/data: URL） | SSE 事件流（见下表） | 400 缺 text / images 不合法 / body 超 4MB |
 | `POST /approvals/:requestId` | `{choice:'once'\|'always'\|'deny'}` | `{ok:true}` | 400 choice 非法 · 409 审批已失效 |
 
-带 `--token` 启动时，所有请求都要带 `Authorization: Bearer <token>`。
+带 `--api-key` 启动时，所有请求都要带 `Authorization: Bearer <token>`。
 
 ### 事件速查
 
@@ -170,7 +170,7 @@ async function turn(text, sessionId) {
 }
 ```
 
-**浏览器客户端**：桥会应答 CORS 预检，且只对回环来源（`http(s)://localhost:*`、`http(s)://127.0.0.1:*`）做反射，所以 localhost 上的页面可以直接调用，任意的 web 来源会被拒绝。传 `--cors-origin '*'` 可对所有来源开放——那时请配 `--token`。非浏览器客户端（Node、Python、curl）完全不需要这些。
+**浏览器客户端**：桥会应答 CORS 预检，且只对回环来源（`http(s)://localhost:*`、`http(s)://127.0.0.1:*`）做反射，所以 localhost 上的页面可以直接调用，任意的 web 来源会被拒绝。传 `--cors-origin '*'` 可对所有来源开放——那时请配 `--api-key`。非浏览器客户端（Node、Python、curl）完全不需要这些。
 
 ### 行为保证
 
@@ -185,30 +185,32 @@ async function turn(text, sessionId) {
 ```bash
 node cli.mjs codex [options]          # codex（走它的 app-server）
 node cli.mjs acp -- <agent 命令…>     # 任何 ACP v2 智能体；`--` 之后全部归 agent 命令
+node cli.mjs serve --config FILE      # 一份配置起多个桥（见下）
 ```
 
 | 参数 | 说明 |
 |---|---|
 | `--port N` | 监听端口（默认 3948） |
-| `--bind ADDR` | 绑定地址（默认 `127.0.0.1`；非回环绑定强制要求 `--token`——见[远程访问](#远程访问)） |
+| `--bind ADDR` | 绑定地址（默认 `127.0.0.1`；非回环绑定强制要求 `--api-key`——见[远程访问](#远程访问)） |
 | `--cwd DIR` | 智能体工作区（默认：当前目录） |
-| `--token TOKEN` | 所有请求要求此 bearer token |
-| `--cors-origin MODE` | loopback（默认）\| `*`（任意来源；请配 `--token`） |
+| `--api-key KEY` | 所有请求要求此 bearer key（`--token` 作为别名可用） |
+| `--cors-origin MODE` | loopback（默认）\| `*`（任意来源；请配 `--api-key`） |
 | `--sandbox MODE` | **codex 专用**：read-only（默认）\| workspace-write \| danger-full-access |
 | `--network` | **codex 专用**：workspace-write 沙箱内允许联网 |
 | `--approval POLICY` | **codex 专用**：never（默认）\| on-request \| untrusted——想收到 `approval` 事件要开 on-request |
 | `--codex-bin PATH` | **codex 专用**：codex 二进制（默认：PATH 上的 codex） |
 | `--codex-home DIR` | **codex 专用**：CODEX_HOME 覆盖（默认：~/.codex） |
+| `--config FILE` | **serve 专用**：JSON 配置文件，含 `bridges` 数组（见下） |
 
 **安全默认值**：read-only 沙箱 + `--approval never`。智能体可以读、可以推理，但要逃逸沙箱的命令会被拒绝。想让它写文件：`--sandbox workspace-write`（需要联网再加 `--network`）。想在你的客户端 UI 里逐条批准：`--approval on-request`。ACP 模式下沙箱与权限由 agent 自己的策略管理，它的权限请求总是路由给客户端。
 
 ### 远程访问
 
-默认只绑 `127.0.0.1`。`--bind` 把它放开——且 CLI 会拒绝不带 `--token` 的非回环绑定：
+默认只绑 `127.0.0.1`。`--bind` 把它放开——且 CLI 会拒绝不带 `--api-key` 的非回环绑定：
 
 ```bash
 # 局域网 / VPN / tailnet
-node cli.mjs codex --bind 0.0.0.0 --token $(openssl rand -hex 16)
+node cli.mjs codex --bind 0.0.0.0 --api-key $(openssl rand -hex 16)
 ```
 
 非回环绑定的注意事项：
@@ -224,9 +226,38 @@ node cli.mjs codex --bind 0.0.0.0 --token $(openssl rand -hex 16)
   }
   ```
   （nginx 同理：桥已发送 `X-Accel-Buffering: no`，SSE 不会被缓冲；代理读超时保持 ≥ 30 秒——桥每 15 秒发一次心跳。）
-- **`--bind 0.0.0.0` + `--token`** 适用于可信网络（局域网/VPN）。回环绑定下，非回环 `Host` 头会被拒（DNS-rebinding 防护）；非回环绑定下该检查被跳过——那里主机名是合法的，token 就是闸门。
-- **其他来源的网页**仍然拿不到 CORS 头（规则不变：只反射回环来源；要放开用 `--cors-origin '*'`，并配 `--token`）。浏览器扩展不需要 CORS。
+- **`--bind 0.0.0.0` + `--api-key`** 适用于可信网络（局域网/VPN）。回环绑定下，非回环 `Host` 头会被拒（DNS-rebinding 防护）；非回环绑定下该检查被跳过——那里主机名是合法的，token 就是闸门。
+- **其他来源的网页**仍然拿不到 CORS 头（规则不变：只反射回环来源；要放开用 `--cors-origin '*'`，并配 `--api-key`）。浏览器扩展不需要 CORS。
 - **token 是共享的静态凭证**——不过期、不分设备。谁拿到它，谁就能以服务器上的凭证和文件系统运行这个 agent。务必用足够长的随机值，存疑就轮换；纯个人使用的话，SSH 隧道（`ssh -N -L 3948:127.0.0.1:3948 host`）依旧是最省事的零配置方案。
+
+### 一台机器，多个智能体（`serve` 模式）
+
+一台机器上住着多个 agent 时，一条命令全起——每个桥独占一个端口、一把 api key、一个独立的 agent 子进程（会话隔离、凭证隔离）：
+
+```bash
+node cli.mjs serve --config agents.json
+```
+
+```json
+{
+  "bridges": [
+    { "name": "codex",  "port": 3948, "apiKey": "…", "cwd": "~/work",
+      "sandbox": "workspace-write", "approval": "on-request" },
+    { "name": "claude", "port": 3949, "apiKey": "…", "cwd": "~/work" },
+    { "name": "gemini", "port": 3950, "apiKey": "…" }
+  ]
+}
+```
+
+规则：
+
+- **`name` 必须是注册表里的已知 agent**——[`agents-registry.mjs`](./agents-registry.mjs) 是唯一事实源（当前：`codex`、`claude`、`gemini`）。接入新 agent = 在那里加一行；browsa 等客户端的 agent 选择器镜像同一张表。
+- **每个桥必须配 `port` 和 `apiKey`**——serve 模式不允许无键条目；一个进程承载全部桥，Ctrl+C 全停。
+- **`command: [...]` 覆盖注册表的默认命令**——比如 claude 用 `npx -y @agentclientprotocol/claude-agent-acp`、或壳装在自定义路径。agent 身份仍由 `name` 决定。
+- 每条可选：`cwd`（支持 `~/` 展开）、`sandbox`、`approval`、`network`、`codexBin`、`codexHome`、`corsOrigin: "*"`。
+- 任一端口绑定失败则整体启动失败，并报出是哪个桥（不会半起半挂）。配置文件里是全部 api key——请 `chmod 600`（权限过松 serve 会警告）。
+- 可与 `--bind` 组合：`node cli.mjs serve --config agents.json --bind 0.0.0.0` 把所有桥暴露到局域网/VPN（见[远程访问](#远程访问)）。
+- 开机自启/崩溃重启**有意不做**——用 systemd unit 或 launchd 包住这一条命令即可。
 
 ## 接入智能体
 

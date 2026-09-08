@@ -123,7 +123,7 @@ To interrupt a runaway turn, just close the ② connection — the bridge interr
 | `POST /turns` | `{text, sessionId?, images?}` (images ≤8 https:/data: URLs) | SSE event stream (see below) | 400 missing text / bad images / body over 4MB |
 | `POST /approvals/:requestId` | `{choice:'once'\|'always'\|'deny'}` | `{ok:true}` | 400 bad choice · 409 approval no longer pending |
 
-Started with `--token`, every request must carry `Authorization: Bearer <token>`.
+Started with `--api-key` (`--token` works as an alias), every request must carry `Authorization: Bearer <key>`.
 
 ### Event reference
 
@@ -171,7 +171,7 @@ async function turn(text, sessionId) {
 }
 ```
 
-**Browser clients**: the bridge answers CORS preflights and reflects only loopback origins (`http(s)://localhost:*`, `http(s)://127.0.0.1:*`), so a page served from localhost can call it directly while random web origins are refused. Pass `--cors-origin '*'` to open every origin — pair it with `--token` when you do. Non-browser clients (Node, Python, curl) need none of this.
+**Browser clients**: the bridge answers CORS preflights and reflects only loopback origins (`http(s)://localhost:*`, `http(s)://127.0.0.1:*`), so a page served from localhost can call it directly while random web origins are refused. Pass `--cors-origin '*'` to open every origin — pair it with `--api-key` when you do. Non-browser clients (Node, Python, curl) need none of this.
 
 ### Behavioral guarantees
 
@@ -186,30 +186,32 @@ The authoritative contract — including edge rules like first-turn session assi
 ```bash
 node cli.mjs codex [options]          # codex via its app-server
 node cli.mjs acp -- <agent command…>  # any ACP v2 agent; everything after `--` belongs to the agent
+node cli.mjs serve --config FILE      # many bridges from one config file (see below)
 ```
 
 | Option | Meaning |
 |---|---|
 | `--port N` | listen port (default 3948) |
-| `--bind ADDR` | bind address (default `127.0.0.1`; non-loopback binds require `--token` — see [Remote access](#remote-access)) |
+| `--bind ADDR` | bind address (default `127.0.0.1`; non-loopback binds require `--api-key` — see [Remote access](#remote-access)) |
 | `--cwd DIR` | agent workspace (default: current directory) |
-| `--token TOKEN` | require this bearer token on every request |
-| `--cors-origin MODE` | loopback (default) \| `*` (any origin; use with `--token`) |
+| `--api-key KEY` | require this bearer key on every request (`--token` accepted as an alias) |
+| `--cors-origin MODE` | loopback (default) \| `*` (any origin; use with `--api-key`) |
 | `--sandbox MODE` | **codex only**: read-only (default) \| workspace-write \| danger-full-access |
 | `--network` | **codex only**: allow network inside a workspace-write sandbox |
 | `--approval POLICY` | **codex only**: never (default) \| on-request \| untrusted — turn on on-request to receive `approval` events |
 | `--codex-bin PATH` | **codex only**: codex binary (default: codex on PATH) |
 | `--codex-home DIR` | **codex only**: CODEX_HOME override (default: ~/.codex) |
+| `--config FILE` | **serve only**: JSON config with a `bridges` array (see below) |
 
 **Safe defaults**: read-only sandbox + `--approval never`. The agent can read and reason but commands that would escape the sandbox are refused. Give it write access with `--sandbox workspace-write` (add `--network` if it needs the net). Want to approve each escape from your client's UI? `--approval on-request`. In acp mode, sandboxing and permissions are governed by the agent's own policy, and its permission requests are always routed to the client.
 
 ### Remote access
 
-By default the bridge binds `127.0.0.1` only. `--bind` opens it up — and the CLI refuses a non-loopback bind without `--token`:
+By default the bridge binds `127.0.0.1` only. `--bind` opens it up — and the CLI refuses a non-loopback bind without `--api-key`:
 
 ```bash
 # LAN / VPN / tailnet
-node cli.mjs codex --bind 0.0.0.0 --token $(openssl rand -hex 16)
+node cli.mjs codex --bind 0.0.0.0 --api-key $(openssl rand -hex 16)
 ```
 
 Notes for non-loopback binds:
@@ -225,9 +227,38 @@ Notes for non-loopback binds:
   }
   ```
   (nginx works too: the bridge sends `X-Accel-Buffering: no`, so SSE arrives unbuffered; keep proxy read timeouts ≥ 30 s — heartbeats fire every 15 s.)
-- **`--bind 0.0.0.0` + `--token`** is for trusted networks (LAN/VPN). On a loopback bind, a non-loopback `Host` header is rejected (DNS-rebinding guard); on non-loopback binds that check is skipped — hostnames are legit there and the token is the gate.
-- **Web pages on other origins** still get no CORS headers (unchanged rules: loopback origins reflected; `--cors-origin '*'` to open up, pair with `--token`). Browser extensions don't need CORS.
+- **`--bind 0.0.0.0` + `--api-key`** is for trusted networks (LAN/VPN). On a loopback bind, a non-loopback `Host` header is rejected (DNS-rebinding guard); on non-loopback binds that check is skipped — hostnames are legit there and the token is the gate.
+- **Web pages on other origins** still get no CORS headers (unchanged rules: loopback origins reflected; `--cors-origin '*'` to open up, pair with `--api-key`). Browser extensions don't need CORS.
 - **The token is a shared static credential** — no expiry, no per-device keys. Whoever holds it runs the agent with the server's credentials and filesystem. Use a long random value and rotate when in doubt; for purely personal use an SSH tunnel (`ssh -N -L 3948:127.0.0.1:3948 host`) remains the zero-config option.
+
+### One machine, many agents (`serve` mode)
+
+When one box hosts several agents, start them all with one command — each bridge gets its own port, its own api key, and its own agent subprocess (isolated sessions, isolated credentials):
+
+```bash
+node cli.mjs serve --config agents.json
+```
+
+```json
+{
+  "bridges": [
+    { "name": "codex",  "port": 3948, "apiKey": "…", "cwd": "~/work",
+      "sandbox": "workspace-write", "approval": "on-request" },
+    { "name": "claude", "port": 3949, "apiKey": "…", "cwd": "~/work" },
+    { "name": "gemini", "port": 3950, "apiKey": "…" }
+  ]
+}
+```
+
+Rules:
+
+- **`name` must be a known agent** — the registry in [`agents-registry.mjs`](./agents-registry.mjs) is the single source of truth (today: `codex`, `claude`, `gemini`). A new agent = one line there, and clients like browsa mirror the same table for their picker.
+- **`port` and `apiKey` are required per bridge** — serve mode has no keyless entries; one process hosts all bridges, Ctrl+C stops them all.
+- **`command: [...]` overrides the registry's default spawn** — e.g. claude via `npx -y @agentclientprotocol/claude-agent-acp`, or a shim at a custom path. The agent stays whatever `name` says.
+- Optional per entry: `cwd` (`~/` expands), `sandbox`, `approval`, `network`, `codexBin`, `codexHome`, `corsOrigin: "*"`.
+- A port that fails to bind fails the whole start, naming the bridge (no half-started set). The config file holds every api key — `chmod 600` it (serve warns on loose permissions).
+- Combines with `--bind`: `node cli.mjs serve --config agents.json --bind 0.0.0.0` puts every bridge on the LAN/VPN (see [Remote access](#remote-access)).
+- Boot persistence / crash restart is deliberately out of scope — wrap the one command in a systemd unit or launchd job.
 
 ## Adding an agent
 
