@@ -20,6 +20,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port') args.port = Number(argv[++i]);
+    else if (a === '--bind') args.bind = argv[++i];
     else if (a === '--cwd') args.cwd = argv[++i];
     else if (a === '--sandbox') args.sandbox = argv[++i];
     else if (a === '--network') args.network = true;
@@ -52,7 +53,10 @@ if (args.help || (mode !== 'codex' && mode !== 'acp')) {
        (repo checkout: node cli.mjs codex|acp …)
 
 options:
-  --port N              listen port (default 3948, loopback only)
+  --port N              listen port (default 3948)
+  --bind ADDR           bind address (default 127.0.0.1; non-loopback binds,
+                        e.g. 0.0.0.0 for LAN/VPN, REQUIRE --token; for the
+                        public internet put a TLS reverse proxy in front)
   --cwd DIR             agent workspace (default: current directory)
   --token TOKEN         require this bearer token on every request
   --cors-origin MODE    loopback (default: reflect http(s)://localhost:* and
@@ -71,6 +75,15 @@ const SANDBOXES = ['read-only', 'workspace-write', 'danger-full-access'];
 const APPROVALS = ['never', 'on-request', 'untrusted'];
 if (!SANDBOXES.includes(args.sandbox)) args.sandbox = 'read-only';
 if (!APPROVALS.includes(args.approval)) args.approval = 'never';
+
+const LOOPBACK_BINDS = ['127.0.0.1', 'localhost', '::1'];
+const bind = args.bind || '127.0.0.1';
+if (!LOOPBACK_BINDS.includes(bind) && !args.token) {
+  console.error(`--bind ${bind} exposes the bridge beyond this machine — a bearer token is REQUIRED.
+  Generate one:  --token $(openssl rand -hex 16)
+  The bridge speaks plain HTTP; for the public internet put a TLS reverse proxy in front.`);
+  process.exit(1);
+}
 
 let adapter;
 let agent;
@@ -104,12 +117,13 @@ const server = createBridgeServer({
   version: '1.0.0',
   token: args.token,
   corsOrigin: args.corsOrigin === '*' ? '*' : 'loopback',
+  bindAddress: bind,
   log: (m) => console.error(m),
 });
 
 const port = Number.isFinite(args.port) && args.port > 0 ? args.port : 3948;
-server.listen(port, '127.0.0.1', () => {
-  console.log(`agent-bridge (${agent}) listening on http://127.0.0.1:${port}`);
+server.listen(port, bind, () => {
+  console.log(`agent-bridge (${agent}) listening on http://${bind === '0.0.0.0' ? '0.0.0.0 (all interfaces)' : bind}:${port}`);
   console.log(`  workspace : ${adapter.opts.cwd}`);
   if (mode === 'codex') {
     console.log(`  sandbox   : ${adapter.opts.sandbox}${adapter.opts.sandbox === 'workspace-write' && adapter.opts.network ? ' + network' : ''}`);
@@ -120,6 +134,9 @@ server.listen(port, '127.0.0.1', () => {
   }
   console.log(`  auth      : ${args.token ? 'bearer token required' : 'none (loopback only)'}`);
   console.log(`  cors      : ${args.corsOrigin === '*' ? 'any origin (use --token!)' : 'loopback origins reflected'}`);
+  if (!LOOPBACK_BINDS.includes(bind)) {
+    console.log('  WARNING   : non-loopback bind — every request must carry the token, and traffic is plain HTTP until you put a TLS reverse proxy in front.');
+  }
   console.log('Point any wire-protocol client at this address. Ctrl+C to stop.');
 });
 
