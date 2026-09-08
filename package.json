@@ -12,6 +12,7 @@
     "server.mjs",
     "serve.mjs",
     "agents-registry.mjs",
+    "agents.example.json",
     "adapters/",
     "README.md"
   ],

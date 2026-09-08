@@ -251,7 +251,8 @@ node cli.mjs serve --config agents.json
 规则：
 
 - **`name` 必须是注册表里的已知 agent**——[`agents-registry.mjs`](./agents-registry.mjs) 是唯一事实源（当前：`codex`、`claude`）。新 agent 等真机验证过再在那里加一行；browsa 等客户端的 agent 选择器镜像同一张表。
-- **每个桥必须配 `port` 和 `apiKey`**——serve 模式不允许无键条目；一个进程承载全部桥，Ctrl+C 全停。
+- **每个桥必须配 `port`；`apiKey` 回环下可选**——不写（或留空 `""`）就以无键方式跑，和单 agent 模式完全一致；加了非回环 `--bind` 才强制要 key。一个进程承载全部桥，Ctrl+C 全停。
+- **不想自己写配置？** 复制仓库里的 [`agents.example.json`](./agents.example.json)——回环下开箱即跑（`node cli.mjs serve --config agents.example.json`）；要出远端时再把 key 填上。
 - **`command: [...]` 覆盖注册表的默认命令**——比如 claude 用 `npx -y @agentclientprotocol/claude-agent-acp`、或壳装在自定义路径。agent 身份仍由 `name` 决定。
 - 每条可选：`cwd`（支持 `~/` 展开）、`sandbox`、`approval`、`network`、`codexBin`、`codexHome`、`corsOrigin: "*"`。
 - 任一端口绑定失败则整体启动失败，并报出是哪个桥（不会半起半挂）。配置文件里是全部 api key——请 `chmod 600`（权限过松 serve 会警告）。

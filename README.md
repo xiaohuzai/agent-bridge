@@ -252,7 +252,8 @@ node cli.mjs serve --config agents.json
 Rules:
 
 - **`name` must be a known agent** — the registry in [`agents-registry.mjs`](./agents-registry.mjs) is the single source of truth (today: `codex`, `claude`). A new agent = one line there once it has a live-verified turn, and clients like browsa mirror the same table for their picker.
-- **`port` and `apiKey` are required per bridge** — serve mode has no keyless entries; one process hosts all bridges, Ctrl+C stops them all.
+- **`port` is required per bridge; `apiKey` is optional on loopback** — omit it (or leave `""`) to run keyless, exactly like single-agent mode; it becomes required the moment you add a non-loopback `--bind`. One process hosts all bridges, Ctrl+C stops them all.
+- **Don't want to author a file?** Copy [`agents.example.json`](./agents.example.json) — it runs as-is on loopback (`node cli.mjs serve --config agents.example.json`); fill the keys in when you go remote.
 - **`command: [...]` overrides the registry's default spawn** — e.g. claude via `npx -y @agentclientprotocol/claude-agent-acp`, or a shim at a custom path. The agent stays whatever `name` says.
 - Optional per entry: `cwd` (`~/` expands), `sandbox`, `approval`, `network`, `codexBin`, `codexHome`, `corsOrigin: "*"`.
 - A port that fails to bind fails the whole start, naming the bridge (no half-started set). The config file holds every api key — `chmod 600` it (serve warns on loose permissions).

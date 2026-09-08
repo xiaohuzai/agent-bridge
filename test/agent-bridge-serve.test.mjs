@@ -50,16 +50,15 @@ test('validateConfig: all problems reported at once, with the fix hint', () => {
   assert.throws(
     () => validateConfig({ bridges: [
       { name: 'nope', port: 1, apiKey: 'k' },                       // unknown agent
-      { name: 'codex', port: 3948 },                                // no apiKey
-      { name: 'codex', port: 3949, apiKey: 'k', command: ['x'] },   // dup name + command on codex
-      { name: 'claude', port: 3948, apiKey: 'k' },                  // dup port
+      { name: 'codex', port: 3949, apiKey: 'k', command: ['x'] },   // command on codex
+      { name: 'codex', port: 3950, apiKey: 'k' },                   // dup name
+      { name: 'claude', port: 3949, apiKey: 'k' },                  // dup port (with codex above)
       { name: 'claude', port: 70000, apiKey: 'k', sandbox: 'yolo' } // bad port + bad sandbox
     ] }),
     (e) => /unknown agent "nope".*known agents: codex, claude/s.test(e.message)
-      && /"apiKey" is required/.test(e.message)
-      && /duplicate name "codex"/.test(e.message)
       && /native adapter.*codexBin.*not "command"/s.test(e.message)
-      && /duplicate port 3948/.test(e.message)
+      && /duplicate name "codex"/.test(e.message)
+      && /duplicate port 3949/.test(e.message)
       && /"port" must be an integer/.test(e.message)
       && /"sandbox" must be one of/.test(e.message)
   );
@@ -149,6 +148,32 @@ test('serve: port conflict fails fast, names the bridge, shuts down the ones tha
     req.on('error', () => resolve(0));
   });
   assert.equal(gone, 0, 'the earlier bridge must have been shut down');
+});
+
+test('serve: keyless entry (empty apiKey) runs unauthenticated on loopback', async () => {
+  const p1 = await freePort();
+  const cfg = validateConfig({ bridges: [{ name: 'claude', port: p1, apiKey: '', command: [FAKE_ACP] }] });
+  const run = await startServe(cfg);
+  handles.push(run);
+  const j = await (await get('/health', p1)).json();
+  assert.equal(j.ok, true, 'empty apiKey = keyless on loopback');
+  assert.match(run.banner.join('\n'), /no api key — loopback only/);
+});
+
+test('serve: keyless entries refuse non-loopback binds', async () => {
+  const p1 = await freePort();
+  const cfg = validateConfig({ bridges: [
+    { name: 'claude', port: p1, command: [FAKE_ACP] },
+    { name: 'codex', port: await freePort(), apiKey: 'kx' },
+  ] });
+  await assert.rejects(
+    () => startServe(cfg, { bind: '0.0.0.0' }),
+    (e) => {
+      const list = e.message.match(/without apiKey: ([^\n]+)/)[1].split('—')[0].trim();
+      return list === 'claude';
+    },
+    'names the keyless bridges only (codex has a key and is fine)'
+  );
 });
 
 test('configPermissionsWarning: flags group/world-readable files, silent on 600', () => {
