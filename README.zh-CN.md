@@ -243,15 +243,14 @@ node cli.mjs serve --config agents.json
   "bridges": [
     { "name": "codex",  "port": 3948, "apiKey": "…", "cwd": "~/work",
       "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "…", "cwd": "~/work" },
-    { "name": "gemini", "port": 3950, "apiKey": "…" }
+    { "name": "claude", "port": 3949, "apiKey": "…", "cwd": "~/work" }
   ]
 }
 ```
 
 规则：
 
-- **`name` 必须是注册表里的已知 agent**——[`agents-registry.mjs`](./agents-registry.mjs) 是唯一事实源（当前：`codex`、`claude`、`gemini`）。接入新 agent = 在那里加一行；browsa 等客户端的 agent 选择器镜像同一张表。
+- **`name` 必须是注册表里的已知 agent**——[`agents-registry.mjs`](./agents-registry.mjs) 是唯一事实源（当前：`codex`、`claude`）。新 agent 等真机验证过再在那里加一行；browsa 等客户端的 agent 选择器镜像同一张表。
 - **每个桥必须配 `port` 和 `apiKey`**——serve 模式不允许无键条目；一个进程承载全部桥，Ctrl+C 全停。
 - **`command: [...]` 覆盖注册表的默认命令**——比如 claude 用 `npx -y @agentclientprotocol/claude-agent-acp`、或壳装在自定义路径。agent 身份仍由 `name` 决定。
 - 每条可选：`cwd`（支持 `~/` 展开）、`sandbox`、`approval`、`network`、`codexBin`、`codexHome`、`corsOrigin: "*"`。

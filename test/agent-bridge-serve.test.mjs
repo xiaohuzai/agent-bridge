@@ -55,7 +55,7 @@ test('validateConfig: all problems reported at once, with the fix hint', () => {
       { name: 'claude', port: 3948, apiKey: 'k' },                  // dup port
       { name: 'claude', port: 70000, apiKey: 'k', sandbox: 'yolo' } // bad port + bad sandbox
     ] }),
-    (e) => /unknown agent "nope".*known agents: codex, claude, gemini/s.test(e.message)
+    (e) => /unknown agent "nope".*known agents: codex, claude/s.test(e.message)
       && /"apiKey" is required/.test(e.message)
       && /duplicate name "codex"/.test(e.message)
       && /native adapter.*codexBin.*not "command"/s.test(e.message)
@@ -136,11 +136,11 @@ test('serve: port conflict fails fast, names the bridge, shuts down the ones tha
   const p1 = await freePort();
   const cfg = validateConfig({ bridges: [
     { name: 'claude', port: p1, apiKey: 'k1', command: [FAKE_ACP] },
-    { name: 'gemini', port: occupied, apiKey: 'k2' },
+    { name: 'codex', port: occupied, apiKey: 'k2' },
   ] });
   await assert.rejects(
     () => startServe(cfg),
-    (e) => /bridge "gemini" failed to start: port \d+ is already in use/.test(e.message)
+    (e) => /bridge "codex" failed to start: port \d+ is already in use/.test(e.message)
   );
   blocker.close();
   // The first bridge must not linger half-started: its port is closed.

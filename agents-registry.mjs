@@ -10,7 +10,8 @@
 export const KNOWN_AGENTS = {
   codex: { kind: 'codex', summary: 'codex CLI via its app-server (native adapter)' },
   claude: { kind: 'acp', command: ['claude-agent-acp'], summary: 'claude code via the official claude-agent-acp shim' },
-  gemini: { kind: 'acp', command: ['gemini', '--experimental-acp'], summary: 'gemini CLI native ACP mode' },
+  // gemini waits here until it has a live-verified turn (schema-level only
+  // today) — the registry doubles as a "supported" claim to clients.
 };
 
 export function knownAgentNames() {
