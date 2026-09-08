@@ -18,15 +18,17 @@
 
 ```mermaid
 flowchart LR
-    C["any client<br/>extension · editor · script · your UI"] -->|"HTTP + SSE"| B["agent-bridge"]
+    V["v1 clients<br/>scripts · browsa · your UI"] -->|"HTTP + SSE"| B["agent-bridge"]
+    W["ACP clients<br/>acpx · acp-ui · mobile"] -->|"WebSocket /acp"| B
+    E["editors<br/>Zed · vscode-acp"] -->|"spawns<br/>agent-bridge acp"| B
     B -->|drives| A["coding agents<br/>codex · claude code · …"]
 ```
 
-One small, versioned HTTP+SSE protocol (v1) in front; the agent keeps its own transcript, sessions and approvals behind it. Change one line of config to change the agent — client code never notices.
+One JSON config file turns your local coding agents into services — each entry with its own port, its own api key, its own sessions. Clients reach them through three doors: a built-in minimal HTTP API (v1), ACP over WebSocket, or a spawned ACP agent on stdio. Behind every door the agent keeps its own transcript, sessions and approvals; change one line of config to change the agent — client code never notices.
 
 ## Install
 
-Node ≥ 18. Zero npm dependencies — a clone is enough:
+Node ≥ 18 — a clone is enough:
 
 ```bash
 git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
@@ -65,11 +67,11 @@ A single agent is the same thing with one entry — keep only the codex line, fo
 | Field | Meaning |
 |---|---|
 | `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`) |
-| `port` | required, unique per bridge |
+| `port` | required for serve, unique per bridge (may be omitted for entries used only via `acp`) |
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
 | `cwd` | optional; default = the directory you start serve from (`~` and relative paths are resolved) |
-| `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket front (see the next section) |
+| `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket door (see Three ways to connect) |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | optional, codex-specific tuning |
 
 **Why a registry?** ACP implementations across the ecosystem vary widely — protocol versions, image/permission/streaming support; there is no framework everyone follows. A name enters the registry only after a real, live-verified turn through the bridge, so "supported" is a claim this repo stands behind, not a coin flip. New agent = verify a turn, add one line.
@@ -85,16 +87,28 @@ node cli.mjs serve
 
 Every bridge in the file starts and prints its address; Ctrl+C stops them all. Only two flags exist: `--config` (default `./agents.json`) and `--bind` (default `127.0.0.1`) — every other knob is a config-file field (see the table above).
 
-## ACP clients (optional)
+There is exactly one other command: `node cli.mjs acp <entry>` spawns a single config entry as an ACP agent on stdio — see Three ways to connect below.
 
-Besides the four v1 endpoints, a bridge can also speak the Agent Client Protocol itself — in two ways:
+## Three ways to connect
 
-- **Remote**: set `"acp": true` on the entry and ACP clients connect to `ws://<host>:<port>/acp` — same port, same api key, same approval flow. The v1 API above is unchanged; this is an opt-in extra door, off by default.
-- **Spawned**: `node cli.mjs acp <entry-name>` presents that config entry as an ACP v1 agent on stdio — the door for clients that launch agents as local commands (Zed, vscode-acp, …). Protocol on stdout, logs on stderr, no port opened.
+|  | Built-in HTTP API (v1) | ACP over WebSocket | ACP over stdio |
+|---|---|---|---|
+| Who it's for | scripts and UIs that want the simplest thing | ACP clients over the network — acpx, acp-ui, mobile UIs | clients that launch agents as local commands — Zed, vscode-acp |
+| How to enable | always on | `"acp": true` on the entry | `node cli.mjs acp <entry>` |
+| Address | `http://host:port` | `ws://host:port/acp` | launched by the client — no port |
+| Lifecycle | resident daemon; sessions survive restarts | same — several clients share the bridge | follows the client; close = stop |
+| Auth | Bearer apiKey (loopback may omit) | same apiKey on the WS handshake | none — a local spawn is the trust |
 
-Design details: [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md) (zh-CN).
+Notes:
 
-## The API — four endpoints
+- The ACP doors speak **ACP v1** — `initialize` → `session/new` → `session/prompt`; permission requests arrive as `session/request_permission` carrying the agent's own options. Same port and apiKey rules as v1 (the stdio door needs neither).
+- A client's `session/new` cwd is ignored — the agent runs in the entry's `cwd`.
+- The ACP doors cannot touch v1: opt-in config, separate paths, additive only.
+- Design notes: [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md) (zh-CN).
+
+## The built-in HTTP API (v1)
+
+The minimal door — four endpoints and one SSE event vocabulary, deliberate and frozen. Clients that already speak ACP use the ACP doors above; everyone else starts here.
 
 ```mermaid
 sequenceDiagram
@@ -188,6 +202,14 @@ async function turn(text, sessionId) {
 
 The authoritative contract — edge rules like first-turn session assignment and disconnect semantics — is the header comment of [`server.mjs`](./server.mjs).
 
+## How is this different
+
+- **Multi-agent by design.** One daemon, one config file, N agents — each on its own port with its own key. The first wave of "a web UI for one CLI" projects is gone (archived, sunset); what survived is multi-agent.
+- **Approvals are first-class.** Permission requests stream to the client with the agent's own options, and the client decides once / always / deny. The best-known multi-agent HTTP bridge answers "always allow" server-side on the client's behalf — we think that's a bug, not a feature.
+- **Live-verified adapters.** codex is driven through its native app-server protocol; everything else through ACP against the official shims. Every protocol fact was captured from real agents, not from docs.
+- **Zero dependencies.** One clone, one command. No installer, no container, no database.
+- **ACP on both ends.** The bridge speaks ACP toward agents (stdio adapters) and toward clients (WebSocket / stdio fronts) — which is also what qualifies it for the ACP Registry.
+
 ## Run it on a remote server
 
 Three steps:
@@ -225,13 +247,22 @@ bridge.example.com {
 
 </details>
 
-## Known limitations (v1)
+## Known limitations
 
-- Request body capped at 4MB; ≤8 images per turn.
+Everywhere:
+
 - codex's `request_user_input` tool is declined by the bridge (the turn can proceed without it).
 - A network-flake retry re-submits the whole prompt — the agent may run a turn twice.
-- Turns are live-only: a client that disconnects cannot rejoin the same turn.
+
+Turns are live-only (all doors):
+
+- A client that disconnects cannot rejoin the same turn; event streams are not resumable (the official ACP remote-transport RFD defers resumability too).
+- Request bodies cap at 4MB; ≤8 images per turn.
+
+Protocol notes:
+
 - The ACP adapter negotiates protocolVersion 1–2 (both official shims — codex-acp, claude-agent-acp — speak v1).
+- The ACP-over-WebSocket front follows the official remote-transport RFD, which is still Active (not final); when it lands we'll make a compliance pass.
 
 ## Development
 
