@@ -10,7 +10,7 @@ Verification status at a glance (honesty first — tell us what works or breaks,
 |---|---|---|
 | codex | `codex` mode (bespoke adapter, **primary**) | ✅ yes (codex-cli 0.149.1) |
 | codex | `acp -- codex-acp` (official shim) | ⚠️ real turn through the bridge ✅; drops the answer text on non-streaming backends (upstream bug, see below) |
-| claude code | `acp -- claude-agent-acp` (official shim, primary) | ⏳ handshake / version negotiation / error path verified; real turns pending Mac run |
+| claude code | `acp -- claude-agent-acp` (official shim, primary) | ✅ macOS 2026-09-08 — real turns (streaming, full answer text), session continuity, usage, approval flow; disconnect-interrupt and bridge-restart resume are test-covered but not yet exercised live |
 | gemini | `acp -- gemini --experimental-acp` | ❓ schema-level only |
 | pi / opencode / kimi / qwen etc. | `acp -- <their ACP command>` | ❓ schema-level only |
 
