@@ -23,7 +23,7 @@ flowchart LR
     B -->|"stdio ACP v1–v2"| A["claude-agent-acp → claude code<br/>或任何 ACP v2 智能体"]
 ```
 
-前面是一套小的、带版本的 HTTP+SSE 协议（v1）；智能体在后面自管对话记录、会话与审批。换一个启动命令就换一个智能体——客户端代码毫无感知。
+前面是一套小的、带版本的 HTTP+SSE 协议（v1）；智能体在后面自管对话记录、会话与审批。改一行配置就换一个智能体——客户端代码毫无感知。
 
 ## 安装
 
@@ -45,7 +45,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 
 ## 配置
 
-单个智能体不需要配置文件——命令行旗标就够（下一节）。要在**一台机器上跑多个**，写一份 JSON 配置、一条命令全起。仓库自带可直接跑的起步配置：
+每个桥——单个还是多个——都是一份 JSON 配置里的一条；这是启动桥的唯一方式。仓库自带可直接跑的起步配置：
 
 ```bash
 cp agents.example.json agents.json && chmod 600 agents.json
@@ -60,6 +60,8 @@ cp agents.example.json agents.json && chmod 600 agents.json
 }
 ```
 
+单个智能体也一样——只是 `bridges` 里只有一条，比如只留 codex 那行。
+
 | 字段 | 说明 |
 |---|---|
 | `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`） |
@@ -71,16 +73,14 @@ cp agents.example.json agents.json && chmod 600 agents.json
 
 ## 启动
 
+只有一条命令，默认读 `./agents.json`：
+
 ```bash
-# ① 单个 codex
-node cli.mjs codex --port 3948 --approval on-request
-# ② 单个 claude code——`--` 后面可以换任何 ACP v2 智能体
-node cli.mjs acp --port 3948 -- claude-agent-acp
-# ③ 多个一起起，读配置文件
-node cli.mjs serve --config agents.json
+node cli.mjs serve
+# 或：node cli.mjs serve --config /path/to/agents.json
 ```
 
-每个桥会打印自己的地址然后等待。常用旗标：`--port`（默认 3948）· `--cwd` · `--api-key`（别名 `--token`）· `--bind`（默认 127.0.0.1）· `--cors-origin loopback|*`——codex 专属：`--sandbox read-only|workspace-write|danger-full-access`、`--network`、`--approval never|on-request|untrusted`、`--codex-bin`、`--codex-home`。Ctrl+C 全部停止。
+配置里的每个桥都会启动并打印自己的地址；Ctrl+C 全停。旗标只有两个：`--config`（默认 `./agents.json`）和 `--bind`（默认 `127.0.0.1`）——其余旋钮全是配置文件字段（见上表）。
 
 ## 接口——四个端点
 
@@ -140,7 +140,7 @@ curl -N -X POST http://127.0.0.1:3948/turns -H 'Content-Type: application/json' 
 
 - `done` / `aborted` / `error` 是终结事件；`": ka"` 行是心跳——忽略即可。
 - **取消 = 挂断**：关掉 `/turns` 连接就是中断，agent 不会在后台继续跑。
-- codex 模式要发 `approval` 事件需带 `--approval on-request`（ACP 智能体自己决定何时问）；默认 `never` 时，命令要么在沙箱内执行、要么被拒。
+- codex 条目要发 `approval` 事件需写 `"approval": "on-request"`（ACP 智能体自己决定何时问）；默认 `"never"` 时，命令要么在沙箱内执行、要么被拒。
 - sessionId 能活过桥重启（agent 从自己的存储恢复）；sessionId 是 agent 私有的——客户端换了桥后面的 agent 就要新建对话。
 
 ### 自己写一个客户端
@@ -181,9 +181,8 @@ async function turn(text, sessionId) {
 三步：
 
 ```bash
-# ① 服务器上——绑定到回环之外（必须配 api key，否则 CLI 拒绝启动）
-node cli.mjs codex --bind 0.0.0.0 --api-key $(openssl rand -hex 16) --approval on-request
-#    或 serve 模式：agents.json 里每一条都填上 apiKey，然后：
+# ① 服务器上——agents.json 里每一条都填上 apiKey（出回环必填，否则 CLI 拒绝启动），
+#    然后绑定到回环之外：
 node cli.mjs serve --config agents.json --bind 0.0.0.0
 
 # ② 云控制台/防火墙——放行该端口（这步桥替你做不了）

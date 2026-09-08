@@ -27,15 +27,15 @@
 // Session ids are ASSIGNED BY THE ADAPTER on the first turn (start event) and
 // passed back by the client on later turns; GET /sessions recovers them after
 // a client restart. Security posture: the caller picks the bind address
-// (cli.mjs defaults to 127.0.0.1 and REQUIRES --api-key for non-loopback
-// binds); the Host header allowlist (DNS-rebinding guard) is enforced only
+// (cli.mjs defaults to 127.0.0.1; non-loopback binds require an apiKey on
+// every config entry); the Host header allowlist (DNS-rebinding guard) is enforced only
 // for loopback binds — a remote bind is reached via legit non-loopback
 // hostnames and is gated by the bearer token instead. The bridge speaks
 // plain HTTP: for public-internet exposure put a TLS reverse proxy in front.
 // CORS: browser clients on loopback origins (http(s)://localhost:* and
 // http(s)://127.0.0.1:*) are served Access-Control-Allow-Origin reflections so
 // plain web pages can talk to the bridge; other origins get no ACAO header
-// (pass corsOrigin:'*' to open up — pair it with --api-key). Aborting = closing
+// (pass corsOrigin:'*' to open up — pair it with api keys). Aborting = closing
 // the POST /turns connection; the bridge notices the disconnect and
 // interrupts the agent turn server-side. Turns are live-only: there is no
 // replay of a turn you disconnected from.
