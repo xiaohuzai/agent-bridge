@@ -1,7 +1,7 @@
 {
   "bridges": [
-    { "name": "codex",  "port": 3948, "apiKey": "", "cwd": ".",
+    { "name": "codex",  "port": 3948, "apiKey": "",
       "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "", "cwd": "." }
+    { "name": "claude", "port": 3949, "apiKey": "" }
   ]
 }

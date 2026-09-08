@@ -26,6 +26,7 @@
 
 import { homedir } from 'node:os';
 import { readFileSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createBridgeServer } from './server.mjs';
 import { CodexAppServerAdapter } from './adapters/codex-app-server.mjs';
 import { AcpStdioAdapter } from './adapters/acp-stdio.mjs';
@@ -102,7 +103,10 @@ export function validateConfig(cfg) {
     seenPorts.add(port);
     out.push({
       ...b,
-      cwd: expandHome(b.cwd),
+      // ACP shims validate cwd as "must be absolute" — resolve every entry
+      // (default: the directory serve was started from) so configs can write
+      // "~/x" or even "x/sub" safely.
+      cwd: resolve(expandHome(b.cwd || process.cwd())),
       apiKey: typeof b.apiKey === 'string' && b.apiKey.trim() ? b.apiKey.trim() : undefined,
     });
   });
