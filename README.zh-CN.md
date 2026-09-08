@@ -53,8 +53,9 @@ cp agents.example.json agents.json && chmod 600 agents.json
 ```json
 {
   "bridges": [
-    { "name": "codex",  "port": 3948, "apiKey": "", "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "" }
+    { "name": "codex",  "port": 3948, "apiKey": "", "cwd": "~/work",
+      "sandbox": "workspace-write", "approval": "on-request" },
+    { "name": "claude", "port": 3949, "apiKey": "", "cwd": "~/work" }
   ]
 }
 ```
