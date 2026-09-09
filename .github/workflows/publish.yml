@@ -1,13 +1,13 @@
-# Publish npm — manual release with a version input.
+# Publish npm — manual release, mirroring the proven pi-feishu-notify flow.
 #
-# Run: Actions → Publish npm → Run workflow → enter the version (e.g. 0.2.1).
-# Gates: the full test suite must pass before anything is published.
-# Requires the repo secret NPM_TOKEN (a granular npm token with read-write on
-# the @xiaohuzai scope; publish rights; bypass-2FA enabled on the token).
+# Run: Actions → Publish npm → Run workflow. Version input is optional:
+# empty = publish the version already in package.json.
+# Gates: version-not-already-on-npm check + the full test suite.
+# Requires the repo secret NPM_TOKEN — a granular npm token with read-write
+# on the @xiaohuzai scope and "Bypass two-factor authentication" enabled.
 #
-# Note: the version bump happens in the CI working tree only (--no-git-tag-
-# version) — main's package.json is aligned opportunistically in the next
-# regular PR, since the branch ruleset blocks direct pushes to main.
+# The version bump cannot be pushed straight to main (branch ruleset require
+# PR), so it lands via a release/* branch PR that the owner merges.
 
 name: Publish npm
 
@@ -15,37 +15,94 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (semver, e.g. 0.2.1). npm rejects versions already published.'
-        required: true
+        description: 'Version (e.g. 0.2.1). Leave empty to use the current package.json version'
+        required: false
+        default: ''
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 固定从 main 发版：流程末尾把版本号变更经 release 分支开 PR 回 main
+          ref: main
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org/
+          registry-url: https://registry.npmjs.org
 
       - name: Stamp version
-        run: npm version "${{ inputs.version }}" --no-git-tag-version
+        id: check
+        env:
+          # 经 env 传递 dispatch 输入，避免把用户输入拼进 run 脚本（模板注入风险）
+          VERSION_INPUT: ${{ github.event.inputs.version }}
+        run: |
+          # 输入了版本号则 bump；--allow-same-version 兼容「main 已写好版本、只需发布」
+          if [ -n "$VERSION_INPUT" ]; then
+            npm version "$VERSION_INPUT" --no-git-tag-version --allow-same-version
+          fi
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if version already exists on npm
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          if npm view "@xiaohuzai/agent-bridge@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::Version $VERSION already exists on npm, pick a different version"
+            exit 1
+          fi
 
       - name: Test (gate)
         run: npm test
 
-      - name: Publish
+      - name: Publish to npm
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Tag the release commit
+      - name: Commit version bump, tag, and open the version PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.check.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "${{ inputs.version }}"
-          git push origin "${{ inputs.version }}"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 先提交版本号变更，再打 tag——tag 指向真正发布的提交
+          git add package.json
+          if git diff --cached --quiet; then
+            echo "No version change; tagging main HEAD only"
+            git tag "$VERSION"
+            git push origin "$VERSION"
+            exit 0
+          fi
+          git commit -m "chore: release $VERSION [skip ci]"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          # main 有 pull_request 规则，不能直推——版本 bump 走 release 分支开 PR
+          RELEASE_BRANCH="release/$VERSION"
+          git branch -f "$RELEASE_BRANCH"
+          git push origin "$RELEASE_BRANCH"
+          gh pr create --base main --head "$RELEASE_BRANCH" \
+            --title "chore: release $VERSION" \
+            --body "Automated by the Publish npm workflow: package.json version bump for $VERSION (already published and tagged). Review and merge." \
+            || echo "PR creation failed or already exists, check manually"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          # 基于刚 push 的 tag 建 Release，notes 自动生成；重复运行时跳过
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists, skipping"
+            exit 0
+          fi
+          gh release create "$VERSION" --title "$VERSION" --generate-notes
