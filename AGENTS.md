@@ -18,6 +18,8 @@ npm pack && tar -tzf xiaohuzai-agent-bridge-*.tgz   # publish dry-run (files whi
 
 No npm dependencies, no build step, no network in tests. CI is a single job named **`Test`** (node 20) running `npm test`.
 
+npm releases: GitHub Actions → **Publish npm** (manual `workflow_dispatch`, takes a semver input) — stamps the version, runs the full suite as a gate, publishes `@xiaohuzai/agent-bridge` with the repo secret `NPM_TOKEN` (granular token, read-write on the @xiaohuzai scope, bypass-2FA), then tags the release commit. main's `package.json` version is aligned opportunistically in the next regular PR (the ruleset blocks direct pushes). The first-run hint in cli.mjs resolves `agents.example.json` relative to the CLI itself, so it works identically from a repo checkout and an npm install.
+
 ## Architecture
 
 ```

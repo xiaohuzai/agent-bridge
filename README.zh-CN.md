@@ -28,11 +28,14 @@ flowchart LR
 
 ## 安装
 
-Node ≥ 18——clone 下来就能跑：
+Node ≥ 18。两条路：
 
 ```bash
-git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
+npm i -g @xiaohuzai/agent-bridge   # 装完：任意目录敲 `agent-bridge` 就行
+git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge   # 源码：`node cli.mjs …`
 ```
+
+只想先试试？`npx @xiaohuzai/agent-bridge serve` 免安装直跑。
 
 ## 支持的智能体与前置依赖
 
@@ -85,22 +88,22 @@ node cli.mjs serve
 # 或：node cli.mjs serve --config /path/to/agents.json
 ```
 
-配置里的每个桥都会启动并打印自己的地址；Ctrl+C 全停。旗标只有两个：`--config`（默认 `./agents.json`）和 `--bind`（默认 `127.0.0.1`）——其余旋钮全是配置文件字段（见上表）。
+配置里的每个桥都会启动并打印自己的地址；Ctrl+C 全停。旗标只有两个：`--config`（默认 `./agents.json`）和 `--bind`（默认 `127.0.0.1`）——其余旋钮全是配置文件字段（见上表）。npm 安装的用户用 `agent-bridge serve`，旗标相同。
 
-还有且仅有另一条命令：`node cli.mjs acp <条目名>` 把单个配置条目变成 stdio 上的 ACP agent——见下方「三扇门」。
+还有且仅有另一条命令：`agent-bridge acp <条目名>`（源码 clone 则为 `node cli.mjs acp <条目名>`）把单个配置条目变成 stdio 上的 ACP agent——见下方「三扇门」。
 
 ## 从零到第一句对话
 
 第一次用？全程大约五分钟：
 
 1. **装 Node 18+**（[nodejs.org](https://nodejs.org)），没有就先装。
-2. **拿到 agent-bridge**：`git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge`——等 npm 装好后，在任意目录敲 `agent-bridge` 都行。
-3. **建配置**：`cp agents.example.json agents.json`（Windows 用 `copy`）。起步配置开箱即跑——codex 在 3948、claude 在 3949，自己机器上不需要密码。
+2. **拿到 agent-bridge**：`npm i -g @xiaohuzai/agent-bridge`——之后任意目录敲 `agent-bridge` 都行。（喜欢源码？clone 仓库改用 `node cli.mjs`，效果一样。）
+3. **建配置**：`agent-bridge` 需要在启动目录里有一个 `agents.json`——复制起步配置：`cp agents.example.json agents.json`（Windows 用 `copy`；npm 安装的用户可从[仓库](https://github.com/xiaohuzai/agent-bridge/blob/main/agents.example.json)获取）。起步配置开箱即跑——codex 在 3948、claude 在 3949，自己机器上不需要密码。
 4. **装好并登录你的 agent**（见上表——比如 `npm i -g @openai/codex`，然后 `codex login` 一次）。
 5. **启动桥**：
 
    ```bash
-   node cli.mjs serve
+   agent-bridge serve
    ```
 
    会看到：

@@ -28,11 +28,14 @@ One JSON config file turns your local coding agents into services — each entry
 
 ## Install
 
-Node ≥ 18 — a clone is enough:
+Node ≥ 18. Two ways in:
 
 ```bash
-git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
+npm i -g @xiaohuzai/agent-bridge   # installed: the `agent-bridge` command works in any directory
+git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge   # from source: `node cli.mjs …`
 ```
+
+Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 
 ## Supported agents & prerequisites
 
@@ -85,22 +88,22 @@ node cli.mjs serve
 # or: node cli.mjs serve --config /path/to/agents.json
 ```
 
-Every bridge in the file starts and prints its address; Ctrl+C stops them all. Only two flags exist: `--config` (default `./agents.json`) and `--bind` (default `127.0.0.1`) — every other knob is a config-file field (see the table above).
+Every bridge in the file starts and prints its address; Ctrl+C stops them all. Only two flags exist: `--config` (default `./agents.json`) and `--bind` (default `127.0.0.1`) — every other knob is a config-file field (see the table above). Installed from npm? Use `agent-bridge serve` — same flags.
 
-There is exactly one other command: `node cli.mjs acp <entry>` spawns a single config entry as an ACP agent on stdio — see Three ways to connect below.
+There is exactly one other command: `agent-bridge acp <entry>` (or `node cli.mjs acp <entry>` from a clone) spawns a single config entry as an ACP agent on stdio — see Three ways to connect below.
 
 ## From zero to your first chat
 
 New here? The whole journey is about five minutes:
 
 1. **Install Node 18+** from [nodejs.org](https://nodejs.org) if you don't have it.
-2. **Get agent-bridge**: `git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge` — or, once installed from npm, the `agent-bridge` command works in any directory.
-3. **Create your config**: `cp agents.example.json agents.json` (Windows: `copy`). The starter runs as-is — codex on port 3948, claude on 3949, no password needed on your own machine.
+2. **Get agent-bridge**: `npm i -g @xiaohuzai/agent-bridge` — after this the `agent-bridge` command works in any directory. (Prefer source? Clone the repo and use `node cli.mjs` instead.)
+3. **Create your config**: `agent-bridge` needs an `agents.json` in the directory you start it from — copy the starter: `cp agents.example.json agents.json` (Windows: `copy`; npm users: grab it from [the repo](https://github.com/xiaohuzai/agent-bridge/blob/main/agents.example.json)). The starter runs as-is — codex on port 3948, claude on 3949, no password needed on your own machine.
 4. **Install & log in to your agent** (see the table above — e.g. `npm i -g @openai/codex`, then `codex login` once).
 5. **Start the bridge**:
 
    ```bash
-   node cli.mjs serve
+   agent-bridge serve
    ```
 
    You'll see:
