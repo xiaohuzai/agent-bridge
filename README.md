@@ -28,11 +28,18 @@ One JSON config file turns your local coding agents into services — each entry
 
 ## Install
 
-Node ≥ 18. Two ways in:
+Node ≥ 18. Pick **one** of the two ways:
+
+**npm (recommended)** — installs the `agent-bridge` command, which works in any directory:
 
 ```bash
-npm i -g @xiaohuzai/agent-bridge   # installed: the `agent-bridge` command works in any directory
-git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge   # from source: `node cli.mjs …`
+npm i -g @xiaohuzai/agent-bridge
+```
+
+**From source** — clone the repo and use `node cli.mjs` wherever this README says `agent-bridge`:
+
+```bash
+git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 ```
 
 Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.

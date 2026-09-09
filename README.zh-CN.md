@@ -28,11 +28,18 @@ flowchart LR
 
 ## 安装
 
-Node ≥ 18。两条路：
+Node ≥ 18。两种方式**二选一**：
+
+**npm 安装（推荐）**——装完之后，任意目录都能敲 `agent-bridge`：
 
 ```bash
-npm i -g @xiaohuzai/agent-bridge   # 装完：任意目录敲 `agent-bridge` 就行
-git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge   # 源码：`node cli.mjs …`
+npm i -g @xiaohuzai/agent-bridge
+```
+
+**源码运行**——clone 仓库，本 README 里所有 `agent-bridge` 命令都换成 `node cli.mjs`：
+
+```bash
+git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 ```
 
 只想先试试？`npx @xiaohuzai/agent-bridge serve` 免安装直跑。
