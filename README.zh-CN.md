@@ -52,27 +52,39 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录 · `npm i -g @agentclientprotocol/claude-agent-acp`（官方 ACP 壳） | ✅ 实机验证 |
 | 任何 ACP v2 智能体（gemini、opencode、kimi……） | 各自的 CLI + 登录（gemini 原生支持：`gemini --experimental-acp`） | ❓ 仅 schema 级 |
 
+agent-bridge 不代装任何 agent——它零依赖，只负责启动你机器上已有的 CLI。某个 agent 没装时，对应的桥照样会启动、`/health` 也正常，只有第一次对话才失败（带安装提示）。
+
 各 agent 的详细安装、行为注意事项与故障排查：[docs/agents.zh-CN.md](./docs/agents.zh-CN.md)。
 
 ## 配置
 
-每个桥——单个还是多个——都是一份 JSON 配置里的一条；这是启动桥的唯一方式。仓库自带可直接跑的起步配置：
+每个桥——单个还是多个——都是一份 JSON 配置里的一条；这是启动桥的唯一方式。文件名必须是 `agents.json`，放在你启动桥的目录下。**二选一**：
+
+**复制起步配置。** `agents.example.json` 两种安装方式都自带；没有配置时直接跑一次 `agent-bridge serve`，它会打印出你机器上那条准确的 `cp` 命令：
 
 ```bash
+# npm 安装（全局）
+cp "$(npm root -g)/@xiaohuzai/agent-bridge/agents.example.json" agents.json && chmod 600 agents.json
+
+# 源码 clone
 cp agents.example.json agents.json && chmod 600 agents.json
 ```
+
+Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路径配合 `copy`。
+
+**或者手写**——整个文件就这么多：
 
 ```json
 {
   "bridges": [
-    { "name": "codex",  "port": 3948, "apiKey": "", "cwd": "~/work",
+    { "name": "codex",  "port": 3948, "apiKey": "",
       "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "", "cwd": "~/work" }
+    { "name": "claude", "port": 3949, "apiKey": "" }
   ]
 }
 ```
 
-单个智能体也一样——只是 `bridges` 里只有一条，比如只留 codex 那行。
+起步配置开箱即跑——codex 在 3948、claude 在 3949，自己机器上不需要密码。单个智能体也一样，只是 `bridges` 里只有一条。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
 
 | 字段 | 说明 |
 |---|---|
@@ -80,7 +92,7 @@ cp agents.example.json agents.json && chmod 600 agents.json
 | `port` | serve 必填，每桥唯一（仅用于 `acp` 的条目可省略） |
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
-| `cwd` | 可选；默认 = 起 serve 的所在目录（`~` 与相对路径自动解析） |
+| `cwd` | 可选；不写就跑在你启动 `serve` 的目录（写 `"."` 等价）；`~` 与相对路径会自动解析 |
 | `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见「三扇门」） |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优 |
 
@@ -91,11 +103,11 @@ cp agents.example.json agents.json && chmod 600 agents.json
 只有一条命令，默认读 `./agents.json`：
 
 ```bash
-node cli.mjs serve
-# 或：node cli.mjs serve --config /path/to/agents.json
+agent-bridge serve
+# 或：agent-bridge serve --config /path/to/agents.json
 ```
 
-配置里的每个桥都会启动并打印自己的地址；Ctrl+C 全停。旗标只有两个：`--config`（默认 `./agents.json`）和 `--bind`（默认 `127.0.0.1`）——其余旋钮全是配置文件字段（见上表）。npm 安装的用户用 `agent-bridge serve`，旗标相同。
+配置里的每个桥都会启动并打印自己的地址；Ctrl+C 全停。旗标只有两个：`--config`（默认 `./agents.json`）和 `--bind`（默认 `127.0.0.1`）——其余旋钮全是配置文件字段（见上表）。源码 clone 的用户用 `node cli.mjs serve`，旗标相同。
 
 还有且仅有另一条命令：`agent-bridge acp <条目名>`（源码 clone 则为 `node cli.mjs acp <条目名>`）把单个配置条目变成 stdio 上的 ACP agent——见下方「三扇门」。
 
@@ -105,8 +117,12 @@ node cli.mjs serve
 
 1. **装 Node 18+**（[nodejs.org](https://nodejs.org)），没有就先装。
 2. **拿到 agent-bridge**：`npm i -g @xiaohuzai/agent-bridge`——之后任意目录敲 `agent-bridge` 都行。（喜欢源码？clone 仓库改用 `node cli.mjs`，效果一样。）
-3. **建配置**：`agent-bridge` 需要在启动目录里有一个 `agents.json`——复制起步配置：`cp agents.example.json agents.json`（Windows 用 `copy`；npm 安装的用户可从[仓库](https://github.com/xiaohuzai/agent-bridge/blob/main/agents.example.json)获取）。起步配置开箱即跑——codex 在 3948、claude 在 3949，自己机器上不需要密码。
-4. **装好并登录你的 agent**（见上表——比如 `npm i -g @openai/codex`，然后 `codex login` 一次）。
+3. **建配置**：`agent-bridge` 需要在启动目录里有一个 `agents.json`。先跑一次 `agent-bridge serve`——没有配置时它会打印出你这次安装对应的复制命令——或者照[「配置」](#配置)一节手写那份 JSON。这份配置不用改——codex 在 3948、claude 在 3949，自己机器上不需要密码（agent 本身要在第 4 步装）。
+4. **给你配置里的每个 agent 都装好并登录**——起步配置同时开了两个：
+   - **codex**——`npm i -g @openai/codex`，然后 `codex login` 一次。
+   - **claude**——`npm i -g @anthropic-ai/claude-code`，跑一次 `claude` 登录，再 `npm i -g @agentclientprotocol/claude-agent-acp`（桥真正启动的是这个 ACP 壳）。
+
+   只想要一个？把 `agents.json` 里另一条删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。
 5. **启动桥**：
 
    ```bash
@@ -131,7 +147,7 @@ node cli.mjs serve
 |  | 内置 HTTP API（v1） | WebSocket 上的 ACP | stdio 上的 ACP |
 |---|---|---|---|
 | 谁在用 | 想要最简的脚本和 UI | 走网络的 ACP 客户端——acpx、acp-ui、移动端 | 把 agent 当本地命令启动的客户端——Zed、vscode-acp |
-| 怎么开 | 始终开启 | 条目写 `"acp": true` | `node cli.mjs acp <条目名>` |
+| 怎么开 | 始终开启 | 条目写 `"acp": true` | `agent-bridge acp <条目名>` |
 | 地址 | `http://host:port` | `ws://host:port/acp` | 由客户端启动——无端口 |
 | 生命周期 | 常驻守护；会话跨重启存活 | 相同——多个客户端共享一座桥 | 跟随客户端；关 = 停 |
 | 鉴权 | Bearer apiKey（回环可省） | WS 握手带同一把 apiKey | 无——本地 spawn 即信任 |
@@ -254,7 +270,7 @@ async function turn(text, sessionId) {
 ```bash
 # ① 服务器上——agents.json 里每一条都填上 apiKey（出回环必填，否则 CLI 拒绝启动），
 #    然后绑定到回环之外：
-node cli.mjs serve --config agents.json --bind 0.0.0.0
+agent-bridge serve --config agents.json --bind 0.0.0.0
 
 # ② 云控制台/防火墙——放行该端口（这步桥替你做不了）
 
