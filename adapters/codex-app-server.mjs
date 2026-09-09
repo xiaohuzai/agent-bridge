@@ -52,6 +52,8 @@ export class CodexAppServerAdapter {
   } = {}) {
     this.opts = { codexBin, codexHome, cwd, sandbox, network, approval, log };
     this.child = null;
+    this.ready = false;
+    this.starting = null;          // in-flight spawn+initialize (serialization lock)
     this.nextId = 1;
     this.pending = new Map();      // rpc id → {resolve, reject}
     this.threads = new Map();      // sessionId(threadId) → {turnId, full, sawDelta, itemTexts, usage, events}
@@ -62,8 +64,16 @@ export class CodexAppServerAdapter {
 
   /** Spawn the app-server child (if needed) and run the initialize handshake. */
   async ensureChild() {
-    if (this.child && this.child.exitCode === null) return;
+    if (this.child && this.child.exitCode === null && this.ready) return;
     if (this.closed) throw new Error('bridge adapter already stopped');
+    // Serialize spawn+initialize: two concurrent first-turns (e.g. two
+    // sessions opened at once on a fresh bridge) would each run this body and
+    // the second would overwrite this.child, orphaning the first child.
+    if (!this.starting) this.starting = this.#startChild().finally(() => { this.starting = null; });
+    await this.starting;
+  }
+
+  async #startChild() {
     const { codexBin, codexHome, log } = this.opts;
     const env = { ...process.env };
     if (codexHome) env.CODEX_HOME = codexHome;
@@ -84,7 +94,17 @@ export class CodexAppServerAdapter {
       log(`[codex] app-server exited (code=${code})`);
       for (const [, p] of this.pending) p.reject(new Error(`codex app-server exited (code=${code})`));
       this.pending.clear();
+      // Turns already admitted have no pending rpc tracking them — without
+      // this they would hang forever (no notifications can arrive from a
+      // dead child). Surface a clean error event instead.
+      for (const [, t] of this.threads) {
+        if (!t.finished) {
+          t.finished = true;
+          t.events?.({ type: 'error', message: `codex app-server exited (code=${code}) mid-turn` });
+        }
+      }
       this.child = null;
+      this.ready = false;
     });
     // A spawn failure (ENOENT: codex not installed, EACCES: not executable)
     // surfaces as an async 'error' event — WITHOUT a listener Node turns it
@@ -100,10 +120,12 @@ export class CodexAppServerAdapter {
       for (const [, p] of this.pending) p.reject(new Error(msg));
       this.pending.clear();
       this.child = null;
+      this.ready = false;
     });
     await this.rpc('initialize', {
       clientInfo: { name: 'agent-bridge', title: 'agent-bridge', version: '1.0.0' },
     }, INIT_TIMEOUT_MS);
+    this.ready = true;
   }
 
   #onData(chunk) {
@@ -280,6 +302,14 @@ export class CodexAppServerAdapter {
       threadId = thread?.thread?.id;
       if (!threadId) throw new Error('codex thread/start: no thread id');
     }
+    // Same session discipline as the ACP adapter: a second turn on a session
+    // with a turn still in flight would overwrite the entry mid-stream (the
+    // in-flight turn's frames would bleed into the new stream). Refuse it —
+    // server.mjs relays this as the turn's clean SSE error.
+    const existing = this.threads.get(threadId);
+    if (existing && !existing.finished) {
+      throw new Error('codex: a turn is already in flight for this session');
+    }
     // Pre-register the turn entry BEFORE the turn/start rpc: codex batches
     // the response and the first notifications into the same stdio chunk,
     // and a post-await registration would drop that whole batch. The turnId
@@ -330,8 +360,15 @@ export class CodexAppServerAdapter {
     if (!t || t.finished) return;
     try {
       await this.rpc('turn/interrupt', { threadId: sessionId, turnId: t.turnId });
+      // Success: codex answers with turn/completed(interrupted) and the turn
+      // settles through the normal event path.
     } catch (e) {
+      // Same discipline as the ACP adapter: a lost/failed interrupt must
+      // never leave the session busy forever (wedged child, lost answer).
+      // Settle locally — late turn/completed frames are no-ops (finished).
       this.opts.log(`[codex] interrupt failed: ${e.message}`);
+      t.finished = true;
+      t.events?.({ type: 'aborted' });
     }
   }
 

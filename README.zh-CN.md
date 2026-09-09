@@ -89,6 +89,33 @@ node cli.mjs serve
 
 还有且仅有另一条命令：`node cli.mjs acp <条目名>` 把单个配置条目变成 stdio 上的 ACP agent——见下方「三扇门」。
 
+## 从零到第一句对话
+
+第一次用？全程大约五分钟：
+
+1. **装 Node 18+**（[nodejs.org](https://nodejs.org)），没有就先装。
+2. **拿到 agent-bridge**：`git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge`——等 npm 装好后，在任意目录敲 `agent-bridge` 都行。
+3. **建配置**：`cp agents.example.json agents.json`（Windows 用 `copy`）。起步配置开箱即跑——codex 在 3948、claude 在 3949，自己机器上不需要密码。
+4. **装好并登录你的 agent**（见上表——比如 `npm i -g @openai/codex`，然后 `codex login` 一次）。
+5. **启动桥**：
+
+   ```bash
+   node cli.mjs serve
+   ```
+
+   会看到：
+
+   ```
+   agent-bridge serve: 2 bridges on http://127.0.0.1
+     codex       :3948  (no api key — loopback only)
+     claude      :3949  (no api key — loopback only)
+   ```
+
+6. **连接 browsa**：在 browsa 的设置里添加一个 bridge provider，地址填 `http://127.0.0.1:3948`——就是上面 codex 那一行。自己机器上不需要 key。
+7. **开聊。** 在 browsa 里输入，回复实时流式到达；agent 要执行命令时 browsa 会弹出审批——once / always / deny 你说了算。
+
+那个终端窗口别关——关了 agent 就停了。想用 claude？在 browsa 里再加一个指向 3949 的桥就行。
+
 ## 三扇门
 
 |  | 内置 HTTP API（v1） | WebSocket 上的 ACP | stdio 上的 ACP |

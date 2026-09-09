@@ -74,6 +74,8 @@ export class AcpStdioAdapter {
     if (!Array.isArray(command) || !command.length) throw new Error('acp adapter: command required');
     this.opts = { command, cwd, log };
     this.child = null;
+    this.ready = false;
+    this.starting = null;         // in-flight spawn+initialize (serialization lock)
     this.nextId = 1;
     this.pending = new Map();     // rpc id → {resolve, reject}
     this.sessions = new Map();    // ACP sessionId → turn state
@@ -88,6 +90,14 @@ export class AcpStdioAdapter {
   async ensureChild() {
     if (this.child && this.child.exitCode === null && this.ready) return;
     if (this.closed) throw new Error('bridge adapter already stopped');
+    // Serialize spawn+initialize: two concurrent first-turns would otherwise
+    // each spawn a child (the second overwrites this.child, orphaning the
+    // first) — same discipline as the codex adapter.
+    if (!this.starting) this.starting = this.#startChild().finally(() => { this.starting = null; });
+    await this.starting;
+  }
+
+  async #startChild() {
     const { command, log } = this.opts;
     this.child = spawn(command[0], command.slice(1), {
       stdio: ['pipe', 'pipe', 'pipe'],
