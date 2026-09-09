@@ -18,6 +18,11 @@ import { loadConfig, startServe, configPermissionsWarning, adapterFor } from './
 import { runAcpStdio } from './acp-front-stdio.mjs';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+// The daemon version reported to clients (/health, ACP agentInfo) is the
+// package version — one source of truth, no drift between npm and the wire.
+const PKG_VERSION = createRequire(import.meta.url)('./package.json').version;
 
 // The shipped starter lives next to this file — both in a repo checkout and
 // inside a globally installed npm package. The missing-config hint must point
@@ -103,11 +108,11 @@ if (args.mode === 'acp') {
     process.exit(1);
   }
   const { adapter, agent } = adapterFor(entry, { log: (m) => console.error(m) });
-  runAcpStdio({ adapter, agent, version: '1.0.0', log: (m) => console.error(m) });
+  runAcpStdio({ adapter, agent, version: PKG_VERSION, log: (m) => console.error(m) });
 } else {
   let running;
   try {
-    running = await startServe(loadConfig(configPath), { bind, version: '1.0.0', log: (m) => console.error(m) });
+    running = await startServe(loadConfig(configPath), { bind, version: PKG_VERSION, log: (m) => console.error(m) });
   } catch (e) {
     console.error(e.message + missingConfigHint(configPath, e.message));
     process.exit(1);
