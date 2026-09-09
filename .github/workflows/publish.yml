@@ -1,0 +1,51 @@
+# Publish npm — manual release with a version input.
+#
+# Run: Actions → Publish npm → Run workflow → enter the version (e.g. 0.2.1).
+# Gates: the full test suite must pass before anything is published.
+# Requires the repo secret NPM_TOKEN (a granular npm token with read-write on
+# the @xiaohuzai scope; publish rights; bypass-2FA enabled on the token).
+#
+# Note: the version bump happens in the CI working tree only (--no-git-tag-
+# version) — main's package.json is aligned opportunistically in the next
+# regular PR, since the branch ruleset blocks direct pushes to main.
+
+name: Publish npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (semver, e.g. 0.2.1). npm rejects versions already published.'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org/
+
+      - name: Stamp version
+        run: npm version "${{ inputs.version }}" --no-git-tag-version
+
+      - name: Test (gate)
+        run: npm test
+
+      - name: Publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag the release commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ inputs.version }}"
+          git push origin "${{ inputs.version }}"
