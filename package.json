@@ -43,5 +43,9 @@
     "sse",
     "local-llm",
     "byok"
-  ]
+  ],
+  "bugs": {
+    "url": "https://github.com/xiaohuzai/agent-bridge/issues"
+  },
+  "homepage": "https://github.com/xiaohuzai/agent-bridge#readme"
 }

@@ -320,3 +320,38 @@ test('missing codex binary → friendly SSE error, bridge survives (no uncaughtE
   const err2 = await sseReader(res2.body).readUntil((f) => f.data?.type === 'error');
   assert.match(err2.data.message, /codex CLI not found/);
 });
+
+test('a second turn on a busy codex session is refused with a clean SSE error', async () => {
+  // Without the guard, the second startTurn would overwrite the in-flight
+  // entry mid-stream and the two turns' frames would bleed into each other.
+  const res = await post('/turns', { text: 'SLOW please' });
+  const sse = sseReader(res.body);
+  const start = await sse.readUntil((f) => f.data?.type === 'start');
+  await sse.readUntil((f) => f.data?.type === 'delta');
+  const res2 = await post('/turns', { text: 'hello again', sessionId: start.data.sessionId });
+  const err = await sseReader(res2.body).readUntil((f) => f.data?.type === 'error');
+  assert.match(err.data.message, /already in flight/);
+  // The refusal must not disturb the in-flight turn.
+  const now = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+  assert.equal(now.sessions[0]?.busy, true, 'the first turn still owns the session');
+});
+
+test('codex dying mid-turn surfaces as a clean SSE error (no hanging stream)', async () => {
+  // The child has no pending rpc tracking an admitted turn — without the
+  // exit-handler sweep, a dead app-server would leave the SSE stream (and
+  // the session's busy flag) hanging forever.
+  const res = await post('/turns', { text: 'SLOW please' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'delta');
+  adapter.child.kill('SIGKILL');
+  const err = await sse.readUntil((f) => f.data?.type === 'error', 8000);
+  assert.match(err.data.message, /exited.*mid-turn/);
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4000) {
+    const now = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+    if (!now.sessions[0]?.busy) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const settled = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+  assert.equal(settled.sessions[0]?.busy, false, 'the dead session must not stay busy');
+});

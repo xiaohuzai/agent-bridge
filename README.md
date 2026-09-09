@@ -89,6 +89,33 @@ Every bridge in the file starts and prints its address; Ctrl+C stops them all. O
 
 There is exactly one other command: `node cli.mjs acp <entry>` spawns a single config entry as an ACP agent on stdio — see Three ways to connect below.
 
+## From zero to your first chat
+
+New here? The whole journey is about five minutes:
+
+1. **Install Node 18+** from [nodejs.org](https://nodejs.org) if you don't have it.
+2. **Get agent-bridge**: `git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge` — or, once installed from npm, the `agent-bridge` command works in any directory.
+3. **Create your config**: `cp agents.example.json agents.json` (Windows: `copy`). The starter runs as-is — codex on port 3948, claude on 3949, no password needed on your own machine.
+4. **Install & log in to your agent** (see the table above — e.g. `npm i -g @openai/codex`, then `codex login` once).
+5. **Start the bridge**:
+
+   ```bash
+   node cli.mjs serve
+   ```
+
+   You'll see:
+
+   ```
+   agent-bridge serve: 2 bridges on http://127.0.0.1
+     codex       :3948  (no api key — loopback only)
+     claude      :3949  (no api key — loopback only)
+   ```
+
+6. **Connect browsa**: in browsa's settings, add a bridge provider and point it at `http://127.0.0.1:3948` — that's the codex line above. No key needed on your own machine.
+7. **Chat.** Type in browsa; the reply streams back live. When the agent wants to run a command, browsa shows the approval — once / always / deny is your call.
+
+Keep that terminal window open — closing it stops the agents. Want claude too? Add a second bridge in browsa pointing at port 3949.
+
 ## Three ways to connect
 
 |  | Built-in HTTP API (v1) | ACP over WebSocket | ACP over stdio |
