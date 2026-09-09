@@ -52,27 +52,39 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in · `npm i -g @agentclientprotocol/claude-agent-acp` (official ACP shim) | ✅ live-verified |
 | any ACP v2 agent (gemini, opencode, kimi, …) | that agent's own CLI + login (gemini is native ACP: `gemini --experimental-acp`) | ❓ schema-level |
 
+agent-bridge installs none of these for you — it has zero dependencies and only spawns the CLI you already have. A bridge whose agent is missing still starts and answers `/health`; it fails on its first turn, with an install hint.
+
 Per-agent details, behavior notes and troubleshooting: [docs/agents.md](./docs/agents.md).
 
 ## Configure
 
-Every bridge — single or many — is an entry in one JSON config file; that is the only way to start the bridge. A working starter ships with the repo:
+Every bridge — single or many — is an entry in one JSON config file; that is the only way to start the bridge. It must be named `agents.json` and live in the directory you start the bridge from. Pick **one** of the two ways:
+
+**Copy the shipped starter.** `agents.example.json` ships with both installs, and running `agent-bridge serve` with no config prints the exact `cp` line for your machine:
 
 ```bash
+# npm install (global)
+cp "$(npm root -g)/@xiaohuzai/agent-bridge/agents.example.json" agents.json && chmod 600 agents.json
+
+# source clone
 cp agents.example.json agents.json && chmod 600 agents.json
 ```
+
+On Windows, PowerShell runs both lines as-is; in `cmd`, use the path the CLI prints with `copy`.
+
+**Or write it by hand** — this is the whole file:
 
 ```json
 {
   "bridges": [
-    { "name": "codex",  "port": 3948, "apiKey": "", "cwd": "~/work",
+    { "name": "codex",  "port": 3948, "apiKey": "",
       "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "", "cwd": "~/work" }
+    { "name": "claude", "port": 3949, "apiKey": "" }
   ]
 }
 ```
 
-A single agent is the same thing with one entry — keep only the codex line, for example.
+The starter runs as-is — codex on 3948, claude on 3949, no key needed on your own machine. A single agent is the same thing with one entry. `chmod 600` starts to matter once a real `apiKey` goes in the file.
 
 | Field | Meaning |
 |---|---|
@@ -80,7 +92,7 @@ A single agent is the same thing with one entry — keep only the codex line, fo
 | `port` | required for serve, unique per bridge (may be omitted for entries used only via `acp`) |
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
-| `cwd` | optional; default = the directory you start serve from (`~` and relative paths are resolved) |
+| `cwd` | optional; omit it and the agent runs in the directory you start `serve` from (writing `"."` is the same thing); `~` and relative paths are resolved |
 | `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket door (see Three ways to connect) |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | optional, codex-specific tuning |
 
@@ -91,11 +103,11 @@ A single agent is the same thing with one entry — keep only the codex line, fo
 One command. It reads `./agents.json` by default:
 
 ```bash
-node cli.mjs serve
-# or: node cli.mjs serve --config /path/to/agents.json
+agent-bridge serve
+# or: agent-bridge serve --config /path/to/agents.json
 ```
 
-Every bridge in the file starts and prints its address; Ctrl+C stops them all. Only two flags exist: `--config` (default `./agents.json`) and `--bind` (default `127.0.0.1`) — every other knob is a config-file field (see the table above). Installed from npm? Use `agent-bridge serve` — same flags.
+Every bridge in the file starts and prints its address; Ctrl+C stops them all. Only two flags exist: `--config` (default `./agents.json`) and `--bind` (default `127.0.0.1`) — every other knob is a config-file field (see the table above). From a clone, use `node cli.mjs serve` — same flags.
 
 There is exactly one other command: `agent-bridge acp <entry>` (or `node cli.mjs acp <entry>` from a clone) spawns a single config entry as an ACP agent on stdio — see Three ways to connect below.
 
@@ -105,8 +117,12 @@ New here? The whole journey is about five minutes:
 
 1. **Install Node 18+** from [nodejs.org](https://nodejs.org) if you don't have it.
 2. **Get agent-bridge**: `npm i -g @xiaohuzai/agent-bridge` — after this the `agent-bridge` command works in any directory. (Prefer source? Clone the repo and use `node cli.mjs` instead.)
-3. **Create your config**: `agent-bridge` needs an `agents.json` in the directory you start it from — copy the starter: `cp agents.example.json agents.json` (Windows: `copy`; npm users: grab it from [the repo](https://github.com/xiaohuzai/agent-bridge/blob/main/agents.example.json)). The starter runs as-is — codex on port 3948, claude on 3949, no password needed on your own machine.
-4. **Install & log in to your agent** (see the table above — e.g. `npm i -g @openai/codex`, then `codex login` once).
+3. **Create your config**: `agent-bridge` needs an `agents.json` in the directory you start it from. Run `agent-bridge serve` once — with no config it prints the exact copy command for your install — or write the JSON shown under [Configure](#configure). The config needs no edits — codex on port 3948, claude on 3949, no password needed on your own machine (step 4 installs the agents themselves).
+4. **Install & log in to every agent your config lists** — the starter enables two:
+   - **codex** — `npm i -g @openai/codex`, then `codex login` once.
+   - **claude** — `npm i -g @anthropic-ai/claude-code`, run `claude` once, then `npm i -g @agentclientprotocol/claude-agent-acp` (the ACP shim the bridge actually spawns).
+
+   Only want one? Delete the other entry from `agents.json`. A bridge whose agent isn't installed still starts and answers `/health` — it only fails on its first turn, with an install hint — so a missing agent is easy to miss until you try it.
 5. **Start the bridge**:
 
    ```bash
@@ -131,7 +147,7 @@ Keep that terminal window open — closing it stops the agents. Want claude too?
 |  | Built-in HTTP API (v1) | ACP over WebSocket | ACP over stdio |
 |---|---|---|---|
 | Who it's for | scripts and UIs that want the simplest thing | ACP clients over the network — acpx, acp-ui, mobile UIs | clients that launch agents as local commands — Zed, vscode-acp |
-| How to enable | always on | `"acp": true` on the entry | `node cli.mjs acp <entry>` |
+| How to enable | always on | `"acp": true` on the entry | `agent-bridge acp <entry>` |
 | Address | `http://host:port` | `ws://host:port/acp` | launched by the client — no port |
 | Lifecycle | resident daemon; sessions survive restarts | same — several clients share the bridge | follows the client; close = stop |
 | Auth | Bearer apiKey (loopback may omit) | same apiKey on the WS handshake | none — a local spawn is the trust |
@@ -254,7 +270,7 @@ Three steps:
 ```bash
 # ① on the server — fill apiKey for EVERY entry in agents.json (required beyond
 #    loopback; the CLI refuses keyless entries otherwise), then bind beyond loopback:
-node cli.mjs serve --config agents.json --bind 0.0.0.0
+agent-bridge serve --config agents.json --bind 0.0.0.0
 
 # ② in your cloud console / firewall — open the port (the bridge cannot do this for you)
 

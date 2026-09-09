@@ -4,14 +4,16 @@
 // subprocess, its own sessions. Process-level supervision (boot persistence,
 // crash restart) belongs to systemd/launchd, not here.
 //
-// Config shape (JSON; `name` must be a KNOWN_AGENTS name):
+// Config shape (JSON; `name` must be a KNOWN_AGENTS name). `cwd` is optional
+// on every entry: omit it and the agent runs in the directory serve was
+// started from (`"."` is the same thing); `~` and relative paths resolve.
 //
 //   {
 //     "bridges": [
-//       { "name": "codex",  "port": 3948, "apiKey": "…", "cwd": "~/work",
+//       { "name": "codex",  "port": 3948, "apiKey": "…",
 //         "sandbox": "workspace-write", "approval": "on-request" },
-//       { "name": "claude", "port": 3949, "apiKey": "", "cwd": "~/work" },
-//       { "name": "claude2","port": 3950, "apiKey": "…", "cwd": "~/other",
+//       { "name": "claude", "port": 3949, "apiKey": "" },
+//       { "name": "claude2","port": 3950, "apiKey": "…", "cwd": "/abs/path/to/project",
 //         "command": ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] }
 //     ]
 //   }
