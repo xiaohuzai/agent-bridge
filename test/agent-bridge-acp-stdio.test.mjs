@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -34,8 +34,19 @@ process.on('exit', () => {
 const CONFIG = join(tmp, 'agents.json');
 writeFileSync(CONFIG, JSON.stringify({ bridges: [{ name: 'claude', command: [FAKE_ACP], cwd: '/tmp' }] }));
 
-function spawnAcp({ extraArgs = ['claude'], config = CONFIG } = {}) {
-  const proc = spawn(process.execPath, [CLI, 'acp', ...extraArgs, '--config', config], { cwd: REPO, stdio: ['pipe', 'pipe', 'pipe'] });
+// Zero-setup fallback fixture: an empty "project" dir (no agents.json
+// anywhere near it) whose PATH carries the fake agent disguised as the
+// claude registry default command.
+mkdirSync(join(tmp, 'bin'));
+copyFileSync(FAKE_ACP, join(tmp, 'bin', 'claude-agent-acp'));
+chmodSync(join(tmp, 'bin', 'claude-agent-acp'), 0o755);
+const FALLBACK_CWD = join(tmp, 'project');
+mkdirSync(FALLBACK_CWD);
+
+function spawnAcp({ extraArgs = ['claude'], config = CONFIG, cwd = REPO, env } = {}) {
+  const cliArgs = ['acp', ...extraArgs];
+  if (config) cliArgs.push('--config', config);
+  const proc = spawn(process.execPath, [CLI, ...cliArgs], { cwd, env: env ? { ...process.env, ...env } : undefined, stdio: ['pipe', 'pipe', 'pipe'] });
   const frames = [];
   const stderr = [];
   let buf = '';
@@ -177,6 +188,86 @@ test('--bind is rejected in acp mode (it opens no port)', async () => {
   const code = await c.exit();
   assert.equal(code, 1);
   assert.match(c.stderr.join(''), /--bind is a serve flag/);
+});
+
+// --- third-party client compat pins (mirror of the WS-front coverage) -------
+
+test('session/load adopts a previous-lifetime id; the next prompt resumes it', async () => {
+  // Editors (Zed, vscode-acp) reconnect with session/load, not session/new.
+  const c = spawnAcp();
+  initialize(c);
+  await c.wait((f) => f.id === 1);
+  c.send({ jsonrpc: '2.0', id: 2, method: 'session/load', params: { sessionId: 'acp-sess-1', cwd: '/ignored', mcpServers: [] } });
+  const loaded = await c.wait((f) => f.id === 2);
+  assert.deepEqual(loaded.result, {});
+  c.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: 'acp-sess-1', prompt: [{ type: 'text', text: 'hello again' }] } });
+  const chunk = await c.wait((f) => f.method === 'session/update' && f.params.update.sessionUpdate === 'agent_message_chunk');
+  assert.equal(chunk.params.update.content.text, 'ACP_reply');
+  assert.ok(c.stderr.join('').includes('session resumed'), 'adapter must take the session/resume path');
+  c.end();
+  assert.equal(await c.exit(), 0);
+});
+
+test('unknown rpc method → -32601', async () => {
+  const c = spawnAcp();
+  initialize(c);
+  await c.wait((f) => f.id === 1);
+  c.send({ jsonrpc: '2.0', id: 5, method: 'fs/read_text_file', params: { path: '/etc/passwd' } });
+  const err = await c.wait((f) => f.id === 5);
+  assert.equal(err.error.code, -32601);
+  c.end();
+  assert.equal(await c.exit(), 0);
+});
+
+test('image ContentBlock rides through as a data: URL', async () => {
+  const c = spawnAcp();
+  initialize(c);
+  await c.wait((f) => f.id === 1);
+  c.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: {} });
+  const created = await c.wait((f) => f.id === 2);
+  c.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: created.result.sessionId, prompt: [
+    { type: 'text', text: 'IMG look' },
+    { type: 'image', data: 'UklGRhIAAABXRUJQVlA4TAGAAAAAAA==', mimeType: 'image/webp' },
+  ] } });
+  const chunk = await c.wait((f) => f.method === 'session/update' && f.params.update.sessionUpdate === 'agent_message_chunk');
+  assert.match(chunk.params.update.content.text, /IMG:1/);
+  assert.match(chunk.params.update.content.text, /MIME:image\/webp/);
+  c.end();
+  assert.equal(await c.exit(), 0);
+});
+
+// --- zero-setup fallback (registry default spawn) -----------------------------
+
+test('no config anywhere: acp mode falls back to the registry default spawn', async () => {
+  const c = spawnAcp({
+    config: null,
+    cwd: FALLBACK_CWD,
+    env: { PATH: `${join(tmp, 'bin')}:${process.env.PATH}` },
+  });
+  initialize(c);
+  const init = await c.wait((f) => f.id === 1);
+  assert.equal(init.result.protocolVersion, 1);
+  assert.match(init.result.agentInfo.name, /agent-bridge \(claude\)/);
+  c.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/ignored', mcpServers: [] } });
+  const created = await c.wait((f) => f.id === 2);
+  c.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: created.result.sessionId, prompt: [{ type: 'text', text: 'hello' }] } });
+  const chunk = await c.wait((f) => f.method === 'session/update' && f.params.update.sessionUpdate === 'agent_message_chunk');
+  assert.equal(chunk.params.update.content.text, 'ACP_reply');
+  assert.ok(c.stderr.join('').includes('registry default'), 'the fallback must announce itself on stderr');
+  c.end();
+  assert.equal(await c.exit(), 0);
+});
+
+test('no config + unknown name → exit 1 naming the known agents', async () => {
+  const c = spawnAcp({
+    extraArgs: ['nope'],
+    config: null,
+    cwd: FALLBACK_CWD,
+    env: { PATH: `${join(tmp, 'bin')}:${process.env.PATH}` },
+  });
+  const code = await c.exit();
+  assert.equal(code, 1);
+  assert.match(c.stderr.join(''), /known agents: codex, claude, pi/);
 });
 
 // Direct-module sanity: the neutral session + adapter work without the CLI
