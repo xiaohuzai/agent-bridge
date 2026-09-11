@@ -55,7 +55,7 @@ test('validateConfig: all problems reported at once, with the fix hint', () => {
       { name: 'claude', port: 3949, apiKey: 'k' },                  // dup port (with codex above)
       { name: 'claude', port: 70000, apiKey: 'k', sandbox: 'yolo' } // bad port + bad sandbox
     ] }),
-    (e) => /unknown agent "nope".*known agents: codex, claude/s.test(e.message)
+    (e) => /unknown agent "nope".*known agents: codex, claude, pi/s.test(e.message)
       && /native adapter.*codexBin.*not "command"/s.test(e.message)
       && /duplicate name "codex"/.test(e.message)
       && /duplicate port 3949/.test(e.message)

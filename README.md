@@ -50,6 +50,7 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 |---|---|---|
 | **codex** | `npm i -g @openai/codex`, then any ONE of: `codex login` (ChatGPT subscription) · `export OPENAI_API_KEY=…` · custom provider in `~/.codex/config.toml` | ✅ live-verified |
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in · `npm i -g @agentclientprotocol/claude-agent-acp` (official ACP shim) | ✅ live-verified |
+| **pi** | `npm i -g @earendil-works/pi-coding-agent pi-acp` → configure pi's model providers (run `pi` once, or `~/.pi/agent/models.json`) | ✅ live-verified |
 | any ACP v2 agent (gemini, opencode, kimi, …) | that agent's own CLI + login (gemini is native ACP: `gemini --experimental-acp`) | ❓ schema-level |
 
 agent-bridge installs none of these for you — it has zero dependencies and only spawns the CLI you already have. A bridge whose agent is missing still starts and answers `/health`; it fails on its first turn, with an install hint.
@@ -88,7 +89,7 @@ The starter runs as-is — codex on 3948, claude on 3949, no key needed on your 
 
 | Field | Meaning |
 |---|---|
-| `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`) |
+| `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`) |
 | `port` | required for serve, unique per bridge (may be omitted for entries used only via `acp`) |
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
@@ -314,7 +315,7 @@ Turns are live-only (all doors):
 
 Protocol notes:
 
-- The ACP adapter negotiates protocolVersion 1–2 (both official shims — codex-acp, claude-agent-acp — speak v1).
+- The ACP adapter negotiates protocolVersion 1–2 (the official shims — codex-acp, claude-agent-acp — and pi-acp all speak v1). Agents that only implement `session/load` for restore (pi-acp) are handled: `session/resume` is tried first, `session/load` is the automatic fallback.
 - The ACP-over-WebSocket front follows the official remote-transport RFD, which is still Active (not final); when it lands we'll make a compliance pass.
 
 ## Development

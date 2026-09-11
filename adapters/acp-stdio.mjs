@@ -12,6 +12,18 @@
 // requests. The bridge therefore requests 2 and ACCEPTS 1 or 2; anything
 // else is refused.
 //
+// PI-ACP (svkozak/pi-acp 0.0.33 driving pi 0.85.1, live-verified 2026-09-11
+// with a mock OpenAI provider): also protocolVersion 1; spawns
+// `pi --mode rpc --no-themes`. promptCapabilities.image=true (images ride
+// through). The session/prompt response is `{stopReason}` only — pi reports
+// NO usage (no usage_update either), so done events carry no token counts.
+// Built-in tools (bash/read/edit/write) auto-execute — the only
+// session/request_permission requests are pi EXTENSION ui select/confirm
+// prompts. pi-acp's startup banner (version + skill list) and
+// available_commands_update arrive as session/updates OUTSIDE any turn; the
+// bridge drops them (no live turn entry), so the first turn's deltas stay
+// clean. Slash commands (/compact, /session, …) ride as prompt text.
+//
 // Wire facts (official schema + live frames; v1 facts captured from
 // codex-acp driving codex-cli 0.149.1 through a volcengine gateway):
 //   initialize  {protocolVersion:2, clientCapabilities:{}}
@@ -23,7 +35,9 @@
 //                 models.availableModels — ignored)
 //   session/resume {sessionId, cwd} → {sessionId}   (restore after restart;
 //                 exists on BOTH official shims — claude-agent-acp passes it
-//                 down as `claude -p --resume <id>`)
+//                 down as `claude -p --resume <id>`; pi-acp refuses it with
+//                 -32601 and only knows session/load {sessionId, cwd,
+//                 mcpServers} — #ensureSession falls back to it)
 //   session/prompt {sessionId, prompt:ContentBlock[]} — completion depends on
 //       the negotiated version:
 //       v2 → {} (ACCEPTANCE ONLY); the turn ends via `state_update` idle
@@ -285,8 +299,16 @@ export class AcpStdioAdapter {
     await this.ensureChild();
     if (sessionId && this.sessions.has(sessionId)) return sessionId;
     if (sessionId) {
-      // Session from a previous bridge lifetime — ACP v2 has session/resume.
-      await this.rpc('session/resume', { sessionId, cwd: this.opts.cwd });
+      // Session from a previous bridge lifetime. The official shims answer
+      // session/resume; pi-acp only knows session/load (live 2026-09-11:
+      // resume → -32601 "Method not found", load restores the SAME session
+      // id from its own persisted map) — try resume, fall back to load.
+      try {
+        await this.rpc('session/resume', { sessionId, cwd: this.opts.cwd });
+      } catch (resumeErr) {
+        await this.rpc('session/load', { sessionId, cwd: this.opts.cwd, mcpServers: [] });
+        this.opts.log(`[acp] session/resume refused (${String(resumeErr.message).slice(0, 80)}), restored via session/load`);
+      }
       this.opts.log(`[acp] session resumed ${String(sessionId).slice(0, 8)}…`);
       return sessionId;
     }

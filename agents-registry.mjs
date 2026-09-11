@@ -10,6 +10,7 @@
 export const KNOWN_AGENTS = {
   codex: { kind: 'codex', summary: 'codex CLI via its app-server (native adapter)' },
   claude: { kind: 'acp', command: ['claude-agent-acp'], summary: 'claude code via the official claude-agent-acp shim' },
+  pi: { kind: 'acp', command: ['pi-acp'], summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
   // gemini waits here until it has a live-verified turn (schema-level only
   // today) — the registry doubles as a "supported" claim to clients.
 };
