@@ -160,6 +160,27 @@ agent-bridge serve
 - ACP 门对 v1 零影响：opt-in 配置、独立路径、只增不改。
 - 设计细节：[docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md)。
 
+### 插上现成的 ACP 客户端
+
+ACP 门说的就是现成 ACP 客户端已经在说的话——客户端不需要写任何 agent-bridge 专用代码：
+
+- **网络客户端**（浏览器侧边栏——acp-sidepanel、chrome-acp 这类——以及 acpx、acp-ui、你自己的 UI）：条目开 `"acp": true`，客户端指向 `ws://host:port/acp`，带上 `Authorization: Bearer <apiKey>`（无 key 的回环桥不需要鉴权头）。客户端 `initialize` 里提更新的 `protocolVersion` 会被应答为我们说的版本（1），不会报错。
+- **编辑器客户端**（Zed、vscode-acp）把 agent 当本地命令启动——让它们启动桥本身。不带 `--config` 时用注册表内置默认命令启动该名字的 agent，零配置即用：
+
+  ```json
+  // Zed — settings.json → agent_servers
+  {
+    "agent_servers": {
+      "agent-bridge": {
+        "command": "agent-bridge",
+        "args": ["acp", "claude"]
+      }
+    }
+  }
+  ```
+
+  要配置条目（sandbox、codex、自定义 shim 命令），交给它一份配置：`["acp", "codex", "--config", "/abs/path/agents.json"]`。
+
 ## 内置 HTTP API（v1）
 
 极简之门——四个端点、一套 SSE 事件词汇，刻意为之并已冻结。已经会说 ACP 的客户端请走上面的 ACP 门；其余所有人从这里开始。
@@ -262,7 +283,7 @@ async function turn(text, sessionId) {
 - **审批是一等公民。** 权限请求带着 agent 自己的选项流向客户端，由客户端决定 once / always / deny。知名度最高的多 agent HTTP 桥在服务端替客户端自动回答"总是允许"——我们认为那是 bug，不是 feature。
 - **实机验证的适配器。** codex 走原生 app-server 协议，其余走 ACP 对接官方壳——每一条协议事实都来自真实 agent，不是文档。
 - **零依赖。** 一次 clone，一条命令。没有安装器、没有容器、没有数据库。
-- **两端都是 ACP。** 桥对 agent 说 ACP（stdio 适配器），对客户端也说 ACP（WebSocket / stdio 门）——这也是它有资格进入 ACP Registry 的原因。
+- **两端都是 ACP。** 桥对 agent 说 ACP（stdio 适配器），对客户端也说 ACP（WebSocket / stdio 门）——这也是它有资格进入 ACP Registry 的原因（提交记录见 [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md)；编辑器里 `npx @xiaohuzai/agent-bridge acp claude` 即可拉起）。
 
 ## 部署到远程服务器
 

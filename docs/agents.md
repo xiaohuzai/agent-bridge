@@ -70,7 +70,7 @@ npm i -g @agentclientprotocol/claude-agent-acp   # the ACP shim (maintained by t
 ```
 
 - Equivalent without a global install: add `"command": ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]`.
-- Alternative shim: `"command": ["claude-code-acp"]` (Zed's older `@zed-industries/claude-code-acp`).
+- **Two shim packages exist — don't mix them up.** `@agentclientprotocol/claude-agent-acp` (binary `claude-agent-acp`) is the official shim maintained by the ACP org — that's the one we verify. `@zed-industries/claude-code-acp` (binary `claude-code-acp`) is Zed's older shim — it works too (both speak v1; it's what chrome-acp wires up), but our session/resume and capability findings are recorded against the official one, so prefer it.
 
 **Behavior notes**:
 
@@ -116,22 +116,27 @@ pi                                      # first run: pick a provider / log in
 
 ## codex via the official ACP shim (alternative route)
 
-`npm i -g @agentclientprotocol/codex-acp` also puts codex behind the bridge — verified end-to-end on 2026-09-07 with a real turn through a volcengine gateway (start → done + usage). Since `serve` only accepts registry names, drive it with a one-line registry addition (`"codexacp": { "kind": "acp", "command": ["codex-acp"] }`) plus an entry `{ "name": "codexacp", "port": …, "apiKey": … }`. **But there is an upstream defect**: on non-streaming backends (which send `item/completed` without prior deltas — e.g. the deepseek gateway), the final answer text is dropped entirely — the turn ends `end_turn` with an empty `full` (codex-acp `return null`s the completed agentMessage item and only forwards deltas). The native codex entry above remains the primary recommendation (it has the completed-items fallback and is unaffected).
+`npm i -g @agentclientprotocol/codex-acp` also puts codex behind the bridge — verified end-to-end on 2026-09-07 with a real turn through a volcengine gateway (start → done + usage). Since `serve` only accepts registry names, drive it with a one-line registry addition (`"codexacp": { "kind": "acp", "command": ["codex-acp"] }`) plus an entry `{ "name": "codexacp", "port": …, "apiKey": … }`. **But there is an upstream defect**: on non-streaming backends (which send `item/completed` without prior deltas — e.g. the deepseek gateway), the final answer text is dropped entirely — the turn ends `end_turn` with an empty `full` (codex-acp `return null`s the completed agentMessage item and only forwards deltas). The native codex entry above remains the primary recommendation (it has the completed-items fallback and is unaffected). (Note: Zed's `@zed-industries/codex-acp` also exists in the wild; the official `@agentclientprotocol/codex-acp` is the one verified here.)
 
 ## Other ACP v2 agents
 
 Any agent that speaks ACP v2 on stdio joins with two lines: a registry entry in [`agents-registry.mjs`](../agents-registry.mjs) (`"kimi": { "kind": "acp", "command": ["kimi-acp"] }`) and an agents.json entry (`{ "name": "kimi", "port": …, "apiKey": … }`). The registry doubles as a "supported" claim to clients, so add a line once the agent has a verified turn.
 
+Candidate commands cross-checked against the wider ecosystem (each CLI must be installed and signed in first):
+
 - **gemini**: native ACP support, no shim — the registry line would be `"gemini": { "kind": "acp", "command": ["gemini", "--experimental-acp"] }` (sign in with `gemini` first).
-- **opencode / kimi / qwen etc.**: check each agent's docs for its ACP story; the single test is that the configured command speaks ACP on stdio (the bridge accepts protocolVersion 1 or 2).
+- **qwen**: `"qwen": { "kind": "acp", "command": ["qwen", "--acp"] }` (`npm i -g @qwen-code/qwen-code`).
+- **opencode**: `"opencode": { "kind": "acp", "command": ["opencode", "acp"] }`.
+- **auggie** (Augment Code): `"auggie": { "kind": "acp", "command": ["auggie", "--acp"] }`.
+- **kimi etc.**: check each agent's docs for its ACP story; the single test is that the configured command speaks ACP on stdio (the bridge accepts protocolVersion 1 or 2).
 
 None of these are live-verified yet — report your results (good or bad) and we'll update the table.
 
 ## ACP clients (the front)
 
-Every entry can additionally serve ACP clients directly: add `"acp": true` and the bridge exposes `ws://<host>:<port>/acp` speaking ACP v1 (`initialize` → `session/new` → `session/prompt`; permission requests arrive as `session/request_permission` with the agent's own options). Same port, same apiKey and Host rules as v1; the client's `session/new` cwd is ignored — the agent runs in the entry's `cwd`. Design notes: [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md).
+Every entry can additionally serve ACP clients directly: add `"acp": true` and the bridge exposes `ws://<host>:<port>/acp` speaking ACP v1 (`initialize` → `session/new` → `session/prompt`; permission requests arrive as `session/request_permission` with the agent's own options). Same port, same apiKey and Host rules as v1; the client's `session/new` cwd is ignored — the agent runs in the entry's `cwd`. Ready-made clients (browser sidepanels à la acp-sidepanel / chrome-acp, acpx, acp-ui, …) connect as-is: point them at `ws://host:port/acp` with the entry's apiKey as the bearer token. Design notes: [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md).
 
-Spawn-style clients that launch agents as local commands (Zed, vscode-acp, …) use the stdio door instead: `node cli.mjs acp <entry-name> [--config agents.json]` — that one entry becomes an ACP v1 agent on stdio (protocol on stdout, logs on stderr, no port opened; the entry may omit `port`).
+Spawn-style clients that launch agents as local commands (Zed, vscode-acp, …) use the stdio door instead: `node cli.mjs acp <entry-name> [--config agents.json]` — that one entry becomes an ACP v1 agent on stdio (protocol on stdout, logs on stderr, no port opened; the entry may omit `port`). With no config file at all, the registry's built-in default for the name is spawned, so `agent-bridge acp claude` works with zero setup — that is the command the ACP Registry listing distributes (see [acp-registry.zh-CN.md](./acp-registry.zh-CN.md)).
 
 ## Troubleshooting
 
