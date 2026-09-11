@@ -160,6 +160,27 @@ Notes:
 - The ACP doors cannot touch v1: opt-in config, separate paths, additive only.
 - Design notes: [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md) (zh-CN).
 
+### Plug in existing ACP clients
+
+The ACP doors are what off-the-shelf ACP clients already speak — no agent-bridge-specific client code needed:
+
+- **Network clients** (browser sidepanels — acp-sidepanel- and chrome-acp-style apps — plus acpx, acp-ui, your own UI): enable `"acp": true` on the entry and point the client at `ws://host:port/acp`, sending `Authorization: Bearer <apiKey>` (a keyless loopback bridge accepts connections without the header). A client proposing a newer `protocolVersion` in `initialize` is answered with the version we speak (1), not an error.
+- **Editor clients** (Zed, vscode-acp) spawn the agent as a local command — point them at the bridge itself. With no `--config`, the registry's built-in default for the name is spawned, so this is zero-setup:
+
+  ```json
+  // Zed — settings.json → agent_servers
+  {
+    "agent_servers": {
+      "agent-bridge": {
+        "command": "agent-bridge",
+        "args": ["acp", "claude"]
+      }
+    }
+  }
+  ```
+
+  To configure the entry (sandbox, codex, a custom shim command), hand over a config: `["acp", "codex", "--config", "/abs/path/agents.json"]`.
+
 ## The built-in HTTP API (v1)
 
 The minimal door — four endpoints and one SSE event vocabulary, deliberate and frozen. Clients that already speak ACP use the ACP doors above; everyone else starts here.
@@ -262,7 +283,7 @@ The authoritative contract — edge rules like first-turn session assignment and
 - **Approvals are first-class.** Permission requests stream to the client with the agent's own options, and the client decides once / always / deny. The best-known multi-agent HTTP bridge answers "always allow" server-side on the client's behalf — we think that's a bug, not a feature.
 - **Live-verified adapters.** codex is driven through its native app-server protocol; everything else through ACP against the official shims. Every protocol fact was captured from real agents, not from docs.
 - **Zero dependencies.** One clone, one command. No installer, no container, no database.
-- **ACP on both ends.** The bridge speaks ACP toward agents (stdio adapters) and toward clients (WebSocket / stdio fronts) — which is also what qualifies it for the ACP Registry.
+- **ACP on both ends.** The bridge speaks ACP toward agents (stdio adapters) and toward clients (WebSocket / stdio fronts) — which is also what qualifies it for the ACP Registry (submission record: [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md); editors spawn it directly via `npx @xiaohuzai/agent-bridge acp claude`).
 
 ## Run it on a remote server
 

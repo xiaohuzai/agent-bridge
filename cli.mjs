@@ -13,8 +13,12 @@
 // acp spawns ONE config entry as an ACP v1 agent on stdio — for clients
 // that launch agents as local commands (Zed, vscode-acp, …). stdout is the
 // protocol channel; all logs go to stderr. No port is opened in this mode.
+// Config resolution: explicit --config > ./agents.json (when present) > the
+// registry's built-in default for the name — so `agent-bridge acp claude`
+// runs with zero setup, which is what registry-style auto-install invokes.
 
 import { loadConfig, startServe, configPermissionsWarning, adapterFor } from './serve.mjs';
+import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 import { runAcpStdio } from './acp-front-stdio.mjs';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +75,8 @@ if (args.help) {
   acp    Spawns ONE config entry as an ACP v1 agent on stdio — for clients
          that launch agents as local commands (Zed, vscode-acp, …). Point
          them at:  agent-bridge acp <name> --config /abs/path/agents.json
+         Without any config it spawns the registry's built-in default for
+         the name:  agent-bridge acp claude
 
 options:
   --config FILE   JSON config: {"bridges":[…]} — name must be a known agent
@@ -96,16 +102,28 @@ if (args.mode === 'acp') {
     process.exit(1);
   }
   let entry;
-  try {
-    const cfg = loadConfig(configPath, { requirePort: false });
-    entry = cfg.bridges.find((b) => b.name === args.name);
-    if (!entry) {
-      console.error(`no bridge "${args.name}" in ${configPath} — entries: ${cfg.bridges.map((b) => b.name).join(', ')}`);
+  const noConfigHere = !args.config && !existsSync(configPath);
+  if (noConfigHere && !KNOWN_AGENTS[args.name]) {
+    console.error(`unknown agent "${args.name}" — known agents: ${knownAgentNames().join(', ')}
+  Zero-setup: agent-bridge acp claude   |   anything else: create an agents.json (see --help)`);
+    process.exit(1);
+  }
+  if (noConfigHere) {
+    entry = { name: args.name, ...KNOWN_AGENTS[args.name] };
+    const what = entry.command ? `command ${JSON.stringify(entry.command)}` : 'the native codex adapter';
+    console.error(`[acp] no ${configPath} beside you — spawning the registry default for "${args.name}" (${what}); create an agents.json to configure it.`);
+  } else {
+    try {
+      const cfg = loadConfig(configPath, { requirePort: false });
+      entry = cfg.bridges.find((b) => b.name === args.name);
+      if (!entry) {
+        console.error(`no bridge "${args.name}" in ${configPath} — entries: ${cfg.bridges.map((b) => b.name).join(', ')}`);
+        process.exit(1);
+      }
+    } catch (e) {
+      console.error(e.message + missingConfigHint(configPath, e.message));
       process.exit(1);
     }
-  } catch (e) {
-    console.error(e.message + missingConfigHint(configPath, e.message));
-    process.exit(1);
   }
   const { adapter, agent } = adapterFor(entry, { log: (m) => console.error(m) });
   runAcpStdio({ adapter, agent, version: PKG_VERSION, log: (m) => console.error(m) });

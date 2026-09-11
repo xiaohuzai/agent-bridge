@@ -38,11 +38,21 @@ test('serve with no agents.json: the hint names the shipped starter by absolute 
   assert.match(stderr, /cp \S*agents\.example\.json agents\.json/);
 });
 
-test('acp with no agents.json: same hint', async () => {
+test('acp with no agents.json: zero-setup fallback to the registry default', async () => {
   const { code, stderr } = await runCli(['acp', 'claude'], tmp);
+  // stdin is /dev/null → the front shuts down cleanly (exit 0). The real
+  // claude-agent-acp isn't on PATH here; that must not crash the front
+  // either — a missing agent binary is a turn error, never a boot crash.
+  assert.equal(code, 0);
+  assert.match(stderr, /registry default for "claude"/);
+  assert.doesNotMatch(stderr, /No agents\.json here/);
+});
+
+test('acp with no agents.json and an unknown name: names the known agents', async () => {
+  const { code, stderr } = await runCli(['acp', 'nope'], tmp);
   assert.equal(code, 1);
-  assert.match(stderr, /No agents\.json here/);
-  assert.match(stderr, /agents\.example\.json/);
+  assert.match(stderr, /known agents: codex, claude, pi/);
+  assert.match(stderr, /create an agents\.json/);
 });
 
 test('an explicitly missing --config path gets the raw error, no starter hint', async () => {

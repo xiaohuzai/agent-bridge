@@ -111,6 +111,28 @@ test('initialize → protocolVersion 1, image capability advertised, agentInfo n
   ws.close();
 });
 
+test('a v2-proposing client is answered with protocolVersion 1 (negotiation pin)', async () => {
+  await startBridge({});
+  const ws = await wsConnect({ port });
+  clients.push(ws);
+  // What a chrome-acp/RFD-style client does: propose the NEWEST version it
+  // speaks, with populated clientCapabilities. We offer v1 only — the
+  // response must say so cleanly, never error or hang up.
+  await ws.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {
+    protocolVersion: 2,
+    clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
+  } });
+  const init = await ws.recv((f) => text(f)?.id === 1);
+  assert.equal(init.msg.result.protocolVersion, 1);
+  assert.equal(init.msg.result.agentCapabilities.promptCapabilities.image, true);
+  // The session works end to end after the downgrade.
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'hello' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  ws.close();
+});
+
 // --- session lifecycle -------------------------------------------------------
 
 test('session/new returns a real id; prompt streams deltas then answers with stopReason + usage', async () => {
@@ -125,6 +147,18 @@ test('session/new returns a real id; prompt streams deltas then answers with sto
   const done = await ws.recv((f) => text(f)?.id === 3);
   assert.equal(done.msg.result.stopReason, 'end_turn');
   assert.deepEqual(done.msg.result.usage, { inputTokens: 33, outputTokens: 0 }, 'usage rides the prompt response (v1)');
+  ws.close();
+});
+
+test('session/new: client cwd and mcpServers are accepted and ignored (bridge cwd is config-owned)', async () => {
+  await startBridge({});
+  const { ws } = await openAcpClient();
+  await ws.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/some/other/project', mcpServers: [{ name: 'x', command: ['y'] }] } });
+  const created = await ws.recv((f) => text(f)?.id === 2);
+  assert.equal(created.msg.result.sessionId, 'acp-sess-1', 'the client fields ride along harmlessly');
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: 'acp-sess-1', prompt: [{ type: 'text', text: 'hello' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
   ws.close();
 });
 

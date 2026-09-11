@@ -69,7 +69,7 @@ npm i -g @agentclientprotocol/claude-agent-acp   # ACP 翻译壳（ACP 官方组
 ```
 
 - 免全局安装的等价写法：加 `"command": ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]`。
-- 备选壳：`"command": ["claude-code-acp"]`（Zed 维护的旧壳 `@zed-industries/claude-code-acp`）。
+- **市面上有两套壳包，别混用。** `@agentclientprotocol/claude-agent-acp`（二进制名 `claude-agent-acp`）是 ACP 官方组织维护的官方壳——我们验证的是它。`@zed-industries/claude-code-acp`（二进制名 `claude-code-acp`）是 Zed 维护的旧壳——也能用（都说 v1；chrome-acp 接的就是它），但我们的 session/resume 与能力声明结论都记录在官方壳上，优先用官方壳。
 
 **行为要点**：
 
@@ -115,22 +115,27 @@ pi                                      # 首次运行：选 provider / 登录
 
 ## codex 的 ACP 备选路线（官方壳）
 
-`npm i -g @agentclientprotocol/codex-acp` 也能把 codex 挂进桥——2026-09-07 已过桥实测真回合（volcengine 网关，start → done + usage 全通）。由于 serve 只认注册表名字，走这条路线需在 [`agents-registry.mjs`](../agents-registry.mjs) 加一行（`"codexacp": { "kind": "acp", "command": ["codex-acp"] }`）并写一条 `{ "name": "codexacp", … }` 配置。**但有一个上游缺陷**：非流式后端（只发 `item/completed` 不发 delta，例如 deepseek 网关）会把最终答案文本整个丢掉——turn 以 `end_turn` 结束但 `full` 为空（codex-acp 对 completed 的 agentMessage 直接 `return null`，只转发 delta）。上面的 codex 原生条目仍是主推荐（有 completed-items 兜底，不受影响）。
+`npm i -g @agentclientprotocol/codex-acp` 也能把 codex 挂进桥——2026-09-07 已过桥实测真回合（volcengine 网关，start → done + usage 全通）。由于 serve 只认注册表名字，走这条路线需在 [`agents-registry.mjs`](../agents-registry.mjs) 加一行（`"codexacp": { "kind": "acp", "command": ["codex-acp"] }`）并写一条 `{ "name": "codexacp", … }` 配置。**但有一个上游缺陷**：非流式后端（只发 `item/completed` 不发 delta，例如 deepseek 网关）会把最终答案文本整个丢掉——turn 以 `end_turn` 结束但 `full` 为空（codex-acp 对 completed 的 agentMessage 直接 `return null`，只转发 delta）。上面的 codex 原生条目仍是主推荐（有 completed-items 兜底，不受影响）。（注：市面上还有 Zed 的 `@zed-industries/codex-acp`；这里实测的是官方 `@agentclientprotocol/codex-acp`。）
 
 ## 其他 ACP v2 agent
 
 任何在 stdio 上说 ACP v2 的 agent，两行接入：[`agents-registry.mjs`](../agents-registry.mjs) 加一条注册（`"kimi": { "kind": "acp", "command": ["kimi-acp"] }`），agents.json 加一条引用（`{ "name": "kimi", "port": …, "apiKey": … }`）。注册表对客户端相当于「已支持」的宣称，所以等 agent 有过验证回合再加。
 
+候选命令（已与生态交叉核对，各 CLI 需先安装并登录）：
+
 - **gemini**：原生支持 ACP，无需壳——注册表行是 `"gemini": { "kind": "acp", "command": ["gemini", "--experimental-acp"] }`（需先 `gemini` 登录）。
-- **opencode / kimi / qwen 等**：各自的 ACP 支持方式以其官方文档为准；核心判断只有一条——配置里的 command 得能在 stdio 上说 ACP（桥接受 protocolVersion 1 或 2）。
+- **qwen**：`"qwen": { "kind": "acp", "command": ["qwen", "--acp"] }`（`npm i -g @qwen-code/qwen-code`）。
+- **opencode**：`"opencode": { "kind": "acp", "command": ["opencode", "acp"] }`。
+- **auggie**（Augment Code）：`"auggie": { "kind": "acp", "command": ["auggie", "--acp"] }`。
+- **kimi 等**：各自的 ACP 支持方式以其官方文档为准；核心判断只有一条——配置里的 command 得能在 stdio 上说 ACP（桥接受 protocolVersion 1 或 2）。
 
 这些都还没实机验证——把你的结果（好的坏的）带回来，我们更新表格。
 
 ## ACP 客户端（门）
 
-每个条目还可以额外直接服务 ACP 客户端：写上 `"acp": true`，桥就在 `ws://<host>:<port>/acp` 说 ACP v1（`initialize` → `session/new` → `session/prompt`；审批请求以 `session/request_permission` 原样送达客户端，带 agent 自己的选项）。同端口、与 v1 相同的 apiKey 与 Host 规则；客户端 `session/new` 里的 cwd 会被忽略——agent 跑在条目配置的 `cwd`。设计说明见 [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md)。
+每个条目还可以额外直接服务 ACP 客户端：写上 `"acp": true`，桥就在 `ws://<host>:<port>/acp` 说 ACP v1（`initialize` → `session/new` → `session/prompt`；审批请求以 `session/request_permission` 原样送达客户端，带 agent 自己的选项）。同端口、与 v1 相同的 apiKey 与 Host 规则；客户端 `session/new` 里的 cwd 会被忽略——agent 跑在条目配置的 `cwd`。现成客户端（acp-sidepanel / chrome-acp 这类浏览器侧边栏、acpx、acp-ui……）直接接：指向 `ws://host:port/acp`，apiKey 当 bearer token 用。设计说明见 [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md)。
 
-把 agent 当本地命令启动的客户端（Zed、vscode-acp……）走 stdio 门：`node cli.mjs acp <条目名> [--config agents.json]`——该条目就变成 stdio 上的一个 ACP v1 agent（stdout 只走协议、日志走 stderr、不开端口；条目可以不写 `port`）。
+把 agent 当本地命令启动的客户端（Zed、vscode-acp……）走 stdio 门：`node cli.mjs acp <条目名> [--config agents.json]`——该条目就变成 stdio 上的一个 ACP v1 agent（stdout 只走协议、日志走 stderr、不开端口；条目可以不写 `port`）。完全没配置文件时，会按注册表内置默认命令启动该名字的 agent，所以 `agent-bridge acp claude` 零配置即用——ACP Registry 条目分发的就是这条命令（见 [acp-registry.zh-CN.md](./acp-registry.zh-CN.md)）。
 
 ## 故障排查
 
