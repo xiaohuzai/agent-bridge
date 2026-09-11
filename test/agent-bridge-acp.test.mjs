@@ -251,3 +251,29 @@ test('v1 wedged shim (never answers the prompt after cancel): interrupt settles 
   assert.equal(done2.data.full, 'ACP_reply');
   sse2.cancel();
 });
+
+test('pi-acp-style resume: session/resume refused → falls back to session/load (bridge restart, same session)', async () => {
+  // pi-acp 0.0.33 (live 2026-09-11) answers session/resume with -32601 and
+  // only restores via session/load. A bridge restart must therefore degrade
+  // to the fallback transparently and keep the session usable.
+  await stopServer();
+  await startServer({ command: [FAKE_ACP, 'v1', 'NORESUME'] });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  const start = await sse.readUntil((f) => f.data?.type === 'start');
+  const sid = start.data.sessionId;
+  await sse.readUntil((f) => f.data?.type === 'done');
+  sse.cancel();
+
+  await stopServer(); // "restart": fresh adapter, fresh agent process, same session id
+  await startServer({ command: [FAKE_ACP, 'v1', 'NORESUME'] });
+  const res2 = await post('/turns', { text: 'hi', sessionId: sid });
+  const sse2 = sseReader(res2.body);
+  const done2 = await sse2.readUntil((f) => f.data?.type === 'done');
+  assert.equal(done2.data.full, 'ACP_reply', 'turn on the restored session must complete');
+  sse2.cancel();
+  const all = logs.join(' | ');
+  assert.ok(all.includes('FAKE_METHOD:session/resume'), 'resume was attempted first');
+  assert.ok(all.includes('FAKE_METHOD:session/load'), 'load fallback was used');
+  assert.ok(all.includes('restored via session/load'), `fallback must be logged; logs: ${all.slice(0, 400)}`);
+});

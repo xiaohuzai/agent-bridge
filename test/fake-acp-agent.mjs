@@ -24,7 +24,10 @@ const sessions = new Set();
 // codex-acp, claude-agent-acp) — initialize replies protocolVersion 1, there
 // is NO prompt ack, and the session/prompt RPC response IS the turn
 // terminator ({stopReason, usage}). v2 mode: ack + state_update idle.
-const V1 = process.argv[2] === 'v1';
+// argv 'NORESUME' (pi-acp dialect, live 2026-09-11): session/resume is
+// answered with -32601 Method not found; only session/load restores.
+const V1 = process.argv.includes('v1');
+const NORESUME = process.argv.includes('NORESUME');
 const pendingPrompt = new Map(); // sessionId → pending session/prompt rpc id
 const hangSessions = new Set();  // v1: sessions whose prompt must NEVER be answered (wedged-shim simulation)
 
@@ -79,6 +82,13 @@ function handle(j) {
       send({ jsonrpc: '2.0', id: j.id, result: { sessionId: 'acp-sess-1' } });
       break;
     case 'session/resume':
+      if (NORESUME) {
+        send({ jsonrpc: '2.0', id: j.id, error: { code: -32601, message: '"Method not found": session/resume', data: { method: 'session/resume' } } });
+        break;
+      }
+      send({ jsonrpc: '2.0', id: j.id, result: { sessionId: j.params?.sessionId } });
+      break;
+    case 'session/load':
       send({ jsonrpc: '2.0', id: j.id, result: { sessionId: j.params?.sessionId } });
       break;
     case 'session/prompt': {

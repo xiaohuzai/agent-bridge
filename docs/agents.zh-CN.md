@@ -15,7 +15,8 @@ node cli.mjs serve            # 读 ./agents.json（或：serve --config FILE）
 | codex | `{ "name": "codex", "port": 3948, "apiKey": "", "approval": "on-request" }` | ✅ 已验证（codex-cli 0.149.1） |
 | codex 走官方壳 | 注册表加一行 + `{ "name": "codexacp", "port": …, "command": ["codex-acp"] }`（见下） | ⚠️ 过桥真回合 ✅；非流式后端丢答案文本（上游缺陷，见下） |
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08——真回合（流式完整）、会话连续、usage、审批流程；断连中断与桥重启续会话有测试覆盖，实机未跑 |
-| gemini / pi / opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
+| pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11——经 svkozak/pi-acp 0.0.33 + pi 0.85.1 真回合（流式、工具调用），由 mock OpenAI provider 驱动；桥重启续会话（自动 `session/load` 回退）实机已跑 |
+| gemini / opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
 
 ---
 
@@ -77,6 +78,41 @@ npm i -g @agentclientprotocol/claude-agent-acp   # ACP 翻译壳（ACP 官方组
 - 图片能力取决于它向 ACP 声明的 `promptCapabilities.image`（claude-agent-acp 已声明 `image: true`）；没声明会自动降级为文本提示（不落盘）。
 - 无凭证时表现已实测：session 正常创建，回合以干净的 `Authentication required` SSE error 结束。
 
+## pi
+
+pi（earendil-works 出品）本体同样不说 ACP——社区壳 [`pi-acp`](https://github.com/svkozak/pi-acp)（npm 包 `pi-acp`）负责翻译，底层拉起 `pi --mode rpc`。链路是：
+
+```
+agent-bridge ──ACP v1 (stdio，桥自动协商)──► pi-acp ──`pi --mode rpc`──► pi
+```
+
+**安装与登录**（要求 pi ≥ 0.80.4、Node ≥ 22）：
+
+```bash
+npm i -g @earendil-works/pi-coding-agent pi-acp
+pi                                      # 首次运行：选 provider / 登录
+# 自定义或 OpenAI 兼容端点：~/.pi/agent/models.json（settings.json 里设
+# defaultProvider/defaultModel）。pi-acp 也有 `pi-acp --terminal-login`，
+# 用于 Terminal Auth（ACP Registry）。
+```
+
+**agents.json 条目**：
+
+```json
+{ "name": "pi", "port": 3950, "apiKey": "" }
+```
+
+- 免全局安装的等价写法：`"command": ["npx", "-y", "pi-acp"]`。
+
+**行为要点**（2026-09-11 对 pi-acp 0.0.33 + pi 0.85.1 实测）：
+
+- **没有 usage 事件。** pi 不上报 token 计数（没有 `usage_update`，prompt 响应里也没有）——`done` 事件的 `usage` 为 null。
+- **内置工具自动执行。** pi 的 bash/read/edit/write 不询问直接跑——不发 `approval` 事件。唯一的 `session/request_permission` 来自 pi *扩展*的 UI 询问（select/confirm），桥按普通审批转发。
+- 图片可用：pi-acp 声明 `promptCapabilities.image: true`，data:/https URL 直接透传。
+- **会话可跨桥重启恢复。** pi-acp 拒绝 ACP `session/resume`（方法不存在），只实现了 `session/load`——桥先试 resume、失败自动回退 load；pi-acp 用自己持久化的映射表恢复同一个会话 id。
+- 斜杠命令（`/compact`、`/session`、`/thinking`……）当普通文本发即可——pi-acp 会在 pi 触发模型调用前截获。
+- pi-acp 的启动横幅（版本 + 已装 skills）在回合外发送；桥会丢弃，首个回合的流不会被污染。
+
 ## codex 的 ACP 备选路线（官方壳）
 
 `npm i -g @agentclientprotocol/codex-acp` 也能把 codex 挂进桥——2026-09-07 已过桥实测真回合（volcengine 网关，start → done + usage 全通）。由于 serve 只认注册表名字，走这条路线需在 [`agents-registry.mjs`](../agents-registry.mjs) 加一行（`"codexacp": { "kind": "acp", "command": ["codex-acp"] }`）并写一条 `{ "name": "codexacp", … }` 配置。**但有一个上游缺陷**：非流式后端（只发 `item/completed` 不发 delta，例如 deepseek 网关）会把最终答案文本整个丢掉——turn 以 `end_turn` 结束但 `full` 为空（codex-acp 对 completed 的 agentMessage 直接 `return null`，只转发 delta）。上面的 codex 原生条目仍是主推荐（有 completed-items 兜底，不受影响）。
@@ -86,8 +122,7 @@ npm i -g @agentclientprotocol/claude-agent-acp   # ACP 翻译壳（ACP 官方组
 任何在 stdio 上说 ACP v2 的 agent，两行接入：[`agents-registry.mjs`](../agents-registry.mjs) 加一条注册（`"kimi": { "kind": "acp", "command": ["kimi-acp"] }`），agents.json 加一条引用（`{ "name": "kimi", "port": …, "apiKey": … }`）。注册表对客户端相当于「已支持」的宣称，所以等 agent 有过验证回合再加。
 
 - **gemini**：原生支持 ACP，无需壳——注册表行是 `"gemini": { "kind": "acp", "command": ["gemini", "--experimental-acp"] }`（需先 `gemini` 登录）。
-- **pi**：社区壳（如 [nat-e/pi-acp](https://github.com/nat-e/pi-acp)，底层是 `pi --mode rpc`），安装方式见其仓库。
-- **opencode / kimi / qwen 等**：各自的 ACP 支持方式以其官方文档为准；核心判断只有一条——配置里的 command 得能在 stdio 上说 ACP v2。
+- **opencode / kimi / qwen 等**：各自的 ACP 支持方式以其官方文档为准；核心判断只有一条——配置里的 command 得能在 stdio 上说 ACP（桥接受 protocolVersion 1 或 2）。
 
 这些都还没实机验证——把你的结果（好的坏的）带回来，我们更新表格。
 

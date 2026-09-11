@@ -15,7 +15,8 @@ Verification status at a glance (honesty first — tell us what works or breaks,
 | codex | `{ "name": "codex", "port": 3948, "apiKey": "", "approval": "on-request" }` | ✅ yes (codex-cli 0.149.1) |
 | codex via official shim | registry line + `{ "name": "codexacp", "port": …, "command": ["codex-acp"] }` (see below) | ⚠️ real turn ✅; drops the answer text on non-streaming backends (upstream bug, see below) |
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08 — real turns (streaming, full answer text), session continuity, usage, approval flow; disconnect-interrupt and bridge-restart resume are test-covered but not yet exercised live |
-| gemini / pi / opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
+| pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11 — real turns (streaming, tool calls) through svkozak/pi-acp 0.0.33 + pi 0.85.1, driven by a mock OpenAI provider; bridge-restart resume (automatic `session/load` fallback) exercised live |
+| gemini / opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
 
 ---
 
@@ -78,6 +79,41 @@ npm i -g @agentclientprotocol/claude-agent-acp   # the ACP shim (maintained by t
 - Image support depends on the `promptCapabilities.image` it advertises (claude-agent-acp advertises `image: true`); without it, images degrade to a text note (never written to disk).
 - Unauthenticated behavior verified live: the session is created normally and the turn ends with a clean `Authentication required` SSE error.
 
+## pi
+
+pi (from earendil-works) does not speak ACP itself either — the community shim [`pi-acp`](https://github.com/svkozak/pi-acp) (npm package `pi-acp`) translates, spawning `pi --mode rpc` underneath. The chain:
+
+```
+agent-bridge ──ACP v1 (stdio; the bridge negotiates)──► pi-acp ──`pi --mode rpc`──► pi
+```
+
+**Install & sign in** (pi ≥ 0.80.4 and Node ≥ 22 required):
+
+```bash
+npm i -g @earendil-works/pi-coding-agent pi-acp
+pi                                      # first run: pick a provider / log in
+# custom or OpenAI-compatible endpoints: ~/.pi/agent/models.json (+ settings.json
+# defaultProvider/defaultModel). pi-acp also has `pi-acp --terminal-login` for
+# Terminal Auth (ACP Registry).
+```
+
+**agents.json entry**:
+
+```json
+{ "name": "pi", "port": 3950, "apiKey": "" }
+```
+
+- Equivalent without a global install: `"command": ["npx", "-y", "pi-acp"]`.
+
+**Behavior notes** (live-verified 2026-09-11 against pi-acp 0.0.33 + pi 0.85.1):
+
+- **No usage events.** pi reports no token counts (no `usage_update`, nothing in the prompt response) — `done` events carry `usage: null`.
+- **Built-in tools auto-execute.** pi's bash/read/edit/write run without asking — no `approval` events for them. The only `session/request_permission` requests are pi *extension* UI prompts (select/confirm), which the bridge relays like any approval.
+- Images work: pi-acp advertises `promptCapabilities.image: true`, and data:/https URLs ride through.
+- **Sessions survive bridge restarts.** pi-acp refuses ACP `session/resume` (method-not-found) and only implements `session/load` — the bridge tries resume first and falls back to load automatically; pi-acp restores the same session id from its own persisted map.
+- Slash commands (`/compact`, `/session`, `/thinking`, …) work as ordinary prompt text — pi-acp intercepts them before pi sees a model call.
+- pi-acp's startup banner (version + installed skills) is sent outside any turn; the bridge drops it, so your first turn's stream stays clean.
+
 ## codex via the official ACP shim (alternative route)
 
 `npm i -g @agentclientprotocol/codex-acp` also puts codex behind the bridge — verified end-to-end on 2026-09-07 with a real turn through a volcengine gateway (start → done + usage). Since `serve` only accepts registry names, drive it with a one-line registry addition (`"codexacp": { "kind": "acp", "command": ["codex-acp"] }`) plus an entry `{ "name": "codexacp", "port": …, "apiKey": … }`. **But there is an upstream defect**: on non-streaming backends (which send `item/completed` without prior deltas — e.g. the deepseek gateway), the final answer text is dropped entirely — the turn ends `end_turn` with an empty `full` (codex-acp `return null`s the completed agentMessage item and only forwards deltas). The native codex entry above remains the primary recommendation (it has the completed-items fallback and is unaffected).
@@ -87,8 +123,7 @@ npm i -g @agentclientprotocol/claude-agent-acp   # the ACP shim (maintained by t
 Any agent that speaks ACP v2 on stdio joins with two lines: a registry entry in [`agents-registry.mjs`](../agents-registry.mjs) (`"kimi": { "kind": "acp", "command": ["kimi-acp"] }`) and an agents.json entry (`{ "name": "kimi", "port": …, "apiKey": … }`). The registry doubles as a "supported" claim to clients, so add a line once the agent has a verified turn.
 
 - **gemini**: native ACP support, no shim — the registry line would be `"gemini": { "kind": "acp", "command": ["gemini", "--experimental-acp"] }` (sign in with `gemini` first).
-- **pi**: community shims exist (e.g. [nat-e/pi-acp](https://github.com/nat-e/pi-acp), built on `pi --mode rpc`); see their repos for installation.
-- **opencode / kimi / qwen etc.**: check each agent's docs for its ACP story; the single test is that the configured command speaks ACP v2 on stdio.
+- **opencode / kimi / qwen etc.**: check each agent's docs for its ACP story; the single test is that the configured command speaks ACP on stdio (the bridge accepts protocolVersion 1 or 2).
 
 None of these are live-verified yet — report your results (good or bad) and we'll update the table.
 

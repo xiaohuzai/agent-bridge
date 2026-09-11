@@ -50,6 +50,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 |---|---|---|
 | **codex** | `npm i -g @openai/codex`，然后三选一：`codex login`（ChatGPT 订阅）· `export OPENAI_API_KEY=…` · `~/.codex/config.toml` 配自定义 provider | ✅ 实机验证 |
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录 · `npm i -g @agentclientprotocol/claude-agent-acp`（官方 ACP 壳） | ✅ 实机验证 |
+| **pi** | `npm i -g @earendil-works/pi-coding-agent pi-acp` → 配置 pi 的模型 provider（跑一次 `pi`，或 `~/.pi/agent/models.json`） | ✅ 实机验证 |
 | 任何 ACP v2 智能体（gemini、opencode、kimi……） | 各自的 CLI + 登录（gemini 原生支持：`gemini --experimental-acp`） | ❓ 仅 schema 级 |
 
 agent-bridge 不代装任何 agent——它零依赖，只负责启动你机器上已有的 CLI。某个 agent 没装时，对应的桥照样会启动、`/health` 也正常，只有第一次对话才失败（带安装提示）。
@@ -88,7 +89,7 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 
 | 字段 | 说明 |
 |---|---|
-| `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`） |
+| `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`、`pi`） |
 | `port` | serve 必填，每桥唯一（仅用于 `acp` 的条目可省略） |
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
@@ -314,7 +315,7 @@ bridge.example.com {
 
 协议说明：
 
-- ACP adapter 协商 protocolVersion 1–2（两个官方壳——codex-acp、claude-agent-acp——都说 v1）。
+- ACP adapter 协商 protocolVersion 1–2（官方壳 codex-acp、claude-agent-acp 与 pi-acp 都说 v1）。只实现 `session/load` 做 restore 的 agent（pi-acp）也能用：先试 `session/resume`，被拒自动回退 `session/load`。
 - ACP-over-WebSocket 门遵循官方远程传输 RFD（状态 Active，尚未定稿）——规范落地后我们会做一次合规校准。
 
 ## 开发
