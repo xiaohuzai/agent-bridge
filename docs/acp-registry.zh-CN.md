@@ -44,4 +44,4 @@ Roadmap #4（owner 决策 2026-09-08：双门策略——v1 留给 browsa，**�
 
 ## 提交记录
 
-- 2026-09-12：首次提交（version 0.3.0，随免配置回退特性发布）。PR：<合入后回填>。
+- 2026-09-12：首次提交（version 0.3.0，随免配置回退特性发布；npm latest 已是 0.3.0）。上游 PR：https://github.com/agentclientprotocol/registry/pull/598 ——合入后把 README 与本记录改为「已列出」。
