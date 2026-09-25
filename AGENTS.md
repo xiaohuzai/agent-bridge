@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for coding agents working in this repository.
+Guidance for coding agents working in this repository. Quick orientation and the doc map (which file answers which question): [`CONTEXT.md`](./CONTEXT.md).
 
 ## What this repo is
 

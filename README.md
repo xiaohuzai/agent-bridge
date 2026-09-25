@@ -343,7 +343,12 @@ Protocol notes:
 
 ```bash
 npm test   # real adapter + real HTTP server vs scripted fake agents — no installs, no network
+node --test test/agent-bridge-acp.test.mjs   # one file (never `node --test test/` — go through the npm glob)
 ```
+
+Layout in one breath: [`server.mjs`](./server.mjs) is the v1 HTTP+SSE wire (its header comment is the authoritative, frozen contract) · `serve.mjs`/`cli.mjs` load the config and boot · [`adapters/`](./adapters/) speak toward agents (codex's native app-server + a generic ACP-stdio adapter) · `acp-front*.mjs` + `wire-ws.mjs` are the opt-in ACP doors · `test/` holds the scripted fake agents.
+
+Adding a long-tail agent is one line in [`agents-registry.mjs`](./agents-registry.mjs) (ACP agents just need a spawn command). One rule governs adapter work: protocol facts are captured live from real agents and recorded in the adapter's header comment — [AGENTS.md](./AGENTS.md) has the verification discipline, the traps already paid for, and the release flow.
 
 ## License
 

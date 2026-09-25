@@ -342,8 +342,13 @@ bridge.example.com {
 ## 开发
 
 ```bash
-npm test   # 真 adapter + 真 HTTP server，对打脚本化的假 agent——无需安装、无需联网
+npm test   # 真适配器 + 真 HTTP 服务 对阵 脚本化假 agent——无需安装、无网络
+node --test test/agent-bridge-acp.test.mjs   # 跑单个文件（别用 `node --test test/`——走 npm 脚本的 glob）
 ```
+
+布局一句话：[`server.mjs`](./server.mjs) 是 v1 HTTP+SSE 线协议（头注释即权威、已冻结的契约）· `serve.mjs`/`cli.mjs` 读配置、拉起服务 · [`adapters/`](./adapters/) 对接 agent（codex 原生 app-server + 通用 ACP-stdio 适配器）· `acp-front*.mjs` + `wire-ws.mjs` 是可选的 ACP 门 · `test/` 放脚本化假 agent。
+
+长尾 agent 接入只需在 [`agents-registry.mjs`](./agents-registry.mjs) 加一行（ACP agent 给个启动命令即可）。适配器开发只有一条铁律：协议事实必须从真 agent 实测捕获、记进适配器头注释——验证纪律、已踩过的坑和发版流程都在 [AGENTS.md](./AGENTS.md)。
 
 ## 许可证
 
