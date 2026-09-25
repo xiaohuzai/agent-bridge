@@ -111,6 +111,9 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
       }
     }
     if (b.cwd !== undefined && (typeof b.cwd !== 'string' || !b.cwd.trim())) errors.push(`${at}: "cwd" must be a non-empty string`);
+    if (b.codexBin !== undefined && (typeof b.codexBin !== 'string' || !b.codexBin.trim())) errors.push(`${at}: "codexBin" must be a non-empty string`);
+    if (b.codexHome !== undefined && (typeof b.codexHome !== 'string' || !b.codexHome.trim())) errors.push(`${at}: "codexHome" must be a non-empty string`);
+    if (b.network !== undefined && typeof b.network !== 'boolean') errors.push(`${at}: "network" must be a boolean (workspace-write network access)`);
     if (b.sandbox !== undefined && !SANDBOXES.includes(b.sandbox)) errors.push(`${at}: "sandbox" must be one of ${SANDBOXES.join(' | ')}`);
     if (b.approval !== undefined && !APPROVALS.includes(b.approval)) errors.push(`${at}: "approval" must be one of ${APPROVALS.join(' | ')}`);
     if (b.corsOrigin !== undefined && b.corsOrigin !== '*') errors.push(`${at}: "corsOrigin" must be "*" or omitted (loopback only)`);

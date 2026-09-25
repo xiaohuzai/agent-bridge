@@ -91,10 +91,9 @@ export class AcpStdioAdapter {
     this.ready = false;
     this.starting = null;         // in-flight spawn+initialize (serialization lock)
     this.nextId = 1;
-    this.pending = new Map();     // rpc id → {resolve, reject}
+    this.pending = new Map();     // rpc id → {resolve, reject, child}
     this.sessions = new Map();    // ACP sessionId → turn state
-    this.permissions = new Map(); // permission request id → {sessionId, options}
-    this.ready = false;
+    this.permissions = new Map(); // permission request id → {sessionId, options, id}
     this.buf = '';
     this.closed = false;
     this.rpcMethods = new Map(); // rpc id → method (for error-response logging)
@@ -113,35 +112,35 @@ export class AcpStdioAdapter {
 
   async #startChild() {
     const { command, log } = this.opts;
-    this.child = spawn(command[0], command.slice(1), {
+    // A respawn only starts once the previous child is gone or unusable —
+    // whatever it left behind is stale by definition. Settle it BEFORE the
+    // fresh child so nothing can hang on a dead process, and kill the
+    // half-dead one (e.g. an initialize that timed out) instead of leaking it.
+    this.#sweepStale('acp agent process restarted');
+    const child = spawn(command[0], command.slice(1), {
       stdio: ['pipe', 'pipe', 'pipe'],
       // Windows: npm-installed CLI shims are .cmd — spawn needs a shell there.
       shell: process.platform === 'win32',
       windowsHide: true,
     });
+    this.child = child;
     this.ready = false;
-    this.child.stdout.on('data', (d) => this.#onData(String(d)));
-    this.child.stderr.on('data', (d) => log(`[acp stderr] ${String(d).slice(0, 300)}`));
-    this.child.on('exit', (code) => {
+    child.stdout.on('data', (d) => this.#onData(String(d)));
+    child.stderr.on('data', (d) => log(`[acp stderr] ${String(d).slice(0, 300)}`));
+    child.on('exit', (code) => {
       log(`[acp] agent exited (code=${code})`);
-      for (const [, p] of this.pending) p.reject(new Error(`acp agent exited (code=${code})`));
-      this.pending.clear();
-      this.child = null;
-      this.ready = false;
+      this.#childDown(child, `acp agent exited (code=${code})`);
     });
     // A spawn failure (agent command not installed / typo'd) arrives as an
     // async 'error' event — without a listener it is an uncaughtException
     // that kills the whole bridge. Reject the in-flight rpcs with an install
     // hint (relayed as the turn's SSE error) and allow a later retry.
-    this.child.on('error', (err) => {
+    child.on('error', (err) => {
       const msg = err.code === 'ENOENT'
         ? `agent command not found: '${command[0]}' — install it, or pass an existing command after 'acp --'`
         : `failed to start agent '${command[0]}': ${err.message}`;
       log(`[acp] ${msg}`);
-      for (const [, p] of this.pending) p.reject(new Error(msg));
-      this.pending.clear();
-      this.child = null;
-      this.ready = false;
+      this.#childDown(child, msg);
     });
     const res = await this.rpc('initialize', {
       protocolVersion: REQUESTED_ACP_VERSION,
@@ -159,6 +158,48 @@ export class AcpStdioAdapter {
     this.opts.log(`[acp] agent ${info.name || '?'} v${info.version || '?'} — ACP v${version}, images: ${this.promptImage ? 'yes' : 'no'}`);
     this.ready = true;
     this.seenLogs.clear();
+  }
+
+  /** This child is gone: reject ITS pending rpcs and settle ITS turns. An
+   * admitted turn has NO pending rpc tracking it in v2 (session/prompt is a
+   * mere ack), so without this sweep a dead agent would leave the turn — and
+   * the client's stream — hanging forever. Everything is matched by child
+   * identity so a late exit event can never touch a newer child's work. */
+  #childDown(child, msg) {
+    for (const [id, p] of this.pending) {
+      if (p.child !== child) continue;
+      this.pending.delete(id);
+      p.reject(new Error(msg));
+    }
+    this.#settleTurns((t) => t.child === child, msg);
+    if (this.child === child) {
+      this.child = null;
+      this.ready = false;
+    }
+  }
+
+  /** Respawn hygiene: anything still unsettled belongs to the child being
+   * replaced — error it out and forget it. Sessions are re-adopted later via
+   * the agent's own persistence (session/resume → session/load). */
+  #sweepStale(msg) {
+    for (const [, p] of this.pending) p.reject(new Error(msg));
+    this.pending.clear();
+    this.#settleTurns(() => true, msg);
+    this.sessions.clear();
+    if (this.child) {
+      try { this.child.kill('SIGKILL'); } catch (_) {}
+      this.child = null;
+    }
+    this.ready = false;
+  }
+
+  #settleTurns(match, msg) {
+    for (const [, t] of this.sessions) {
+      if (t.finished || !match(t)) continue;
+      t.finished = true;
+      t.promptInFlight = false;
+      t.events?.({ type: 'error', message: `${msg} mid-turn` });
+    }
   }
 
   #onData(chunk) {
@@ -180,7 +221,10 @@ export class AcpStdioAdapter {
       if (/request_permission$/.test(j.method)) {
         const params = j.params || {};
         const sessionId = params.sessionId;
-        this.permissions.set(String(j.id), { sessionId, options: params.options || [] });
+        // The raw rpc id is kept for the answer: JSON-RPC ids may be strings,
+        // and coercing them back through Number() would answer with id null —
+        // the agent would block forever on the unanswered request.
+        this.permissions.set(String(j.id), { sessionId, options: params.options || [], id: j.id });
         const t = sessionId ? this.sessions.get(sessionId) : null;
         const kind = (k) => (params.options || []).find((o) => o.kind === k);
         const pick = (k) => kind(k)?.optionId ?? kind(k === 'deny' ? 'reject_always' : k)?.optionId ?? params.options?.[0]?.optionId ?? '';
@@ -242,10 +286,13 @@ export class AcpStdioAdapter {
       }
       case 'tool_call_update': {
         const st = u.status;
+        // `id` (additive on the v1 event) lets clients pair a call's status
+        // updates — titles/details change between them.
+        const id = u.toolCallId || undefined;
         if (st === 'pending' || st === 'in_progress') {
-          t.events?.({ type: 'tool', name: u.kind || 'tool', status: 'started', detail: u.title || u.toolCallId || '' });
+          t.events?.({ type: 'tool', name: u.kind || 'tool', status: 'started', detail: u.title || u.toolCallId || '', id });
         } else if (st === 'completed' || st === 'failed' || st === 'cancelled') {
-          t.events?.({ type: 'tool', name: u.kind || 'tool', status: st === 'completed' ? 'completed' : 'failed', detail: `${u.title || u.toolCallId || ''}${st === 'failed' ? ' (failed)' : st === 'cancelled' ? ' (cancelled)' : ''}` });
+          t.events?.({ type: 'tool', name: u.kind || 'tool', status: st === 'completed' ? 'completed' : 'failed', detail: `${u.title || u.toolCallId || ''}${st === 'failed' ? ' (failed)' : st === 'cancelled' ? ' (cancelled)' : ''}`, id });
         }
         break;
       }
@@ -290,6 +337,7 @@ export class AcpStdioAdapter {
       this.pending.set(id, {
         resolve: (v) => { if (timer) clearTimeout(timer); this.rpcMethods.delete(id); resolve(v); },
         reject: (e) => { if (timer) clearTimeout(timer); this.rpcMethods.delete(id); reject(e); },
+        child: this.child,
       });
       this.#write({ jsonrpc: '2.0', id, method, params });
     });
@@ -328,7 +376,7 @@ export class AcpStdioAdapter {
     await this.ensureChild();
     const sid = await this.#ensureSession(undefined);
     if (!this.sessions.has(sid)) {
-      this.sessions.set(sid, { sessionId: sid, full: '', finished: true, promptInFlight: false, events: null });
+      this.sessions.set(sid, { sessionId: sid, full: '', finished: true, promptInFlight: false, events: null, child: this.child });
     }
     return sid;
   }
@@ -349,8 +397,8 @@ export class AcpStdioAdapter {
     }
     if (dropped) blocks.push({ type: 'text', text: `\n[agent-bridge: ${dropped} image(s) omitted — this agent does not advertise image input]` });
     const entry = {
-      sessionId: sid, full: '', sawIdle: false, usage: null, finished: false,
-      promptInFlight: true, events: onEvent,
+      sessionId: sid, full: '', usage: null, finished: false,
+      promptInFlight: true, events: onEvent, child: this.child,
     };
     this.sessions.set(sid, entry);
     onEvent({ type: 'start', sessionId: sid, turnId: '' });
@@ -362,8 +410,14 @@ export class AcpStdioAdapter {
       // 'cancelled'). v2: the rpc is an acceptance ack — normal timeout.
       r = await this.rpc('session/prompt', { sessionId: sid, prompt: blocks }, this.acpVersion === 1 ? 0 : RPC_TIMEOUT_MS);
     } catch (e) {
-      this.sessions.delete(sid);
-      onEvent({ type: 'error', message: e.message });
+      // A dead child's sweep may already have settled this entry — never
+      // double-report. The settled entry stays listed (busy:false) so the
+      // client can recover the session id from GET /sessions.
+      if (!entry.finished) {
+        entry.finished = true;
+        entry.promptInFlight = false;
+        onEvent({ type: 'error', message: e.message || String(e) });
+      }
       return { sessionId: sid, turnId: '' };
     }
     if (r && typeof r.stopReason === 'string') {
@@ -389,7 +443,7 @@ export class AcpStdioAdapter {
     for (const [reqId, p] of this.permissions) {
       if (p.sessionId !== sessionId) continue;
       this.permissions.delete(reqId);
-      this.#write({ jsonrpc: '2.0', id: Number(reqId), result: { outcome: { outcome: 'cancelled' } } });
+      this.#write({ jsonrpc: '2.0', id: p.id, result: { outcome: { outcome: 'cancelled' } } });
     }
     try {
       await this.rpc('session/cancel', { sessionId });
@@ -420,7 +474,7 @@ export class AcpStdioAdapter {
     const kind = choice === 'deny' ? (byKind('reject_once') || byKind('reject_always')) : choice === 'always' ? (byKind('allow_always') || byKind('allow_once')) : (byKind('allow_once') || byKind('allow_always'));
     const optionId = kind?.optionId ?? entry.options[0]?.optionId;
     if (!optionId) throw new Error('acp permission request had no options');
-    this.#write({ jsonrpc: '2.0', id: Number(requestId), result: { outcome: { outcome: 'selected', optionId } } });
+    this.#write({ jsonrpc: '2.0', id: entry.id, result: { outcome: { outcome: 'selected', optionId } } });
   }
 
   listSessions() {

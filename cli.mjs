@@ -48,9 +48,16 @@ function parseArgs(argv) {
   else if (argv[0] === 'acp') { args.mode = 'acp'; i = 1; }
   for (; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--config') args.config = argv[++i];
-    else if (a === '--bind') args.bind = argv[++i];
-    else if (a === '--name') args.name = argv[++i];
+    if (a === '--config' || a === '--bind' || a === '--name') {
+      const v = argv[++i];
+      // A missing value must fail loudly: silently defaulting --config to
+      // 'agents.json' would serve the wrong file after a typo.
+      if (v === undefined || v.startsWith('-')) {
+        console.error(`${a} needs a value`);
+        process.exit(1);
+      }
+      args[a.slice(2)] = v;
+    }
     else if (args.mode === 'acp' && args.name === undefined && !a.startsWith('-')) args.name = a; // positional name
     else if (a === '--help' || a === '-h') args.help = true;
     else {

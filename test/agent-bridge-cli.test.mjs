@@ -61,3 +61,10 @@ test('an explicitly missing --config path gets the raw error, no starter hint', 
   assert.match(stderr, /cannot read config/);
   assert.doesNotMatch(stderr, /shipped starter/);
 });
+
+test('--config with no value errors loudly instead of silently defaulting', async () => {
+  const { code, stderr } = await runCli(['serve', '--config'], tmp);
+  assert.equal(code, 1);
+  assert.match(stderr, /--config needs a value/);
+  assert.doesNotMatch(stderr, /No agents\.json here/, 'it must not fall through to the default agents.json');
+});

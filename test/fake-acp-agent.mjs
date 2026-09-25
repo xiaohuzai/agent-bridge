@@ -6,10 +6,15 @@
 // Behavior keyed off the prompt text:
 //   'APPROVE'  → sends session/request_permission (id 900), waits for the
 //                client's answer, then completes (echoing the chosen kind).
+//                With 'STRID' the request id is the STRING 'str-900' instead
+//                (JSON-RPC ids are not always numbers — the answer must echo
+//                it verbatim; mirrored to stderr as FAKE_PERM_ID:<json>).
 //   'SLOW'     → one delta, then idles; reacts to session/cancel with
 //                stopReason 'cancelled' and writes FAKE_CANCELLED to stderr.
 //   'FAIL'     → failed tool call + state_update idle with stopReason
 //                'refusal'.
+//   'TOOLS'    → one tool call through pending → in_progress → failed.
+//   'DIE'      → one delta then process.exit(3): the agent crashes mid-turn.
 //   'IMG'      → reports the number of image blocks + their mimeType.
 //   otherwise  → two deltas + usage_update + state_update idle (end_turn).
 // Every received method is echoed to stderr as FAKE_METHOD:<m>.
@@ -30,6 +35,7 @@ const V1 = process.argv.includes('v1');
 const NORESUME = process.argv.includes('NORESUME');
 const pendingPrompt = new Map(); // sessionId → pending session/prompt rpc id
 const hangSessions = new Set();  // v1: sessions whose prompt must NEVER be answered (wedged-shim simulation)
+let permId = 900;                // rpc id of the last permission request (string under 'STRID')
 
 function finish(sessionId, stopReason) {
   if (V1) {
@@ -64,8 +70,9 @@ process.stdin.on('end', () => process.exit(0));
 
 function handle(j) {
   err(`FAKE_METHOD:${j.method || ''}`);
-  // client's answer to our permission request (id 900)
-  if (j.id === 900 && j.result) {
+  // client's answer to our permission request (id remembered at request time)
+  if (j.id === permId && j.result) {
+    err(`FAKE_PERM_ID:${JSON.stringify(j.id)}`);
     err(`FAKE_PERMISSION:${JSON.stringify(j.result.outcome)}`);
     const sessionId = sessions.values().next().value;
     send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc1', title: 'sensitive op', status: 'completed' } } });
@@ -99,8 +106,9 @@ function handle(j) {
       if (V1) pendingPrompt.set(sessionId, j.id); // v1: no ack — the response finishes the turn
       else send({ jsonrpc: '2.0', id: j.id, result: {} }); // v2: acceptance only
       if (text.includes('APPROVE')) {
+        permId = text.includes('STRID') ? 'str-900' : 900;
         send({
-          jsonrpc: '2.0', id: 900, method: 'session/request_permission',
+          jsonrpc: '2.0', id: permId, method: 'session/request_permission',
           params: { sessionId, title: 'run sensitive op', options: [
             { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
             { optionId: 'allow-always', name: 'Always allow', kind: 'allow_always' },
@@ -118,6 +126,20 @@ function handle(j) {
         send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc9', title: 'boom', status: 'failed' } } });
         finish(sessionId, 'refusal');
         return;
+      }
+      if (text.includes('TOOLS')) {
+        // One tool call through three status updates — the last one's title
+        // shifts (ACP appends a suffix on failure), so only a stable id can
+        // pair the updates into one call.
+        for (const status of ['pending', 'in_progress', 'failed']) {
+          send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc7', title: 'the tool', status } } });
+        }
+        finish(sessionId, 'end_turn');
+        return;
+      }
+      if (text.includes('DIE')) {
+        send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'bye ' } } } });
+        process.exit(3); // agent crashes mid-turn
       }
       let reply = 'ACP_reply';
       if (images.length) reply += ` IMG:${images.length} MIME:${images[0]?.mimeType || '-'}`;

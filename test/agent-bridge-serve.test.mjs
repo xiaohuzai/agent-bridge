@@ -194,3 +194,12 @@ test('configPermissionsWarning: flags group/world-readable files, silent on 600'
   writeFileSync(tight, '{}', { mode: 0o600 });
   assert.equal(configPermissionsWarning(tight), null);
 });
+
+test('validateConfig: codex tuning fields are typed (codexBin/codexHome/network)', () => {
+  assert.throws(
+    () => validateConfig({ bridges: [{ name: 'codex', port: 1, apiKey: 'k', network: 'yes', codexBin: '  ', codexHome: 3 }] }),
+    (e) => /"network" must be a boolean/.test(e.message)
+      && /"codexBin" must be a non-empty string/.test(e.message)
+      && /"codexHome" must be a non-empty string/.test(e.message)
+  );
+});

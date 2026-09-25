@@ -16,6 +16,9 @@
 //       data: {"type":"start","sessionId":"…","turnId":"…"}
 //       data: {"type":"delta","text":"…"}
 //       data: {"type":"tool","name":"command","status":"started","detail":"…"}
+//             (additive: optional "id" — the agent's own tool-call id, stable
+//             across one call's started/completed events; v1 clients that
+//             don't read it are unaffected)
 //       data: {"type":"approval","requestId":"…","tool":"command","command":"…","cwd":"…"}
 //       data: {"type":"usage","prompt_tokens":N,"completion_tokens":M}
 //       data: {"type":"done","full":"…"}          ← turn finished normally
@@ -46,6 +49,7 @@
 import http from 'node:http';
 
 const HEARTBEAT_MS = 15000;
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 /** CORS for one request: reflect loopback origins (any port), honor the
  * '*' override, everyone else gets no ACAO header (the browser blocks them). */
@@ -146,7 +150,7 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
     } catch (e) {
       log(`[bridge] ${req.method} ${req.url} → ${e.message}`);
       if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(e.status || 500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: e.message }));
       } else {
         try { res.end(); } catch (_) {}
@@ -226,11 +230,31 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let b = '';
-    req.on('data', (c) => { b += c; if (b.length > 4 * 1024 * 1024) { reject(new Error('body too large')); req.destroy(); } });
-    req.on('end', () => {
-      if (!b) return resolve(null);
-      try { resolve(JSON.parse(b)); } catch { resolve(null); }
+    let bytes = 0;
+    let settled = false;
+    req.on('data', (c) => {
+      if (settled) return;
+      bytes += c.length; // the cap counts BYTES — multibyte bodies must not slip past it
+      if (bytes > MAX_BODY_BYTES) {
+        settled = true;
+        b = ''; // stop accumulating (memory stays bounded), drain the rest
+        const err = new Error('body too large');
+        err.status = 413;
+        reject(err);
+        return;
+      }
+      b += c;
     });
-    req.on('error', reject);
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      if (!b) return resolve(null);
+      try { resolve(JSON.parse(b)); } catch {
+        const err = new Error('invalid JSON body');
+        err.status = 400;
+        reject(err);
+      }
+    });
+    req.on('error', (e) => { if (!settled) { settled = true; reject(e); } });
   });
 }
