@@ -277,3 +277,47 @@ test('pi-acp-style resume: session/resume refused → falls back to session/load
   assert.ok(all.includes('FAKE_METHOD:session/load'), 'load fallback was used');
   assert.ok(all.includes('restored via session/load'), `fallback must be logged; logs: ${all.slice(0, 400)}`);
 });
+
+test('agent crash mid-turn surfaces a clean SSE error and frees the session', async () => {
+  // v2 semantics: session/prompt is a MERE ACK — nothing pending tracks an
+  // admitted turn, so without the child-down sweep a dead agent leaves the
+  // turn (and its SSE stream) hanging forever.
+  const res = await post('/turns', { text: 'DIE now' });
+  const sse = sseReader(res.body);
+  const start = await sse.readUntil((f) => f.data?.type === 'start');
+  const err = await sse.readUntil((f) => f.data?.type === 'error', 8000);
+  assert.match(err.data.message, /exited.*mid-turn/);
+  const now = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
+  assert.equal(now.sessions.find((s) => s.sessionId === start.data.sessionId)?.busy, false, 'the dead session must not stay busy');
+  // A follow-up turn re-spawns the agent and re-resumes the session.
+  const res2 = await post('/turns', { text: 'hi again', sessionId: start.data.sessionId });
+  const sse2 = sseReader(res2.body);
+  const done2 = await sse2.readUntil((f) => f.data?.type === 'done', 8000);
+  assert.equal(done2.data.full, 'ACP_reply');
+  sse2.cancel();
+});
+
+test('v1 agent crash mid-turn reports exactly one clean error (no double-report)', async () => {
+  // v1: the pending session/prompt rejection and the turn sweep both learn
+  // about the death — only one of them may report it.
+  await stopServer();
+  await startServer({ command: [FAKE_ACP, 'v1'] });
+  const res = await post('/turns', { text: 'DIE now' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'start');
+  const err = await sse.readUntil((f) => f.data?.type === 'error', 8000);
+  assert.match(err.data.message, /exited.*mid-turn/);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(sse.frames.filter((f) => f.data?.type === 'error').length, 1, 'the sweep and the rpc rejection must not both report');
+});
+
+test("permission answers echo the agent's own rpc id (string ids survive)", async () => {
+  const res = await post('/turns', { text: 'APPROVE STRID it' });
+  const sse = sseReader(res.body);
+  const approval = await sse.readUntil((f) => f.data?.type === 'approval');
+  assert.equal(approval.data.requestId, 'str-900');
+  await post('/approvals/str-900', { choice: 'once' });
+  await sse.readUntil((f) => f.data?.type === 'done');
+  assert.ok(logs.some((l) => l.includes('FAKE_PERM_ID:"str-900"')), `the agent must see its own id back; logs: ${logs.join(' | ')}`);
+  sse.cancel();
+});

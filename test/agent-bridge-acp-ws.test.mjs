@@ -16,13 +16,16 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FAKE_ACP = join(__dirname, 'fake-acp-agent.mjs');
+const FAKE_CODEX = join(__dirname, 'fake-codex-app-server.mjs');
 
 const { createBridgeServer } = await import('../server.mjs');
 const { attachAcpFront } = await import('../acp-front-ws.mjs');
 const { AcpStdioAdapter } = await import('../adapters/acp-stdio.mjs');
+const { CodexAppServerAdapter } = await import('../adapters/codex-app-server.mjs');
 const { wsConnect } = await import('./ws-client.mjs');
 
 chmodSync(FAKE_ACP, 0o755);
+chmodSync(FAKE_CODEX, 0o755);
 
 let bridge = null;
 let front = null;
@@ -30,9 +33,11 @@ let port = 0;
 let logs = [];
 const clients = [];
 
-async function startBridge({ token, attach = true, command } = {}) {
+async function startBridge({ token, attach = true, command, codex = false } = {}) {
   logs = [];
-  const adapter = new AcpStdioAdapter({ command: command || [FAKE_ACP], cwd: '/tmp', log: (m) => logs.push(m) });
+  const adapter = codex
+    ? new CodexAppServerAdapter({ codexBin: FAKE_CODEX, log: (m) => logs.push(m) })
+    : new AcpStdioAdapter({ command: command || [FAKE_ACP], cwd: '/tmp', log: (m) => logs.push(m) });
   const server = createBridgeServer({ adapter, agent: 'acp', version: 'test', token, log: (m) => logs.push(m) });
   if (attach) {
     front = attachAcpFront(server, { adapter, agent: 'acp', version: 'test', token, bindAddress: '127.0.0.1', log: (m) => logs.push(m) });
@@ -190,6 +195,45 @@ test('tool events map to tool_call_update; refusal stopReason passes through', a
   assert.ok(tool.msg.params.update.toolCallId, 'synthesized toolCallId');
   const done = await ws.recv((f) => text(f)?.id === 3);
   assert.equal(done.msg.result.stopReason, 'refusal');
+  ws.close();
+});
+
+test("a call's status updates keep ONE toolCallId even when titles shift", async () => {
+  // The fake runs one tool through pending → in_progress → failed, and the
+  // failed update's title carries a suffix — keying on name|detail would
+  // mint a second toolCallId and leave the first stuck in_progress.
+  await startBridge({});
+  const { ws } = await openAcpClient();
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'TOOLS please' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update);
+  assert.deepEqual(updates.map((u) => u.status), ['in_progress', 'in_progress', 'failed']);
+  assert.equal(new Set(updates.map((u) => u.toolCallId)).size, 1, `one toolCallId across the call; got ${JSON.stringify(updates.map((u) => u.toolCallId))}`);
+  ws.close();
+});
+
+test('codex-native tool events pair started/completed into ONE toolCallId', async () => {
+  // codex's completed detail appends " (exit 0)" — the same split as above,
+  // driven through the native codex adapter behind the ACP front.
+  await startBridge({ codex: true });
+  const { ws } = await openAcpClient();
+  await ws.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/ignored', mcpServers: [] } });
+  await ws.recv((f) => text(f)?.id === 2);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: 'wss-x', prompt: [{ type: 'text', text: 'APPROVE it' }] } });
+  const perm = await ws.recv((f) => text(f)?.method === 'session/request_permission');
+  await ws.send({ jsonrpc: '2.0', id: perm.msg.id, result: { outcome: { outcome: 'selected', optionId: 'once' } } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update);
+  assert.deepEqual(updates.map((u) => u.status), ['in_progress', 'completed']);
+  assert.equal(new Set(updates.map((u) => u.toolCallId)).size, 1, `one toolCallId across started/completed; got ${JSON.stringify(updates.map((u) => u.toolCallId))}`);
+  assert.notEqual(updates[0].title, updates[1].title, 'titles differ — the id is what pairs them');
   ws.close();
 });
 

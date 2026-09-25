@@ -31,14 +31,35 @@
 //       vocabulary — the v1 execCommandApproval {decision:'approved'} enum is
 //       a DIFFERENT namespace; answering it with 'accept' silently no-ops).
 //
-// Short replies may carry their full text only in item/completed with no
-// agentMessage deltas at all (known codex behavior) — the turn assembler
-// therefore falls back to completed items and de-dupes against deltas.
+// Short replies may carry their full text only in item/completed (or even
+// only inside turn/completed.items) with no agentMessage deltas at all (known
+// codex behavior) — the turn assembler concatenates the streamed deltas with
+// completed-item texts that never streamed, de-duped by item id. `tool` events
+// carry the item's own id in an additive `id` field so clients can pair a
+// call's started/completed updates (the detail strings differ between them);
+// fileChange/mcpToolCall items emit BOTH, like commandExecution.
 
 import { spawn } from 'node:child_process';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
+
+/** Build a v1 `tool` event. `id` (additive on the wire) is the agent's own
+ * tool-call id — clients pair a call's started/completed updates on it,
+ * because the detail strings differ between them (codex appends " (exit N)"). */
+function toolEv(name, status, detail, id) {
+  return { type: 'tool', name, status, detail, ...(id ? { id } : {}) };
+}
+
+/** Can this completed agentMessage text join the turn's full text? De-dupes
+ * against streamed deltas and against texts already taken from
+ * item/completed; an item with NO id cannot be de-duped, so it is trusted
+ * only when nothing streamed at all. */
+function takeable(t, it) {
+  return it.type === 'agentMessage' && !!it.text
+    && !t.deltaItems.has(it.id) && !t.itemIds.has(it.id)
+    && (it.id != null || !t.sawDelta);
+}
 
 export class CodexAppServerAdapter {
   constructor({
@@ -75,9 +96,14 @@ export class CodexAppServerAdapter {
 
   async #startChild() {
     const { codexBin, codexHome, log } = this.opts;
+    // A respawn only starts once the previous child is gone or unusable —
+    // whatever it left behind is stale by definition. Settle it BEFORE the
+    // fresh child so nothing can hang on a dead process, and kill the
+    // half-dead one (e.g. an initialize that timed out) instead of leaking it.
+    this.#sweepStale('codex app-server restarted');
     const env = { ...process.env };
     if (codexHome) env.CODEX_HOME = codexHome;
-    this.child = spawn(codexBin, ['app-server'], {
+    const child = spawn(codexBin, ['app-server'], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
       // Windows: npm-installed CLIs are .cmd shims — spawn() throws EINVAL on
@@ -87,24 +113,13 @@ export class CodexAppServerAdapter {
       shell: process.platform === 'win32',
       windowsHide: true,
     });
-    this.threads.clear();
-    this.child.stdout.on('data', (d) => this.#onData(String(d)));
-    this.child.stderr.on('data', (d) => log(`[codex stderr] ${String(d).slice(0, 300)}`));
-    this.child.on('exit', (code) => {
+    this.child = child;
+    this.ready = false;
+    child.stdout.on('data', (d) => this.#onData(String(d)));
+    child.stderr.on('data', (d) => log(`[codex stderr] ${String(d).slice(0, 300)}`));
+    child.on('exit', (code) => {
       log(`[codex] app-server exited (code=${code})`);
-      for (const [, p] of this.pending) p.reject(new Error(`codex app-server exited (code=${code})`));
-      this.pending.clear();
-      // Turns already admitted have no pending rpc tracking them — without
-      // this they would hang forever (no notifications can arrive from a
-      // dead child). Surface a clean error event instead.
-      for (const [, t] of this.threads) {
-        if (!t.finished) {
-          t.finished = true;
-          t.events?.({ type: 'error', message: `codex app-server exited (code=${code}) mid-turn` });
-        }
-      }
-      this.child = null;
-      this.ready = false;
+      this.#childDown(child, `codex app-server exited (code=${code})`);
     });
     // A spawn failure (ENOENT: codex not installed, EACCES: not executable)
     // surfaces as an async 'error' event — WITHOUT a listener Node turns it
@@ -112,20 +127,58 @@ export class CodexAppServerAdapter {
     // /health looks fine, the first turn kills the daemon). Reject the
     // in-flight rpcs with an install hint (server.mjs relays it as the
     // turn's SSE error event) and null the child so a later turn can retry.
-    this.child.on('error', (err) => {
+    child.on('error', (err) => {
       const msg = err.code === 'ENOENT'
         ? `codex CLI not found: '${codexBin}' — install the codex CLI (it must be on PATH), or pass --codex-bin /path/to/codex`
         : `failed to start codex '${codexBin}': ${err.message}`;
       log(`[codex] ${msg}`);
-      for (const [, p] of this.pending) p.reject(new Error(msg));
-      this.pending.clear();
-      this.child = null;
-      this.ready = false;
+      this.#childDown(child, msg);
     });
     await this.rpc('initialize', {
       clientInfo: { name: 'agent-bridge', title: 'agent-bridge', version: '1.0.0' },
     }, INIT_TIMEOUT_MS);
     this.ready = true;
+  }
+
+  /** This child is gone: reject ITS pending rpcs and settle ITS turns. A turn
+   * already admitted has no pending rpc tracking it — without this sweep it
+   * would hang forever (no notifications can arrive from a dead child).
+   * Everything is matched by child identity so a late exit event can never
+   * touch a newer child's work. */
+  #childDown(child, msg) {
+    for (const [id, p] of this.pending) {
+      if (p.child !== child) continue;
+      this.pending.delete(id);
+      p.reject(new Error(msg));
+    }
+    this.#settleTurns((t) => t.child === child, msg);
+    if (this.child === child) {
+      this.child = null;
+      this.ready = false;
+    }
+  }
+
+  /** Respawn hygiene: anything still unsettled belongs to the child being
+   * replaced — error it out and forget it. Threads are re-adopted later via
+   * thread/resume (the agent keeps its own persistence). */
+  #sweepStale(msg) {
+    for (const [, p] of this.pending) p.reject(new Error(msg));
+    this.pending.clear();
+    this.#settleTurns(() => true, msg);
+    this.threads.clear();
+    if (this.child) {
+      try { this.child.kill('SIGKILL'); } catch (_) {}
+      this.child = null;
+    }
+    this.ready = false;
+  }
+
+  #settleTurns(match, msg) {
+    for (const [, t] of this.threads) {
+      if (t.finished || !match(t)) continue;
+      t.finished = true;
+      t.events?.({ type: 'error', message: `${msg} mid-turn` });
+    }
   }
 
   #onData(chunk) {
@@ -148,7 +201,10 @@ export class CodexAppServerAdapter {
     if (j.id !== undefined && j.method) {
       const params = j.params || {};
       if (/requestApproval$/.test(j.method) || j.method === 'execCommandApproval' || j.method === 'applyPatchApproval') {
-        this.approvals.set(String(j.id), { method: j.method, params });
+        // The raw rpc id is kept for the answer: JSON-RPC ids may be strings,
+        // and coercing back through Number() would answer with id null — the
+        // agent would block forever on the unanswered request.
+        this.approvals.set(String(j.id), { id: j.id, method: j.method, params });
         const t = this.threads.get(params.threadId);
         const command = typeof params.command === 'string'
           ? params.command
@@ -202,18 +258,25 @@ export class CodexAppServerAdapter {
       case 'item/started': {
         const it = params.item || {};
         if (!matches(params.turnId)) break;
-        if (it.type === 'commandExecution') t.events?.({ type: 'tool', name: 'command', status: 'started', detail: it.command || '' });
-        else if (it.type === 'fileChange') t.events?.({ type: 'tool', name: 'file', status: 'started', detail: it.files?.join?.(', ') || '' });
-        else if (it.type === 'mcpToolCall') t.events?.({ type: 'tool', name: it.tool || 'mcp', status: 'started', detail: it.server || '' });
+        if (it.type === 'commandExecution') t.events?.(toolEv('command', 'started', it.command || '', it.id ?? params.itemId));
+        else if (it.type === 'fileChange') t.events?.(toolEv('file', 'started', it.files?.join?.(', ') || '', it.id ?? params.itemId));
+        else if (it.type === 'mcpToolCall') t.events?.(toolEv(it.tool || 'mcp', 'started', it.server || '', it.id ?? params.itemId));
         break;
       }
       case 'item/completed': {
         const it = params.item || {};
         if (!matches(params.turnId)) break;
-        if (it.type === 'commandExecution') t.events?.({ type: 'tool', name: 'command', status: 'completed', detail: `${it.command || ''}${it.exitCode != null ? ` (exit ${it.exitCode})` : ''}` });
+        // EVERY tool-bearing item completes — fileChange/mcpToolCall included:
+        // a started with no completed leaves client tool rows stuck mid-call.
+        if (it.type === 'commandExecution') t.events?.(toolEv('command', 'completed', `${it.command || ''}${it.exitCode != null ? ` (exit ${it.exitCode})` : ''}`, it.id ?? params.itemId));
+        else if (it.type === 'fileChange') t.events?.(toolEv('file', 'completed', it.files?.join?.(', ') || '', it.id ?? params.itemId));
+        else if (it.type === 'mcpToolCall') t.events?.(toolEv(it.tool || 'mcp', 'completed', it.server || '', it.id ?? params.itemId));
         // Short replies can arrive with NO deltas at all — remember completed
         // agentMessage texts so the assembler can fall back to them.
-        if (it.type === 'agentMessage' && !t.deltaItems.has(it.id)) t.itemTexts.push(it.text || '');
+        if (takeable(t, it)) {
+          t.itemIds.add(it.id);
+          t.itemTexts.push(it.text);
+        }
         break;
       }
       case 'thread/tokenUsage/updated': {
@@ -243,15 +306,12 @@ export class CodexAppServerAdapter {
         } else if (status === 'failed') {
           t.events?.({ type: 'error', message: params.turn?.error?.message || 'codex turn failed' });
         } else {
-          // Assembled full text: streamed deltas win; completed-item texts
-          // cover the no-delta case (delivered via item/completed OR only
-          // inside turn/completed.items); both are concatenated when a turn
-          // mixed delta'd and non-delta'd items.
-          const itemText = (params.turn?.items || [])
-            .filter((it) => it.type === 'agentMessage')
-            .map((it) => it.text || '')
-            .filter(Boolean).join('');
-          const full = t.full || t.itemTexts.filter(Boolean).join('') || itemText;
+          // Assembled full text: streamed deltas + completed-item texts that
+          // never streamed (delivered via item/completed OR only inside
+          // turn/completed.items) — concatenated when a turn mixed delta'd
+          // and non-delta'd items, de-duped by item id.
+          const tailItems = (params.turn?.items || []).filter((it) => takeable(t, it)).map((it) => it.text).join('');
+          const full = t.full + t.itemTexts.join('') + tailItems;
           t.events?.({ type: 'done', full, usage: t.usage });
         }
         break;
@@ -276,6 +336,7 @@ export class CodexAppServerAdapter {
       this.pending.set(id, {
         resolve: (v) => { clearTimeout(timer); resolve(v); },
         reject: (e) => { clearTimeout(timer); reject(e); },
+        child: this.child,
       });
       this.#write(frame);
     });
@@ -317,7 +378,8 @@ export class CodexAppServerAdapter {
     // awaitingTurnStart window accepts turn-scoped frames until then.
     const entry = {
       turnId: null, awaitingTurnStart: true, full: '', sawDelta: false,
-      deltaItems: new Set(), itemTexts: [], usage: null, finished: false, events: onEvent,
+      deltaItems: new Set(), itemTexts: [], itemIds: new Set(),
+      usage: null, finished: false, events: onEvent, child: this.child,
     };
     this.threads.set(threadId, entry);
     // Emit start BEFORE turn/start: the sessionId is already known here, and
@@ -390,7 +452,7 @@ export class CodexAppServerAdapter {
     } else {
       decision = v2 ? 'accept' : 'approved';
     }
-    this.#write({ jsonrpc: '2.0', id: Number(requestId), result: { decision } });
+    this.#write({ jsonrpc: '2.0', id: entry.id, result: { decision } });
   }
 
   /** Known sessions for GET /sessions: lets a client recover session ids

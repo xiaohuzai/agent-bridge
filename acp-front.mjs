@@ -31,7 +31,9 @@
 //                 response as session/update notifications.
 //   session/update NOTIFICATION {sessionId, update:{sessionUpdate:…}}:
 //                 agent_message_chunk ← internal `delta`
-//                 tool_call_update  ← internal `tool` (ids synthesized)
+//                 tool_call_update  ← internal `tool` (ids synthesized; a
+//                 call's started/completed updates pair up on the tool
+//                 event's optional `id`)
 //   session/request_permission REQUEST {sessionId, toolCall, options}
 //                 ← internal `approval`; answered by the client with
 //                 {outcome:{outcome:'selected',optionId}} which maps back by
@@ -195,7 +197,7 @@ class AcpFrontSession {
         onEvent: (e) => this.#onTurnEvent(s, e),
       });
     } catch (e) {
-      this.#answerPrompt(s, null, e.message); // admission failure (e.g. agent not installed)
+      this.#answerPrompt(s, null, e.message || String(e)); // admission failure (e.g. agent not installed)
     }
     // NOTE: startTurn may resolve before the turn ends (v2-style adapters
     // acknowledge); the prompt response is sent on the terminal EVENT, so
@@ -234,7 +236,11 @@ class AcpFrontSession {
     if (e.type === 'delta') {
       if (e.text) this.#notify(s.frontSid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: e.text } });
     } else if (e.type === 'tool') {
-      const key = `${e.name}|${e.detail}`;
+      // Key on the adapter's tool id when it carries one: start/completed
+      // details differ (codex appends " (exit 0)"), so a name|detail key
+      // mints a NEW toolCallId per status update and leaves the started one
+      // hanging in_progress forever.
+      const key = e.id != null ? `id:${e.id}` : `${e.name}|${e.detail}`;
       if (!s.toolKeys.has(key)) s.toolKeys.set(key, `t${++s.toolSeq}`);
       this.#notify(s.frontSid, {
         sessionUpdate: 'tool_call_update',

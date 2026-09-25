@@ -355,3 +355,72 @@ test('codex dying mid-turn surfaces as a clean SSE error (no hanging stream)', a
   const settled = await (await fetch(`http://127.0.0.1:${port}/sessions`)).json();
   assert.equal(settled.sessions[0]?.busy, false, 'the dead session must not stay busy');
 });
+
+test('tool events carry a stable id across started/completed (details differ)', async () => {
+  // The completed detail appends " (exit 0)" — a client pairing on detail
+  // strings sees TWO tool calls and leaves the started one hanging; the
+  // additive `id` field is what pairs them.
+  const res = await post('/turns', { text: 'APPROVE the write please' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'approval');
+  await post('/approvals/900', { choice: 'once' });
+  const started = await sse.readUntil((f) => f.data?.type === 'tool' && f.data.status === 'started');
+  const completed = await sse.readUntil((f) => f.data?.type === 'tool' && f.data.status === 'completed');
+  assert.equal(started.data.id, 'c1');
+  assert.equal(completed.data.id, started.data.id, 'same tool call');
+  assert.notEqual(completed.data.detail, started.data.detail, 'details differ — the id is what pairs them');
+  sse.cancel();
+});
+
+test('string approval ids round-trip verbatim (no Number() coercion)', async () => {
+  // JSON-RPC ids are allowed to be strings; answering with Number(id) yields
+  // id:null and the agent blocks forever on the unanswered request.
+  const res = await post('/turns', { text: 'APPROVE STRID please' });
+  const sse = sseReader(res.body);
+  const approval = await sse.readUntil((f) => f.data?.type === 'approval');
+  assert.equal(approval.data.requestId, 'str-900');
+  const ok = await post('/approvals/str-900', { choice: 'once' });
+  assert.equal(ok.status, 200);
+  await sse.readUntil((f) => f.data?.type === 'done');
+  assert.ok(logs.some((l) => l.includes('FAKE_APPROVAL_ID:"str-900"')), `the answer must echo the agent's own id; logs: ${logs.join(' | ')}`);
+  sse.cancel();
+});
+
+test("done.full concatenates delta'd and non-delta'd agent messages", async () => {
+  // m1 streams as deltas, m2 only via item/completed, m3 only inside
+  // turn/completed.items — the assembler must concatenate all three and
+  // de-dupes by item id (the header contract).
+  const res = await post('/turns', { text: 'MIXED please' });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  assert.equal(done.data.full, 'AAABBBCCC');
+  sse.cancel();
+});
+
+test('fileChange and mcpToolCall items complete too (not just start)', async () => {
+  const res = await post('/turns', { text: 'EDIT please' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'done');
+  const trail = sse.frames.filter((f) => f.data?.type === 'tool').map((f) => [f.data.name, f.data.status, f.data.id]);
+  assert.deepEqual(trail, [
+    ['file', 'started', 'f1'], ['file', 'completed', 'f1'],
+    ['search', 'started', 'x1'], ['search', 'completed', 'x1'],
+  ]);
+});
+
+test('oversized bodies are refused with 413 (the cap counts bytes, not chars)', async () => {
+  // 1.5M CJK chars = 4.5MB of UTF-8 — a char-counting cap would wave this
+  // through as a "valid" turn.
+  const res = await post('/turns', { text: '好'.repeat(1500000) });
+  assert.equal(res.status, 413);
+});
+
+test('malformed JSON body → 400 naming the problem', async () => {
+  const res = await fetch(`http://127.0.0.1:${port}/turns`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{ not json',
+  });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /invalid JSON/);
+});
