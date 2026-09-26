@@ -1,0 +1,50 @@
+name: Pages Deploy
+
+# 官网发布：main 的 site/ 有改动时，构建并部署到 GitHub Pages
+# （xiaohuzai.github.io/agent-bridge/）——与 browsa 的 pages-deploy 同款流程。
+#
+# configure-pages 的 enablement: true 会在首次运行时自动把仓库的 Pages
+# Source 切到「GitHub Actions」，无需手工进 Settings。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages            # 与 GitHub 的生产部署组同名，旧的构建自动让位
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy site to Pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure Pages (enable workflow build source if needed)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

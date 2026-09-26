@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>agent-bridge — wire local CLI coding agents into any client</title>
+<meta name="description" content="agent-bridge is a zero-dependency Node daemon: one JSON config adapts local CLI coding agents (codex, claude, pi, …) to an HTTP+SSE wire protocol and ACP. Implement the client side once; reach any agent.">
+<meta property="og:title" content="agent-bridge — wire local CLI coding agents into any client">
+<meta property="og:description" content="Zero-dependency daemon: three doors (HTTP+SSE · WebSocket ACP · stdio ACP), one config, agents keep their own sessions and approvals.">
+<meta property="og:url" content="https://xiaohuzai.github.io/agent-bridge/en/">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://xiaohuzai.github.io/agent-bridge/en/">
+<link rel="alternate" hreflang="zh-CN" href="https://xiaohuzai.github.io/agent-bridge/">
+<link rel="alternate" hreflang="en" href="https://xiaohuzai.github.io/agent-bridge/en/">
+<link rel="stylesheet" href="../site.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="./">
+      <span class="logo">agent-bridge</span>
+      <span class="tag">zero-dep daemon</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="configuration.html">Configuration</a>
+      <a href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="../" hreflang="zh-CN">中文</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero wrap">
+    <p class="kicker">wire protocol · adapters · three doors</p>
+    <h1>Wire local CLI coding agents into any client</h1>
+    <p class="lede">A zero-dependency Node daemon: <strong>implement the client side once</strong> and reach any local coding agent (codex, claude, pi, …) through an adapter. Sessions, approvals, and disconnect-interrupts stay with the agent — the bridge translates, it never becomes a chat window.</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="configuration.html">Configuration reference →</a>
+      <a class="btn btn-ghost" href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">Source on GitHub</a>
+    </div>
+
+    <!-- signature: the architecture, drawn as a live wire schematic -->
+    <figure class="schematic">
+      <svg viewBox="0 0 960 360" role="img" aria-label="Wire schematic: three kinds of clients enter agent-bridge through HTTP+SSE, WebSocket and stdio doors, then reach the codex, claude and pi agents over their own stdio protocols">
+        <!-- wires: clients → bridge -->
+        <path id="w1" class="wire wire-live" d="M194,86 C260,86 290,110 350,110"/>
+        <path id="w2" class="wire wire-opt" d="M194,178 L350,178"/>
+        <path id="w3" class="wire wire-opt" d="M194,270 C260,270 290,246 350,246"/>
+        <!-- wires: bridge → agents (agent-side native protocols) -->
+        <path id="w4" class="wire" d="M610,110 C670,110 710,86 766,86"/>
+        <path id="w5" class="wire" d="M610,178 L766,178"/>
+        <path id="w6" class="wire" d="M610,246 C670,246 710,270 766,270"/>
+
+        <!-- data pulses (hidden under prefers-reduced-motion) -->
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="0s"><mpath href="#w1"/></animateMotion>
+        </circle>
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="0.9s"><mpath href="#w2"/></animateMotion>
+        </circle>
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="1.7s"><mpath href="#w3"/></animateMotion>
+        </circle>
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="1.4s"><mpath href="#w4"/></animateMotion>
+        </circle>
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="2.2s"><mpath href="#w5"/></animateMotion>
+        </circle>
+        <circle class="pulse pulse-amber" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="2.9s"><mpath href="#w6"/></animateMotion>
+        </circle>
+
+        <!-- client nodes -->
+        <rect class="node-box" x="24" y="60" width="170" height="52" rx="6"/>
+        <text class="label" x="42" y="82">Browser extension / Web UI</text>
+        <text class="label-dim" x="42" y="99">HTTP + SSE</text>
+        <rect class="node-box" x="24" y="152" width="170" height="52" rx="6"/>
+        <text class="label" x="42" y="174">Editors (Zed · VS Code)</text>
+        <text class="label-dim" x="42" y="191">spawn · stdio</text>
+        <rect class="node-box" x="24" y="244" width="170" height="52" rx="6"/>
+        <text class="label" x="42" y="266">Scripts / CI / mobile</text>
+        <text class="label-dim" x="42" y="283">WebSocket · ACP</text>
+
+        <!-- bridge -->
+        <rect class="node-box accent" x="350" y="40" width="260" height="280" rx="8"/>
+        <text class="label" x="374" y="70" style="font-weight:600">agent-bridge</text>
+        <text class="label-dim" x="374" y="88">one bridge per agent · own port</text>
+        <text class="label" x="374" y="114">:3948  /health /sessions</text>
+        <text class="label" x="374" y="132">         /turns /approvals</text>
+        <text class="label" x="374" y="182">:3949  ws://…/acp</text>
+        <text class="label" x="374" y="250">acp &lt;name&gt;  stdio</text>
+        <text class="label-dim" x="374" y="300">sessions survive restarts</text>
+
+        <!-- agents -->
+        <rect class="node-box" x="766" y="60" width="170" height="52" rx="6"/>
+        <text class="label" x="784" y="82">codex</text>
+        <text class="label-dim" x="784" y="99">app-server JSON-RPC</text>
+        <rect class="node-box" x="766" y="152" width="170" height="52" rx="6"/>
+        <text class="label" x="784" y="174">claude code</text>
+        <text class="label-dim" x="784" y="191">ACP stdio shim</text>
+        <rect class="node-box" x="766" y="244" width="170" height="52" rx="6"/>
+        <text class="label" x="784" y="266">pi</text>
+        <text class="label-dim" x="784" y="283">ACP stdio shim</text>
+      </svg>
+      <figcaption class="schematic-caption">
+        <span class="legend-line"><i></i>v1 wire protocol (frozen)</span>
+        <span class="legend-line dashed"><i></i>ACP doors (opt-in)</span>
+        <span class="legend-line plain"><i></i>agent-side native protocols</span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="wrap">
+    <p class="eyebrow">three doors</p>
+    <h2>Three doors, all to the same agents</h2>
+    <div class="door-grid">
+      <div class="door">
+        <h3>Built-in HTTP+SSE (v1)</h3>
+        <p class="door-proto">POST /turns · GET /sessions · SSE</p>
+        <p>The minimal wire protocol, always on. Browser extensions, scripts, anything that speaks HTTP. Frozen: additive changes only.</p>
+        <div class="door-open">always on · one port per bridge</div>
+      </div>
+      <div class="door">
+        <h3>ACP over WebSocket</h3>
+        <p class="door-proto">ws://host:port/acp</p>
+        <p>The public door for the ACP ecosystem: acpx, acp-ui, mobile clients connect without learning v1. Opt in per bridge.</p>
+        <div class="door-open">set "acp": true</div>
+      </div>
+      <div class="door">
+        <h3>ACP agent over stdio</h3>
+        <p class="door-proto">agent-bridge acp &lt;entry&gt;</p>
+        <p>Turns one config entry into a spawnable ACP agent — for editors like Zed and vscode-acp that launch agents as local commands.</p>
+        <div class="door-open">no port · stdout is protocol only</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <p class="eyebrow">quick start</p>
+    <h2>Up in four steps</h2>
+    <ol class="steps">
+      <li>
+        <h3>Install</h3>
+        <p>Install the npm package globally — or clone the source and use <code>node cli.mjs</code> where this page says <code>agent-bridge</code> (zero dependencies, no build).</p>
+        <pre><code>npm i -g @xiaohuzai/agent-bridge</code></pre>
+      </li>
+      <li>
+        <h3>Create the config</h3>
+        <p>Put an <code>agents.json</code> in the directory you start from. Run <code>agent-bridge serve</code> once without it and it prints the exact copy command for your install:</p>
+        <pre><code>cp /path/to/agents.example.json agents.json</code></pre>
+      </li>
+      <li>
+        <h3>Start</h3>
+        <p>One bridge per config entry, each on its own port. Ctrl+C stops all.</p>
+        <pre><code>$ agent-bridge serve
+agent-bridge serve: 2 bridges on http://127.0.0.1
+  codex      :3948  (apiKey required)
+  claude     :3949  (apiKey required)
+Point any wire-protocol client at these addresses.</code></pre>
+      </li>
+      <li>
+        <h3>Connect a client</h3>
+        <p>Point a v1 client at the printed addresses — or have an editor spawn <code>agent-bridge acp claude</code>. That works with no config file at all (it falls back to the built-in default spawn).</p>
+      </li>
+    </ol>
+    <div class="note">
+      <p class="note-title">Install the agents themselves</p>
+      <p>The bridge installs nothing: set up and log into codex, claude, pi separately. A bridge whose agent is missing still starts and answers <code>/health</code> — it fails on its first turn, with an install hint.</p>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <p class="eyebrow">configuration</p>
+    <h2>One config file holds every knob</h2>
+    <p class="prose">Ports, apiKey, working directory, codex sandbox and approval policy, the ACP door switch — all in <code>agents.json</code>. The CLI takes only two flags; everything else is a config field.</p>
+    <pre><code>{
+  <span class="tok-key">"bridges"</span>: [
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>,  <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span>,
+      <span class="tok-key">"sandbox"</span>: <span class="tok-str">"workspace-write"</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"on-request"</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"claude"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3949</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
+  ]
+}</code></pre>
+    <p class="prose">The <a href="configuration.html">full configuration reference</a> lists every field with type, default and allowed values — plus the codex sandbox/approval trade-offs (including how to make codex stop asking).</p>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      agent-bridge · <a href="https://www.npmjs.com/package/@xiaohuzai/agent-bridge" target="_blank" rel="noopener">@xiaohuzai/agent-bridge</a> · MIT
+    </div>
+    <nav class="foot-links" aria-label="Footer navigation">
+      <a href="configuration.html">Configuration</a>
+      <a href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="../" hreflang="zh-CN">中文</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>
