@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>Configuration reference — agent-bridge</title>
+<meta name="description" content="The complete agent-bridge configuration reference: every agents.json field with type, default and allowed values; codex sandbox (read-only / workspace-write / danger-full-access) and approval policy (never / on-request / untrusted) explained, plus the recipe for fewer approval cards.">
+<meta property="og:title" content="Configuration reference — agent-bridge">
+<meta property="og:description" content="Every config field, its allowed values, and the codex sandbox/approval trade-offs.">
+<meta property="og:url" content="https://xiaohuzai.github.io/agent-bridge/en/configuration.html">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://xiaohuzai.github.io/agent-bridge/en/configuration.html">
+<link rel="alternate" hreflang="zh-CN" href="https://xiaohuzai.github.io/agent-bridge/configuration.html">
+<link rel="alternate" hreflang="en" href="https://xiaohuzai.github.io/agent-bridge/en/configuration.html">
+<link rel="stylesheet" href="../site.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="./">
+      <span class="logo">agent-bridge</span>
+      <span class="tag">zero-dep daemon</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="configuration.html" aria-current="page">Configuration</a>
+      <a href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="../configuration.html" hreflang="zh-CN">中文</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="page-hero wrap">
+    <p class="eyebrow">configuration reference</p>
+    <h1>Configuration reference</h1>
+    <p class="lede">Every knob lives in one <code>agents.json</code>; the CLI takes only two flags. This page lists each field with type, default and allowed values, plus the codex sandbox/approval trade-offs.</p>
+  </section>
+
+  <div class="wrap with-nav">
+    <nav class="toc" aria-label="Sections">
+      <a href="#modes">Modes &amp; commands</a>
+      <a href="#file">The config file</a>
+      <a href="#fields">All fields</a>
+      <a href="#codex">codex sandbox &amp; approval</a>
+      <a href="#cards">Approval cards &amp; full access</a>
+      <a href="#approval-flow">Approval wire flow</a>
+      <a href="#security">Security posture</a>
+      <a href="#limits">Fixed limits</a>
+      <a href="#fallback">Zero-setup fallback</a>
+    </nav>
+
+    <div>
+      <!-- ============ modes ============ -->
+      <section id="modes">
+        <p class="eyebrow">modes</p>
+        <h2>Modes &amp; commands</h2>
+        <p>One command, two modes, the same config file:</p>
+        <table>
+          <thead>
+            <tr><th>Command</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>agent-bridge serve</code></td>
+              <td>The default. One bridge per config entry, each on its own port (HTTP+SSE, optionally plus the WS <code>/acp</code> door).</td>
+            </tr>
+            <tr>
+              <td><code>agent-bridge acp &lt;entry&gt;</code></td>
+              <td>Turns one entry into an ACP agent on stdio, for editors to spawn. stdout is protocol only, logs go to stderr, no port opens.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>The complete CLI surface:</p>
+        <table>
+          <thead>
+            <tr><th>Flag</th><th>Applies to</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>--config FILE</code></td>
+              <td>both</td>
+              <td>Config path, default <code>./agents.json</code> (relative to where you start).</td>
+            </tr>
+            <tr>
+              <td><code>--bind ADDR</code></td>
+              <td>serve only</td>
+              <td>Listen address, default <code>127.0.0.1</code>. Binding non-loopback requires every entry to set <code>apiKey</code>, or startup is refused. Rejected in acp mode.</td>
+            </tr>
+            <tr>
+              <td><code>--name NAME</code></td>
+              <td>acp only</td>
+              <td>Same as the positional <code>&lt;entry&gt;</code>.</td>
+            </tr>
+            <tr>
+              <td><code>--help</code> / <code>-h</code></td>
+              <td>both</td>
+              <td>Prints usage.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ file ============ -->
+      <section id="file">
+        <p class="eyebrow">file</p>
+        <h2>The config file</h2>
+        <p>JSON, with a top-level <code>bridges</code> array of at least one entry. Each entry is one bridge:</p>
+        <p class="code-cap">agents.json</p>
+        <pre><code>{
+  <span class="tok-key">"bridges"</span>: [
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>,  <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span>,
+      <span class="tok-key">"sandbox"</span>: <span class="tok-str">"workspace-write"</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"on-request"</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"claude"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3949</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
+  ]
+}</code></pre>
+        <p>This is the shipped starter (<code>agents.example.json</code>, included with both install paths). <code>name</code> must come from the registry: <code>codex</code>, <code>claude</code>, <code>pi</code> — long-tail agents join by adding a line to <code>agents-registry.mjs</code>, not by loosening validation.</p>
+      </section>
+
+      <!-- ============ fields ============ -->
+      <section id="fields">
+        <p class="eyebrow">fields</p>
+        <h2>All fields</h2>
+        <p>Fields with illegal values refuse startup and are reported one by one. Anything not in this table is ignored.</p>
+        <table class="fields">
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>Default</th><th>Allowed values</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr class="grp"><td colspan="5">Identity &amp; ports</td></tr>
+            <tr>
+              <td>name</td><td>string</td><td>—</td>
+              <td><span class="chip chip-enum">codex</span> <span class="chip chip-enum">claude</span> <span class="chip chip-enum">pi</span></td>
+              <td>Required. The bridge's identity — it picks the adapter. Registry names only.</td>
+            </tr>
+            <tr>
+              <td>port</td><td>integer</td><td>—</td>
+              <td><span class="chip">1–65535</span></td>
+              <td>Required in serve mode, unique per bridge. Omit for entries only used with <code>acp</code>.</td>
+            </tr>
+            <tr>
+              <td>apiKey</td><td>string</td><td>—</td>
+              <td><span class="chip">any string</span></td>
+              <td>Empty or omitted = keyless (loopback binds only). Required on every entry when binding non-loopback.</td>
+            </tr>
+            <tr>
+              <td>cwd</td><td>path</td><td>where you started</td>
+              <td><span class="chip">a path</span></td>
+              <td>The agent's working directory. <code>~</code> expands; relative paths resolve against the bridge's start directory.</td>
+            </tr>
+            <tr class="grp"><td colspan="5">Client doors</td></tr>
+            <tr>
+              <td>acp</td><td>boolean</td><td>false</td>
+              <td><span class="chip chip-enum">true</span> <span class="chip chip-enum">false</span></td>
+              <td><code>true</code> opens the ACP-over-WebSocket door <code>ws://…/acp</code> on this bridge's port.</td>
+            </tr>
+            <tr>
+              <td>corsOrigin</td><td>string</td><td>loopback only</td>
+              <td><span class="chip chip-enum">"*"</span></td>
+              <td>By default only loopback origins are reflected. <code>"*"</code> is the only allowed value and the explicit cross-origin opt-in — pair it with <code>apiKey</code>.</td>
+            </tr>
+            <tr>
+              <td>command</td><td>string[]</td><td>registry default</td>
+              <td><span class="chip">non-empty string array</span></td>
+              <td>Overrides the ACP shim's spawn command (e.g. <code>["npx","-y","@agentclientprotocol/claude-agent-acp"]</code>). Not for codex — it runs the native adapter; use <code>codexBin</code>.</td>
+            </tr>
+            <tr class="grp"><td colspan="5">codex tuning <span class="chip chip-codex">codex only</span></td></tr>
+            <tr>
+              <td>codexBin</td><td>string</td><td>"codex"</td>
+              <td><span class="chip">path or command</span></td>
+              <td>Where the codex executable lives.</td>
+            </tr>
+            <tr>
+              <td>codexHome</td><td>string</td><td>codex default</td>
+              <td><span class="chip">a path</span></td>
+              <td>Sets <code>CODEX_HOME</code> for the codex process — run side-by-side codex configs/logins.</td>
+            </tr>
+            <tr>
+              <td>sandbox</td><td>enum</td><td>read-only</td>
+              <td><span class="chip chip-enum">read-only</span> <span class="chip chip-enum">workspace-write</span> <span class="chip chip-enum">danger-full-access</span></td>
+              <td>codex sandbox tier: where writes and network are allowed. See below.</td>
+            </tr>
+            <tr>
+              <td>network</td><td>boolean</td><td>false</td>
+              <td><span class="chip chip-enum">true</span> <span class="chip chip-enum">false</span></td>
+              <td>Network access under the <code>workspace-write</code> tier. Only meaningful there.</td>
+            </tr>
+            <tr>
+              <td>approval</td><td>enum</td><td>never</td>
+              <td><span class="chip chip-enum">never</span> <span class="chip chip-enum">on-request</span> <span class="chip chip-enum">untrusted</span></td>
+              <td>Approval policy — when codex asks you to confirm. See below.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ codex ============ -->
+      <section id="codex">
+        <p class="eyebrow">codex · sandbox &amp; approval</p>
+        <h2>codex sandbox &amp; approval</h2>
+        <p>Together these two fields decide "what codex may do on its own" and "when it interrupts you". Both are passed to codex verbatim at session start (<code>thread/start</code>'s <code>sandbox</code> and <code>approvalPolicy</code>) and enforced by codex itself.</p>
+
+        <h3>sandbox — the sandbox tier</h3>
+        <table>
+          <thead>
+            <tr><th>Value</th><th>File writes</th><th>Network</th><th>Fits</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>read-only</code></td>
+              <td>denied</td>
+              <td>none</td>
+              <td>The default. Reading, analysis, Q&amp;A — any writing or networked command is out of bounds.</td>
+            </tr>
+            <tr>
+              <td><code>workspace-write</code></td>
+              <td>inside the workspace</td>
+              <td>only with <code>network: true</code></td>
+              <td>The everyday pick. Editing code works; network is opt-in.</td>
+            </tr>
+            <tr>
+              <td><code>danger-full-access</code></td>
+              <td>anywhere</td>
+              <td>yes</td>
+              <td>Full access. Risk is yours — for sealed environments or fully trusted automation.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p><code>network</code> only matters under <code>workspace-write</code>: <code>danger-full-access</code> comes with network anyway, and <code>read-only</code> ignores the field.</p>
+
+        <h3>approval — the approval policy</h3>
+        <table>
+          <thead>
+            <tr><th>Value</th><th>When cards appear</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>never</code></td>
+              <td>Never. Out-of-policy actions fail instead of interrupting you.</td>
+            </tr>
+            <tr>
+              <td><code>on-request</code></td>
+              <td>When an action needs more than the sandbox/policy grants — the familiar "approve" cards.</td>
+            </tr>
+            <tr>
+              <td><code>untrusted</code></td>
+              <td>Strictest: nearly every command runs by you first.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ approval cards ============ -->
+      <section id="cards">
+        <p class="eyebrow">approve cards</p>
+        <h2>Too many approval cards? The recipe</h2>
+        <p>The mechanism first: the bridge <strong>does not decide</strong> when to ask — codex raises the request and the bridge forwards it to your client. More cards means your commands don't match the <code>sandbox</code> / <code>network</code> / <code>approval</code> combination.</p>
+
+        <div class="approve-card" aria-hidden="true">
+          <div class="ac-head">approval · command · codex</div>
+          <pre><code>/bin/bash -lc "curl -L --fail --max-time 15 -s 'https://…' | rg -m 12 '…'"</code></pre>
+          <div class="ac-choices">
+            <span class="choice">once</span>
+            <span class="choice">always</span>
+            <span class="choice">deny</span>
+          </div>
+        </div>
+
+        <p>Three things trigger a card:</p>
+        <ul>
+          <li>a command <strong>writes</strong> outside the sandbox (installing deps under <code>read-only</code>, writing logs);</li>
+          <li>a command needs <strong>network</strong> but the tier has none (<code>workspace-write</code> without <code>network: true</code> — one <code>curl</code> is enough);</li>
+          <li>the <code>approval</code> policy demands confirmation (<code>untrusted</code> asks about almost everything).</li>
+        </ul>
+
+        <div class="note">
+          <p class="note-title">The "stop asking" recipe</p>
+          <p>Full access — files, network, commands all open, so codex has nothing left to ask about:</p>
+          <pre><code>{ <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>,
+  <span class="tok-key">"sandbox"</span>: <span class="tok-str">"danger-full-access"</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"never"</span> }</code></pre>
+          <p>The middle ground — writable workspace plus network, plenty for daily work with a boundary still in place:</p>
+          <pre><code>{ <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>,
+  <span class="tok-key">"sandbox"</span>: <span class="tok-str">"workspace-write"</span>, <span class="tok-key">"network"</span>: <span class="tok-num">true</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"never"</span> }</code></pre>
+        </div>
+
+        <div class="note warn">
+          <p class="note-title">Changes don't reach live sessions</p>
+          <p>Sandbox and approval are fixed <strong>at session start</strong>. After editing <code>agents.json</code>, restart the bridge and open a new session — old ones carry the old policy.</p>
+        </div>
+      </section>
+
+      <!-- ============ wire flow ============ -->
+      <section id="approval-flow">
+        <p class="eyebrow">for client implementers</p>
+        <h2>Approval wire flow</h2>
+        <p>For client authors: an approval is one request and one answer on the v1 wire. The agent emits an <code>approval</code> event (SSE or WS frame); you render it as a card and answer over HTTP once the user decides:</p>
+        <p class="code-cap">agent → client (SSE data frame)</p>
+        <pre><code>{<span class="tok-key">"type"</span>:<span class="tok-str">"approval"</span>,<span class="tok-key">"requestId"</span>:<span class="tok-str">"…"</span>,<span class="tok-key">"tool"</span>:<span class="tok-str">"command"</span>,<span class="tok-key">"command"</span>:<span class="tok-str">"…"</span>,<span class="tok-key">"cwd"</span>:<span class="tok-str">"…"</span>}</code></pre>
+        <p class="code-cap">client → bridge</p>
+        <pre><code>POST /approvals/&lt;requestId&gt;
+{ <span class="tok-key">"choice"</span>: <span class="tok-str">"once"</span> | <span class="tok-str">"always"</span> | <span class="tok-str">"deny"</span> }   <span class="tok-com">// → {"ok":true}</span></code></pre>
+        <p><code>once</code> allows this one, <code>always</code> allows later ones like it, <code>deny</code> refuses. Echo the <code>requestId</code> <strong>verbatim</strong> — it may be a string.</p>
+      </section>
+
+      <!-- ============ security ============ -->
+      <section id="security">
+        <p class="eyebrow">security</p>
+        <h2>Security posture</h2>
+        <ul>
+          <li><strong>Loopback by default</strong>. A non-loopback <code>--bind</code> requires an <code>apiKey</code> (Bearer token) on every entry, or startup is refused.</li>
+          <li><strong>Host-header allowlist</strong> (the DNS-rebinding guard) applies to loopback binds only; remote binds are gated by the token.</li>
+          <li><strong>CORS</strong> reflects loopback origins only; cross-origin needs the explicit <code>"corsOrigin": "*"</code>, paired with <code>apiKey</code>.</li>
+          <li><strong>The config holds secrets</strong>: the bridge warns when <code>agents.json</code> is group/world-readable — <code>chmod 600 agents.json</code>.</li>
+          <li><strong>Plain HTTP</strong>: TLS belongs in a reverse proxy (nginx/caddy); the bridge sends <code>X-Accel-Buffering: no</code> so SSE streams unbuffered.</li>
+        </ul>
+      </section>
+
+      <!-- ============ limits ============ -->
+      <section id="limits">
+        <p class="eyebrow">fixed limits</p>
+        <h2>Fixed limits</h2>
+        <p>Deliberate protocol constants, not configurable:</p>
+        <table>
+          <thead>
+            <tr><th>Constant</th><th>Value</th><th>Why</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Request body cap</td><td><code>4 MB</code></td><td>Bounds inline base64 images.</td></tr>
+            <tr><td>Images per turn</td><td><code>8</code></td><td>Same reason.</td></tr>
+            <tr><td>SSE heartbeat</td><td><code>15 s</code></td><td><code>: ka</code> comment frames keep silent stretches alive.</td></tr>
+            <tr><td>Disconnect</td><td>disconnect = abort</td><td>A dropped client interrupts the running turn — no unattended long jobs.</td></tr>
+            <tr><td>Turn replay</td><td>none</td><td>Turns are live-only; missed turns are not resent.</td></tr>
+            <tr><td>Session lifetime</td><td>survives bridge restarts</td><td>Agents persist their own sessions; resume continues after a restart.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ fallback ============ -->
+      <section id="fallback">
+        <p class="eyebrow">zero-setup</p>
+        <h2>Zero-setup fallback</h2>
+        <p><code>acp</code> mode resolves config in three steps: explicit <code>--config</code> → an <code>agents.json</code> beside you → <strong>the registry's built-in default</strong>. The last one is why <code>agent-bridge acp claude</code> runs with nothing configured (what registry-style auto-install invokes): it spawns the registry's default agent command and says so on stderr.</p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      agent-bridge · <a href="https://www.npmjs.com/package/@xiaohuzai/agent-bridge" target="_blank" rel="noopener">@xiaohuzai/agent-bridge</a> · MIT
+    </div>
+    <nav class="foot-links" aria-label="Footer navigation">
+      <a href="./">Home</a>
+      <a href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="../configuration.html" hreflang="zh-CN">中文</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

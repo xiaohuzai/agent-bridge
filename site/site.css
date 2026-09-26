@@ -1,0 +1,765 @@
+/* agent-bridge site — "wire schematic" design system.
+   Engineering-drawing voice: cool blueprint paper, ink navy, signal blue for
+   live wires, amber for the approval theme. IBM Plex Mono carries display &
+   data, Plex Sans carries prose. Zero JS: theme follows the system via
+   light-dark(), hero motion is SVG + CSS only and respects reduced-motion. */
+
+@layer theme, base, components;
+
+/* ---- fonts (self-hosted, latin subset; CJK falls back to system) -------- */
+@font-face {
+  font-family: 'Plex Mono';
+  src: url('fonts/ibm-plex-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Mono';
+  src: url('fonts/ibm-plex-mono-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Sans';
+  src: url('fonts/ibm-plex-sans-var.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@layer theme {
+  :root {
+    color-scheme: light dark;
+
+    /* raw palette */
+    --paper-light: #f5f7fa;
+    --paper-dark: #0e1420;
+    --ink-light: #17233a;
+    --ink-dark: #e6ecf5;
+    --muted-light: #5a6b85;
+    --muted-dark: #8fa1bb;
+    --line-light: #d5deea;
+    --line-dark: #2a3852;
+    --slab-light: #eaeff6;
+    --slab-dark: #131c2c;
+    --wire-light: #2563eb;
+    --wire-dark: #7da7ff;
+    --amber-light: #b45309;
+    --amber-dark: #f59e0b;
+
+    /* tokens (resolve late, per modern-web-guidance dark-mode rules) */
+    --paper: light-dark(var(--paper-light), var(--paper-dark));
+    --ink: light-dark(var(--ink-light), var(--ink-dark));
+    --muted: light-dark(var(--muted-light), var(--muted-dark));
+    --line: light-dark(var(--line-light), var(--line-dark));
+    --slab: light-dark(var(--slab-light), var(--slab-dark));
+    --wire: light-dark(var(--wire-light), var(--wire-dark));
+    --amber: light-dark(var(--amber-light), var(--amber-dark));
+
+    /* terminal ink: code slabs stay dark in BOTH schemes */
+    --code-bg: #0b1220;
+    --code-ink: #dce5f2;
+    --code-dim: #7f93b2;
+    --code-wire: #7da7ff;
+    --code-amber: #f5b74a;
+    --code-green: #6fcf97;
+
+    --font-display: 'Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas,
+      'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei',
+      monospace;
+    --font-body: 'Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto,
+      'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Microsoft YaHei',
+      sans-serif;
+    --font-mono: 'Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas,
+      'PingFang SC', 'Noto Sans CJK SC', monospace;
+
+    --measure: 46rem;
+    --wide: 60rem;
+    --radius: 6px;
+  }
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  html {
+    color-scheme: light dark;
+    accent-color: var(--wire);
+    scrollbar-color: var(--muted) transparent;
+  }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);
+    line-height: 1.7;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: var(--wire);
+    text-underline-offset: 0.18em;
+    text-decoration-thickness: from-font;
+  }
+  a:hover {
+    text-decoration-thickness: 2px;
+  }
+  :focus-visible {
+    outline: 2px solid var(--wire);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  h2 {
+    font-size: 1.375rem;
+    margin: 3.25rem 0 0.25rem;
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-size: 1.0625rem;
+    margin: 2.25rem 0 0.25rem;
+  }
+  p {
+    margin: 0.85rem 0;
+  }
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--slab);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.08em 0.35em;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    white-space: pre;
+    font-size: 0.8125rem;
+    line-height: 1.65;
+    color: inherit;
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    border-radius: var(--radius);
+    padding: 1rem 1.15rem;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    margin: 1.15rem 0;
+    tab-size: 2;
+    color-scheme: dark;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1.15rem 0;
+    font-size: 0.9375rem;
+    line-height: 1.55;
+  }
+  th {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+    padding: 0.55rem 0.85rem;
+    border-bottom: 1.5px solid var(--line);
+    white-space: nowrap;
+  }
+  td {
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  td code {
+    white-space: nowrap;
+  }
+  blockquote {
+    margin: 1.15rem 0;
+    padding: 0.15rem 0 0.15rem 1.15rem;
+    border-left: 3px solid var(--amber);
+    color: var(--muted);
+  }
+  hr {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 3rem 0;
+  }
+  ::selection {
+    background: light-dark(#c7d8ff, #23406e);
+  }
+}
+
+@layer components {
+  /* ---- layout ---------------------------------------------------------- */
+  .wrap {
+    max-width: var(--wide);
+    margin: 0 auto;
+    padding: 0 1.25rem;
+  }
+  .prose {
+    max-width: var(--measure);
+  }
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    background: var(--wire);
+    color: #fff;
+    padding: 0.5rem 1rem;
+    z-index: 10;
+  }
+  .skip-link:focus {
+    left: 1rem;
+    top: 1rem;
+  }
+
+  /* ---- header ---------------------------------------------------------- */
+  .site-header {
+    border-bottom: 1px solid var(--line);
+    background: var(--paper);
+  }
+  .site-header .wrap {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    min-height: 3.75rem;
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 0.65rem;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .brand .logo {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.0625rem;
+    letter-spacing: -0.02em;
+  }
+  .brand .tag {
+    font-family: var(--font-display);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    padding: 0.15rem 0.55rem;
+    white-space: nowrap;
+  }
+  .site-nav {
+    display: flex;
+    gap: 1.15rem;
+    margin-left: auto;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .site-nav a {
+    color: var(--ink);
+    text-decoration: none;
+    font-family: var(--font-display);
+    font-size: 0.8125rem;
+    letter-spacing: 0.04em;
+  }
+  .site-nav a:hover {
+    color: var(--wire);
+  }
+  .site-nav a[aria-current='page'] {
+    color: var(--wire);
+  }
+
+  /* ---- hero ------------------------------------------------------------ */
+  .hero {
+    padding: 4.5rem 0 1rem;
+  }
+  .hero .kicker {
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--wire);
+    margin: 0 0 1.1rem;
+  }
+  .hero h1 {
+    font-size: clamp(1.85rem, 1.35rem + 2.2vw, 3.05rem);
+    letter-spacing: -0.025em;
+    margin: 0 0 1.15rem;
+    max-width: 21ch;
+  }
+  .hero .lede {
+    font-size: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+    color: var(--muted);
+    max-width: 38rem;
+  }
+  .hero .lede strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .hero-actions {
+    display: flex;
+    gap: 0.85rem;
+    margin-top: 1.75rem;
+    flex-wrap: wrap;
+  }
+
+  /* ---- buttons --------------------------------------------------------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-display);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: var(--radius);
+    padding: 0.62rem 1.15rem;
+    border: 1px solid transparent;
+  }
+  .btn-primary {
+    background: var(--wire);
+    color: light-dark(#fff, #0b1220);
+  }
+  .btn-primary:hover {
+    filter: brightness(1.08);
+  }
+  .btn-ghost {
+    border-color: var(--line);
+    color: var(--ink);
+  }
+  .btn-ghost:hover {
+    border-color: var(--wire);
+    color: var(--wire);
+  }
+
+  /* ---- schematic (the signature) --------------------------------------- */
+  .schematic {
+    margin: 3.25rem 0 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background:
+      linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 100% 2.25rem,
+      linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 2.25rem 100%;
+    background-color: var(--paper);
+    overflow: hidden;
+  }
+  .schematic svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .schematic .wire {
+    stroke: var(--line);
+    stroke-width: 1.5;
+    fill: none;
+  }
+  .schematic .wire-live {
+    stroke: var(--wire);
+    stroke-width: 2;
+  }
+  .schematic .wire-opt {
+    stroke-dasharray: 5 5;
+  }
+  .schematic .node-box {
+    fill: var(--paper);
+    stroke: var(--line);
+    stroke-width: 1.25;
+  }
+  .schematic .node-box.accent {
+    stroke: var(--wire);
+  }
+  .schematic text {
+    font-family: var(--font-mono);
+    fill: var(--ink);
+  }
+  .schematic .label {
+    font-size: 11px;
+  }
+  .schematic .label-dim {
+    fill: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+  .schematic .pulse {
+    fill: var(--wire);
+  }
+  .schematic .pulse-amber {
+    fill: var(--amber);
+  }
+  .schematic-caption {
+    display: flex;
+    gap: 1.35rem;
+    flex-wrap: wrap;
+    padding: 0.75rem 1.15rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-display);
+    font-size: 0.6875rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .legend-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .legend-line i {
+    display: inline-block;
+    width: 26px;
+    border-top: 2px solid var(--wire);
+  }
+  .legend-line.dashed i {
+    border-top-style: dashed;
+    border-top-color: var(--muted);
+    border-top-width: 1.5px;
+  }
+  .legend-line.plain i {
+    border-top-color: var(--line);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      display: none;
+    }
+  }
+
+  /* ---- eyebrow sections ------------------------------------------------ */
+  .eyebrow {
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 0.35rem;
+  }
+
+  /* ---- step list (quick start: a true sequence) ------------------------ */
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    margin: 1.35rem 0;
+    padding: 0;
+  }
+  .steps > li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 2.25rem 1fr;
+    gap: 0.35rem 1rem;
+    padding: 1.05rem 0;
+    border-top: 1px solid var(--line);
+  }
+  .steps > li:last-child {
+    border-bottom: 1px solid var(--line);
+  }
+  .steps > li::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--wire);
+    font-size: 0.9375rem;
+  }
+  .steps h3 {
+    margin: 0;
+  }
+  .steps p {
+    margin: 0.35rem 0 0;
+    grid-column: 2;
+    color: var(--muted);
+  }
+  .steps pre {
+    grid-column: 2;
+    margin: 0.65rem 0 0;
+  }
+
+  /* ---- code caption ---------------------------------------------------- */
+  .code-cap {
+    font-family: var(--font-display);
+    font-size: 0.6875rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 1.35rem 0 -0.85rem;
+  }
+  /* keyword / string / comment tints inside terminal slabs */
+  .tok-key {
+    color: var(--code-wire);
+  }
+  .tok-str {
+    color: var(--code-green);
+  }
+  .tok-num {
+    color: var(--code-amber);
+  }
+  .tok-com {
+    color: var(--code-dim);
+    font-style: italic;
+  }
+
+  /* ---- chips & callouts ------------------------------------------------ */
+  .chip {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    padding: 0.02rem 0.45rem;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    background: var(--slab);
+    white-space: nowrap;
+  }
+  .chip-enum {
+    color: var(--wire);
+    border-color: color-mix(in srgb, var(--wire) 35%, var(--line));
+  }
+  .chip-amber {
+    color: var(--amber);
+    border-color: color-mix(in srgb, var(--amber) 45%, var(--line));
+    background: color-mix(in srgb, var(--amber) 8%, var(--paper));
+  }
+  .chip-codex {
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 0.6875rem;
+    color: var(--muted);
+  }
+  .note {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--wire);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    background: var(--slab);
+    padding: 0.95rem 1.15rem;
+    margin: 1.35rem 0;
+  }
+  .note.warn {
+    border-left-color: var(--amber);
+  }
+  .note .note-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.8125rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0 0 0.35rem;
+    color: var(--wire);
+  }
+  .note.warn .note-title {
+    color: var(--amber);
+  }
+  .note p {
+    margin: 0.35rem 0;
+    font-size: 0.9375rem;
+  }
+
+  /* ---- approve-card motif ---------------------------------------------- */
+  .approve-card {
+    border: 1px solid color-mix(in srgb, var(--amber) 55%, var(--line));
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--amber) 7%, var(--paper));
+    margin: 1.15rem 0;
+    overflow: hidden;
+    max-width: var(--measure);
+  }
+  .approve-card .ac-head {
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
+    font-family: var(--font-display);
+    font-size: 0.6875rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--amber);
+    padding: 0.55rem 0.95rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--amber) 35%, var(--line));
+  }
+  .approve-card pre {
+    margin: 0;
+    border-radius: 0;
+    font-size: 0.78rem;
+  }
+  .ac-choices {
+    display: flex;
+    gap: 0.55rem;
+    padding: 0.75rem 0.95rem;
+    flex-wrap: wrap;
+    border-top: 1px solid color-mix(in srgb, var(--amber) 35%, var(--line));
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .ac-choices .choice {
+    border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--line));
+    border-radius: 4px;
+    padding: 0.22rem 0.65rem;
+  }
+
+  /* ---- field table tuning ---------------------------------------------- */
+  .fields td:first-child {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .fields td:nth-child(2),
+  .fields td:nth-child(3) {
+    white-space: nowrap;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .fields .grp td {
+    background: var(--slab);
+    font-family: var(--font-display);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0.45rem 0.85rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* ---- three-doors compare --------------------------------------------- */
+  .door-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin: 1.35rem 0;
+  }
+  .door {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1.15rem 1.2rem;
+    background: var(--paper);
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .door h3 {
+    margin: 0;
+    font-size: 0.9375rem;
+  }
+  .door .door-proto {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--wire);
+  }
+  .door p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .door .door-open {
+    margin-top: auto;
+    padding-top: 0.65rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--ink);
+    border-top: 1px dashed var(--line);
+  }
+  @media (max-width: 720px) {
+    .door-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* ---- page hero (inner pages) ----------------------------------------- */
+  .page-hero {
+    padding: 3.25rem 0 0.5rem;
+  }
+  .page-hero h1 {
+    font-size: clamp(1.65rem, 1.35rem + 1.4vw, 2.35rem);
+    letter-spacing: -0.02em;
+    margin: 0.35rem 0 0.85rem;
+  }
+  .page-hero .lede {
+    color: var(--muted);
+    max-width: var(--measure);
+  }
+
+  /* ---- config page: sticky section nav --------------------------------- */
+  .with-nav {
+    display: grid;
+    grid-template-columns: 11.5rem 1fr;
+    gap: 2.5rem;
+    align-items: start;
+    padding-bottom: 4rem;
+  }
+  .toc {
+    position: sticky;
+    top: 1.25rem;
+    padding-top: 3.25rem;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    line-height: 2.1;
+    letter-spacing: 0.04em;
+    border-right: 1px solid var(--line);
+    align-self: stretch;
+  }
+  .toc a {
+    display: block;
+    color: var(--muted);
+    text-decoration: none;
+    padding-right: 1.15rem;
+  }
+  .toc a:hover {
+    color: var(--wire);
+  }
+  @media (max-width: 900px) {
+    .with-nav {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+    .toc {
+      position: static;
+      border-right: none;
+      border-bottom: 1px solid var(--line);
+      padding: 1.25rem 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0 1.15rem;
+      line-height: 2.4;
+    }
+  }
+
+  /* ---- footer ---------------------------------------------------------- */
+  .site-footer {
+    border-top: 1px solid var(--line);
+    margin-top: 4.5rem;
+    padding: 2.25rem 0 3rem;
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+  .site-footer .wrap {
+    display: flex;
+    gap: 1.5rem;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    align-items: baseline;
+  }
+  .site-footer a {
+    color: var(--muted);
+  }
+  .site-footer a:hover {
+    color: var(--wire);
+  }
+  .foot-links {
+    display: flex;
+    gap: 1.15rem;
+    flex-wrap: wrap;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+  }
+}

@@ -16,6 +16,10 @@
   <a href="https://github.com/xiaohuzai/agent-bridge/issues"><img src="https://img.shields.io/badge/PRs-welcome-3a6b35?style=flat-square" alt="PRs welcome" /></a>
 </p>
 
+<p align="center">
+  🌐 <a href="https://xiaohuzai.github.io/agent-bridge/en/">Website</a> · <a href="https://xiaohuzai.github.io/agent-bridge/en/configuration.html"><strong>Configuration reference</strong></a>
+</p>
+
 ```mermaid
 flowchart LR
     V["v1 clients<br/>scripts · browsa · your UI"] -->|"HTTP + SSE"| B["agent-bridge"]
@@ -95,7 +99,9 @@ The starter runs as-is — codex on 3948, claude on 3949, no key needed on your 
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
 | `cwd` | optional; omit it and the agent runs in the directory you start `serve` from (writing `"."` is the same thing); `~` and relative paths are resolved |
 | `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket door (see Three ways to connect) |
-| `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | optional, codex-specific tuning |
+| `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | optional, codex-specific tuning (values and trade-offs below) |
+
+Type, default and **every allowed value** per field — plus the codex sandbox/approval trade-offs (the recipe for "too many approval cards") — live on the website's [configuration reference](https://xiaohuzai.github.io/agent-bridge/en/configuration.html).
 
 **Why a registry?** ACP implementations across the ecosystem vary widely — protocol versions, image/permission/streaming support; there is no framework everyone follows. A name enters the registry only after a real, live-verified turn through the bridge, so "supported" is a claim this repo stands behind, not a coin flip. New agent = verify a turn, add one line.
 

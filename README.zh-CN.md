@@ -16,6 +16,10 @@
   <a href="https://github.com/xiaohuzai/agent-bridge/issues"><img src="https://img.shields.io/badge/PRs-welcome-3a6b35?style=flat-square" alt="PRs welcome" /></a>
 </p>
 
+<p align="center">
+  🌐 <a href="https://xiaohuzai.github.io/agent-bridge/">网站</a> · <a href="https://xiaohuzai.github.io/agent-bridge/configuration.html"><strong>配置参考</strong></a>
+</p>
+
 ```mermaid
 flowchart LR
     V["v1 客户端<br/>脚本 · browsa · 你的 UI"] -->|"HTTP + SSE"| B["agent-bridge"]
@@ -95,7 +99,9 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
 | `cwd` | 可选；不写就跑在你启动 `serve` 的目录（写 `"."` 等价）；`~` 与相对路径会自动解析 |
 | `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见「三扇门」） |
-| `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优 |
+| `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优（取值与取舍见下） |
+
+每个字段的类型、默认值与**全部可选取值**，以及 codex 沙箱/审批的取舍（「审批卡太多怎么办」的配方），都整理在网站的[配置参考](https://xiaohuzai.github.io/agent-bridge/configuration.html)。
 
 **为什么要有注册表？** ACP 生态各家的实现参差不齐——协议版本、图片/审批/流式支持各异，并没有一个大家都遵循的框架。一个名字要进入注册表，必须先过桥上的真实回合验证——所以「已支持」是本仓库背书的宣称，而不是碰运气。接入新 agent = 验证一个回合，加一行。
 

@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>配置参考 — agent-bridge</title>
+<meta name="description" content="agent-bridge 完整配置参考：agents.json 全部字段的类型、默认值与可选取值；codex 沙箱（read-only / workspace-write / danger-full-access）与审批策略（never / on-request / untrusted）详解，审批卡成因与完全访问配方。">
+<meta property="og:title" content="配置参考 — agent-bridge">
+<meta property="og:description" content="全部配置字段、可选取值、codex 沙箱与审批策略详解。">
+<meta property="og:url" content="https://xiaohuzai.github.io/agent-bridge/configuration.html">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://xiaohuzai.github.io/agent-bridge/configuration.html">
+<link rel="alternate" hreflang="zh-CN" href="https://xiaohuzai.github.io/agent-bridge/configuration.html">
+<link rel="alternate" hreflang="en" href="https://xiaohuzai.github.io/agent-bridge/en/configuration.html">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="./">
+      <span class="logo">agent-bridge</span>
+      <span class="tag">zero-dep daemon</span>
+    </a>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="configuration.html" aria-current="page">配置参考</a>
+      <a href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="en/configuration.html" hreflang="en">EN</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="page-hero wrap">
+    <p class="eyebrow">configuration reference</p>
+    <h1>配置参考</h1>
+    <p class="lede">全部旋钮都在一个 <code>agents.json</code> 里，CLI 只有两组旗标。这页列出每个字段的类型、默认值与可选取值，以及 codex 沙箱/审批的取舍指南。</p>
+  </section>
+
+  <div class="wrap with-nav">
+    <nav class="toc" aria-label="章节导航">
+      <a href="#modes">模式与命令</a>
+      <a href="#file">配置文件</a>
+      <a href="#fields">字段总表</a>
+      <a href="#codex">codex 沙箱与审批</a>
+      <a href="#cards">审批卡与完全访问</a>
+      <a href="#approval-flow">审批线协议</a>
+      <a href="#security">安全边界</a>
+      <a href="#limits">固定限制</a>
+      <a href="#fallback">零配置回退</a>
+    </nav>
+
+    <div>
+      <!-- ============ modes ============ -->
+      <section id="modes">
+        <p class="eyebrow">modes</p>
+        <h2>模式与命令</h2>
+        <p>一条命令、两种模式，共用同一份配置文件：</p>
+        <table>
+          <thead>
+            <tr><th>命令</th><th>做什么</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>agent-bridge serve</code></td>
+              <td>默认模式。每个配置条目起一个桥，各自监听自己的端口（HTTP+SSE，可选加 WS 的 <code>/acp</code>）。</td>
+            </tr>
+            <tr>
+              <td><code>agent-bridge acp &lt;条目名&gt;</code></td>
+              <td>把单个条目变成 stdio 上的 ACP 智能体，供编辑器 spawn。stdout 只走协议，日志走 stderr，不开端口。</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>CLI 旗标只有这些：</p>
+        <table>
+          <thead>
+            <tr><th>旗标</th><th>适用</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>--config FILE</code></td>
+              <td>两者</td>
+              <td>配置文件路径，默认 <code>./agents.json</code>（相对启动目录）。</td>
+            </tr>
+            <tr>
+              <td><code>--bind ADDR</code></td>
+              <td>仅 serve</td>
+              <td>监听地址，默认 <code>127.0.0.1</code>。绑定非回环地址时，所有条目必须填 <code>apiKey</code>，否则拒绝启动。在 acp 模式出现会被拒绝。</td>
+            </tr>
+            <tr>
+              <td><code>--name NAME</code></td>
+              <td>仅 acp</td>
+              <td>等价于位置参数 <code>&lt;条目名&gt;</code>。</td>
+            </tr>
+            <tr>
+              <td><code>--help</code> / <code>-h</code></td>
+              <td>两者</td>
+              <td>打印用法。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ file ============ -->
+      <section id="file">
+        <p class="eyebrow">file</p>
+        <h2>配置文件</h2>
+        <p>JSON 格式，顶层是一个 <code>bridges</code> 数组，至少一条。每条就是一个桥：</p>
+        <p class="code-cap">agents.json</p>
+        <pre><code>{
+  <span class="tok-key">"bridges"</span>: [
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>,  <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span>,
+      <span class="tok-key">"sandbox"</span>: <span class="tok-str">"workspace-write"</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"on-request"</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"claude"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3949</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
+  ]
+}</code></pre>
+        <p>这是官方起步配置（<code>agents.example.json</code>，两种安装方式都自带）。<code>name</code> 只能取注册表里的名字：<code>codex</code>、<code>claude</code>、<code>pi</code>——长尾智能体在 <code>agents-registry.mjs</code> 加一行即可，不用放宽配置校验。</p>
+      </section>
+
+      <!-- ============ fields ============ -->
+      <section id="fields">
+        <p class="eyebrow">fields</p>
+        <h2>字段总表</h2>
+        <p>取值非法的字段会拒绝启动并逐条报错。未在表中的字段会被忽略。</p>
+        <table class="fields">
+          <thead>
+            <tr><th>字段</th><th>类型</th><th>默认</th><th>可取值</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr class="grp"><td colspan="5">身份与端口</td></tr>
+            <tr>
+              <td>name</td><td>string</td><td>—</td>
+              <td><span class="chip chip-enum">codex</span> <span class="chip chip-enum">claude</span> <span class="chip chip-enum">pi</span></td>
+              <td>必填。桥的身份，决定用哪个适配器；只能取注册表里的名字。</td>
+            </tr>
+            <tr>
+              <td>port</td><td>integer</td><td>—</td>
+              <td><span class="chip">1–65535</span></td>
+              <td>serve 模式必填，每桥唯一。只用于 <code>acp</code> 模式的条目可省略。</td>
+            </tr>
+            <tr>
+              <td>apiKey</td><td>string</td><td>—</td>
+              <td><span class="chip">任意字符串</span></td>
+              <td>空串或省略 = 免密（仅限回环监听）。绑定非回环地址时所有条目必填。</td>
+            </tr>
+            <tr>
+              <td>cwd</td><td>path</td><td>启动目录</td>
+              <td><span class="chip">路径</span></td>
+              <td>智能体的工作目录。支持 <code>~</code>；相对路径按 bridge 启动位置解析。</td>
+            </tr>
+            <tr class="grp"><td colspan="5">客户端门</td></tr>
+            <tr>
+              <td>acp</td><td>boolean</td><td>false</td>
+              <td><span class="chip chip-enum">true</span> <span class="chip chip-enum">false</span></td>
+              <td><code>true</code> 时在此桥端口开启 WebSocket 上的 ACP 门 <code>ws://…/acp</code>。</td>
+            </tr>
+            <tr>
+              <td>corsOrigin</td><td>string</td><td>回环同源</td>
+              <td><span class="chip chip-enum">"*"</span></td>
+              <td>默认只反射回环来源。<code>"*"</code> 是显式放开跨域的唯一取值——请与 <code>apiKey</code> 成对使用。</td>
+            </tr>
+            <tr>
+              <td>command</td><td>string[]</td><td>注册表默认</td>
+              <td><span class="chip">非空字符串数组</span></td>
+              <td>覆盖 ACP 壳的启动命令（如 <code>["npx","-y","@agentclientprotocol/claude-agent-acp"]</code>）。codex 不适用——它走原生适配器，请用 <code>codexBin</code>。</td>
+            </tr>
+            <tr class="grp"><td colspan="5">codex 调优 <span class="chip chip-codex">仅 codex</span></td></tr>
+            <tr>
+              <td>codexBin</td><td>string</td><td>"codex"</td>
+              <td><span class="chip">路径或命令名</span></td>
+              <td>codex 可执行文件位置。</td>
+            </tr>
+            <tr>
+              <td>codexHome</td><td>string</td><td>codex 默认</td>
+              <td><span class="chip">路径</span></td>
+              <td>给 codex 进程设置 <code>CODEX_HOME</code>——用于多套 codex 配置/登录态并存。</td>
+            </tr>
+            <tr>
+              <td>sandbox</td><td>enum</td><td>read-only</td>
+              <td><span class="chip chip-enum">read-only</span> <span class="chip chip-enum">workspace-write</span> <span class="chip chip-enum">danger-full-access</span></td>
+              <td>codex 沙箱档位，决定文件写入与联网的边界。见下节。</td>
+            </tr>
+            <tr>
+              <td>network</td><td>boolean</td><td>false</td>
+              <td><span class="chip chip-enum">true</span> <span class="chip chip-enum">false</span></td>
+              <td><code>workspace-write</code> 档位下是否允许联网。只对这一档生效。</td>
+            </tr>
+            <tr>
+              <td>approval</td><td>enum</td><td>never</td>
+              <td><span class="chip chip-enum">never</span> <span class="chip chip-enum">on-request</span> <span class="chip chip-enum">untrusted</span></td>
+              <td>审批策略——什么时候向你要确认。见下节。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ codex ============ -->
+      <section id="codex">
+        <p class="eyebrow">codex · sandbox &amp; approval</p>
+        <h2>codex 沙箱与审批</h2>
+        <p>这两个字段一起决定「codex 能自己做什么」和「什么时候弹卡问你」。都是在建会话时原样传给 codex 的（<code>thread/start</code> 的 <code>sandbox</code> 与 <code>approvalPolicy</code>），由 codex 自己执行边界。</p>
+
+        <h3>sandbox — 沙箱档位</h3>
+        <table>
+          <thead>
+            <tr><th>取值</th><th>文件写入</th><th>网络</th><th>适合</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>read-only</code></td>
+              <td>不允许</td>
+              <td>无</td>
+              <td>默认。纯阅读/分析/问答——任何写入或联网命令都算越界。</td>
+            </tr>
+            <tr>
+              <td><code>workspace-write</code></td>
+              <td>工作区内允许</td>
+              <td>仅当 <code>network: true</code></td>
+              <td>日常开发推荐。改代码没问题，联网要显式开。</td>
+            </tr>
+            <tr>
+              <td><code>danger-full-access</code></td>
+              <td>任意位置</td>
+              <td>有</td>
+              <td>完全访问。风险自担——适合封闭环境或完全信任的自动化。</td>
+            </tr>
+          </tbody>
+        </table>
+        <p><code>network</code> 只在 <code>workspace-write</code> 下有意义：<code>danger-full-access</code> 天然带网络，<code>read-only</code> 忽略此字段。</p>
+
+        <h3>approval — 审批策略</h3>
+        <table>
+          <thead>
+            <tr><th>取值</th><th>什么时候弹卡</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>never</code></td>
+              <td>从不。越界动作直接失败，不打断你。</td>
+            </tr>
+            <tr>
+              <td><code>on-request</code></td>
+              <td>动作超出沙箱/策略给的权限时弹卡——最常见的「approve」卡片。</td>
+            </tr>
+            <tr>
+              <td><code>untrusted</code></td>
+              <td>最严：几乎所有命令执行都先问。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ approval cards ============ -->
+      <section id="cards">
+        <p class="eyebrow">approve cards</p>
+        <h2>审批卡多？配方在这</h2>
+        <p>先说机制：bridge <strong>不决定</strong>什么时候弹卡——是 codex 发起询问，bridge 原样转发给你的客户端。卡片变多，是「命令行为」与「sandbox / network / approval 三个字段的组合」不匹配的信号。</p>
+
+        <div class="approve-card" aria-hidden="true">
+          <div class="ac-head">approval · command · codex</div>
+          <pre><code>/bin/bash -lc "curl -L --fail --max-time 15 -s 'https://…' | rg -m 12 '…'"</code></pre>
+          <div class="ac-choices">
+            <span class="choice">once</span>
+            <span class="choice">always</span>
+            <span class="choice">deny</span>
+          </div>
+        </div>
+
+        <p>会触发卡片的三种情况：</p>
+        <ul>
+          <li>命令要<strong>写入</strong>沙箱外的位置（比如 <code>read-only</code> 下装依赖、写日志）；</li>
+          <li>命令要<strong>联网</strong>但档位没开网络（<code>workspace-write</code> 且 <code>network</code> 不为 <code>true</code> 时，一个 <code>curl</code> 就中招）；</li>
+          <li><code>approval</code> 策略要求确认（<code>untrusted</code> 几乎条条都问）。</li>
+        </ul>
+
+        <div class="note">
+          <p class="note-title">想要「少问多做」的配方</p>
+          <p>完全访问——文件、网络、命令全部放开，codex 没有东西可问：</p>
+          <pre><code>{ <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>,
+  <span class="tok-key">"sandbox"</span>: <span class="tok-str">"danger-full-access"</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"never"</span> }</code></pre>
+          <p>折中方案——工作区可写 + 联网，日常够用且仍有边界：</p>
+          <pre><code>{ <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>,
+  <span class="tok-key">"sandbox"</span>: <span class="tok-str">"workspace-write"</span>, <span class="tok-key">"network"</span>: <span class="tok-num">true</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"never"</span> }</code></pre>
+        </div>
+
+        <div class="note warn">
+          <p class="note-title">改动后对已有会话不生效</p>
+          <p>沙箱与审批策略在<strong>建会话时</strong>定下。改完 <code>agents.json</code> 记得重启 bridge 并开新会话，老会话还带着老策略。</p>
+        </div>
+      </section>
+
+      <!-- ============ wire flow ============ -->
+      <section id="approval-flow">
+        <p class="eyebrow">for client implementers</p>
+        <h2>审批线协议</h2>
+        <p>给客户端作者的：审批在 v1 线协议里是一问一答。智能体发来一个 <code>approval</code> 事件（SSE 或 WS 帧），你把它渲染成卡片，用户拍板后回一个 HTTP 请求：</p>
+        <p class="code-cap">智能体 → 客户端（SSE data 帧）</p>
+        <pre><code>{<span class="tok-key">"type"</span>:<span class="tok-str">"approval"</span>,<span class="tok-key">"requestId"</span>:<span class="tok-str">"…"</span>,<span class="tok-key">"tool"</span>:<span class="tok-str">"command"</span>,<span class="tok-key">"command"</span>:<span class="tok-str">"…"</span>,<span class="tok-key">"cwd"</span>:<span class="tok-str">"…"</span>}</code></pre>
+        <p class="code-cap">客户端 → bridge</p>
+        <pre><code>POST /approvals/&lt;requestId&gt;
+{ <span class="tok-key">"choice"</span>: <span class="tok-str">"once"</span> | <span class="tok-str">"always"</span> | <span class="tok-str">"deny"</span> }   <span class="tok-com">// → {"ok":true}</span></code></pre>
+        <p><code>once</code> 放行这一次，<code>always</code> 放行同类后续，<code>deny</code> 拒绝。<code>requestId</code> 必须<strong>原样</strong>回传——它可能是字符串。</p>
+      </section>
+
+      <!-- ============ security ============ -->
+      <section id="security">
+        <p class="eyebrow">security</p>
+        <h2>安全边界</h2>
+        <ul>
+          <li><strong>默认只听回环</strong>。<code>--bind</code> 绑非回环时，每个条目都必须有 <code>apiKey</code>（Bearer token），否则启动被拒。</li>
+          <li><strong>Host 头白名单</strong>（防 DNS-rebinding）只对回环绑定生效；远程绑定靠 token 把关。</li>
+          <li><strong>CORS</strong> 默认只反射回环来源；跨域要显式 <code>"corsOrigin": "*"</code>，并与 <code>apiKey</code> 成对。</li>
+          <li><strong>配置文件含密钥</strong>：bridge 启动时发现 <code>agents.json</code> 权限过宽会警告——<code>chmod 600 agents.json</code>。</li>
+          <li><strong>明文 HTTP</strong>：TLS 归反代（nginx/caddy）；bridge 已发 <code>X-Accel-Buffering: no</code>，SSE 过反代不缓冲。</li>
+        </ul>
+      </section>
+
+      <!-- ============ limits ============ -->
+      <section id="limits">
+        <p class="eyebrow">fixed limits</p>
+        <h2>固定限制</h2>
+        <p>这些是刻意固定的协议常量，不可配置：</p>
+        <table>
+          <thead>
+            <tr><th>常量</th><th>值</th><th>为什么</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>请求体上限</td><td><code>4 MB</code></td><td>约束内联 base64 图片的体量。</td></tr>
+            <tr><td>图片数组上限</td><td><code>8</code> 张</td><td>同上。</td></tr>
+            <tr><td>SSE 心跳</td><td><code>15 s</code></td><td>静默期发 <code>: ka</code> 注释帧保活。</td></tr>
+            <tr><td>断连语义</td><td>断连 = 中断</td><td>客户端掉线即中断当前回合，不留无人看的长任务。</td></tr>
+            <tr><td>回合回放</td><td>无</td><td>回合只直播；离开的回合不补发。</td></tr>
+            <tr><td>会话存活</td><td>跨 bridge 重启</td><td>会话由智能体自己持久化，重启后 resume 继续。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ fallback ============ -->
+      <section id="fallback">
+        <p class="eyebrow">zero-setup</p>
+        <h2>零配置回退</h2>
+        <p><code>acp</code> 模式有三级配置解析：显式 <code>--config</code> → 启动目录下的 <code>agents.json</code> → <strong>注册表内置默认</strong>。最后这条让 <code>agent-bridge acp claude</code> 什么都不配就能跑（ACP Registry 的自动安装走的就是它）：直接用注册表里的默认命令启动智能体，并在 stderr 打印一行说明。</p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      agent-bridge · <a href="https://www.npmjs.com/package/@xiaohuzai/agent-bridge" target="_blank" rel="noopener">@xiaohuzai/agent-bridge</a> · MIT
+    </div>
+    <nav class="foot-links" aria-label="页脚导航">
+      <a href="./">首页</a>
+      <a href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="en/configuration.html" hreflang="en">English</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

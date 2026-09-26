@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>agent-bridge — 把本地 CLI 编码智能体接到任何客户端</title>
+<meta name="description" content="agent-bridge 是零依赖的 Node 守护进程：一份 JSON 配置，把 codex、claude、pi 等本地 CLI 编码智能体适配到 HTTP+SSE 线协议与 ACP。任何客户端接入一次，任何智能体换一行配置。">
+<meta property="og:title" content="agent-bridge — 把本地 CLI 编码智能体接到任何客户端">
+<meta property="og:description" content="零依赖守护进程：三扇门（HTTP+SSE · WebSocket ACP · stdio ACP），一份配置，智能体自管会话与审批。">
+<meta property="og:url" content="https://xiaohuzai.github.io/agent-bridge/">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://xiaohuzai.github.io/agent-bridge/">
+<link rel="alternate" hreflang="zh-CN" href="https://xiaohuzai.github.io/agent-bridge/">
+<link rel="alternate" hreflang="en" href="https://xiaohuzai.github.io/agent-bridge/en/">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="./">
+      <span class="logo">agent-bridge</span>
+      <span class="tag">zero-dep daemon</span>
+    </a>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="configuration.html">配置参考</a>
+      <a href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="en/" hreflang="en">EN</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero wrap">
+    <p class="kicker">wire protocol · adapters · three doors</p>
+    <h1>把本地 CLI 编码智能体，接到任何客户端</h1>
+    <p class="lede">一个零依赖的 Node 守护进程：<strong>客户端只需实现一次</strong>，任何本地编码智能体（codex、claude、pi……）都通过适配器到达。会话、审批、断线中断由智能体自己持久化——bridge 只做翻译，不做聊天窗。</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="configuration.html">配置参考 →</a>
+      <a class="btn btn-ghost" href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">GitHub 上查看源码</a>
+    </div>
+
+    <!-- signature: the architecture, drawn as a live wire schematic -->
+    <figure class="schematic">
+      <svg viewBox="0 0 960 360" role="img" aria-label="接线示意图：三类客户端经 HTTP+SSE、WebSocket、stdio 三扇门进入 agent-bridge，再经各自的 stdio 协议到达 codex、claude、pi 三个智能体">
+        <!-- wires: clients → bridge -->
+        <path id="w1" class="wire wire-live" d="M194,86 C260,86 290,110 350,110"/>
+        <path id="w2" class="wire wire-opt" d="M194,178 L350,178"/>
+        <path id="w3" class="wire wire-opt" d="M194,270 C260,270 290,246 350,246"/>
+        <!-- wires: bridge → agents (agent-side native protocols) -->
+        <path id="w4" class="wire" d="M610,110 C670,110 710,86 766,86"/>
+        <path id="w5" class="wire" d="M610,178 L766,178"/>
+        <path id="w6" class="wire" d="M610,246 C670,246 710,270 766,270"/>
+
+        <!-- data pulses (hidden under prefers-reduced-motion) -->
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="0s"><mpath href="#w1"/></animateMotion>
+        </circle>
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="0.9s"><mpath href="#w2"/></animateMotion>
+        </circle>
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="1.7s"><mpath href="#w3"/></animateMotion>
+        </circle>
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="1.4s"><mpath href="#w4"/></animateMotion>
+        </circle>
+        <circle class="pulse" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="2.2s"><mpath href="#w5"/></animateMotion>
+        </circle>
+        <circle class="pulse pulse-amber" r="3.5">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="2.9s"><mpath href="#w6"/></animateMotion>
+        </circle>
+
+        <!-- client nodes -->
+        <rect class="node-box" x="24" y="60" width="170" height="52" rx="6"/>
+        <text class="label" x="42" y="82">浏览器扩展 / Web UI</text>
+        <text class="label-dim" x="42" y="99">HTTP + SSE</text>
+        <rect class="node-box" x="24" y="152" width="170" height="52" rx="6"/>
+        <text class="label" x="42" y="174">编辑器（Zed · VS Code）</text>
+        <text class="label-dim" x="42" y="191">spawn · stdio</text>
+        <rect class="node-box" x="24" y="244" width="170" height="52" rx="6"/>
+        <text class="label" x="42" y="266">脚本 / CI / 移动端</text>
+        <text class="label-dim" x="42" y="283">WebSocket · ACP</text>
+
+        <!-- bridge -->
+        <rect class="node-box accent" x="350" y="40" width="260" height="280" rx="8"/>
+        <text class="label" x="374" y="70" style="font-weight:600">agent-bridge</text>
+        <text class="label-dim" x="374" y="88">one bridge per agent · own port</text>
+        <text class="label" x="374" y="114">:3948  /health /sessions</text>
+        <text class="label" x="374" y="132">         /turns /approvals</text>
+        <text class="label" x="374" y="182">:3949  ws://…/acp</text>
+        <text class="label" x="374" y="250">acp &lt;name&gt;  stdio</text>
+        <text class="label-dim" x="374" y="300">sessions survive restarts</text>
+
+        <!-- agents -->
+        <rect class="node-box" x="766" y="60" width="170" height="52" rx="6"/>
+        <text class="label" x="784" y="82">codex</text>
+        <text class="label-dim" x="784" y="99">app-server JSON-RPC</text>
+        <rect class="node-box" x="766" y="152" width="170" height="52" rx="6"/>
+        <text class="label" x="784" y="174">claude code</text>
+        <text class="label-dim" x="784" y="191">ACP stdio shim</text>
+        <rect class="node-box" x="766" y="244" width="170" height="52" rx="6"/>
+        <text class="label" x="784" y="266">pi</text>
+        <text class="label-dim" x="784" y="283">ACP stdio shim</text>
+      </svg>
+      <figcaption class="schematic-caption">
+        <span class="legend-line"><i></i>v1 线协议（冻结）</span>
+        <span class="legend-line dashed"><i></i>ACP 门（opt-in）</span>
+        <span class="legend-line plain"><i></i>智能体侧原生协议</span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="wrap">
+    <p class="eyebrow">three doors</p>
+    <h2>三扇门，都通向同一批智能体</h2>
+    <div class="door-grid">
+      <div class="door">
+        <h3>内置 HTTP+SSE（v1）</h3>
+        <p class="door-proto">POST /turns · GET /sessions · SSE</p>
+        <p>极简线协议，随 bridge 始终开启。浏览器扩展、脚本、任何能发 HTTP 的东西都能接。协议已冻结，只增不改。</p>
+        <div class="door-open">始终开启 · 每桥一个端口</div>
+      </div>
+      <div class="door">
+        <h3>WebSocket 上的 ACP</h3>
+        <p class="door-proto">ws://host:port/acp</p>
+        <p>面向 ACP 生态的公开大门：acpx、acp-ui、移动端客户端直接连，不必学 v1。按桥开启。</p>
+        <div class="door-open">条目写 "acp": true</div>
+      </div>
+      <div class="door">
+        <h3>stdio 上的 ACP agent</h3>
+        <p class="door-proto">agent-bridge acp &lt;条目名&gt;</p>
+        <p>把单个配置条目变成一个可被 spawn 的 ACP 智能体——Zed、vscode-acp 这类编辑器把智能体当本地命令启动。</p>
+        <div class="door-open">无端口 · stdout 只走协议</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <p class="eyebrow">quick start</p>
+    <h2>四步跑起来</h2>
+    <ol class="steps">
+      <li>
+        <h3>安装</h3>
+        <p>全局装 npm 包；或 clone 源码后用 <code>node cli.mjs</code> 替代 <code>agent-bridge</code>（零依赖，无构建）。</p>
+        <pre><code>npm i -g @xiaohuzai/agent-bridge</code></pre>
+      </li>
+      <li>
+        <h3>建配置</h3>
+        <p>在启动目录放一份 <code>agents.json</code>。没有配置时跑一次 <code>agent-bridge serve</code>，它会打印出对应你这次安装的复制命令：</p>
+        <pre><code>cp /path/to/agents.example.json agents.json</code></pre>
+      </li>
+      <li>
+        <h3>启动</h3>
+        <p>每个配置条目一个桥、一个端口。Ctrl+C 全停。</p>
+        <pre><code>$ agent-bridge serve
+agent-bridge serve: 2 bridges on http://127.0.0.1
+  codex      :3948  (apiKey required)
+  claude     :3949  (apiKey required)
+Point any wire-protocol client at these addresses.</code></pre>
+      </li>
+      <li>
+        <h3>接入客户端</h3>
+        <p>把 v1 客户端指向打印的地址；编辑器则 spawn <code>agent-bridge acp claude</code>——没有配置文件也能跑（自动用内置默认命令启动智能体）。</p>
+      </li>
+    </ol>
+    <div class="note">
+      <p class="note-title">agent 本身要先装好</p>
+      <p>bridge 不替你安装智能体：codex、claude、pi 各自安装并登录后，bridge 只负责把它们接到你的客户端。缺智能体的桥照常启动、照常回答 <code>/health</code>，第一个回合才报错并给出安装提示。</p>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <p class="eyebrow">configuration</p>
+    <h2>配置只有一个文件</h2>
+    <p class="prose">全部旋钮都在 <code>agents.json</code> 里：端口、apiKey、运行目录、codex 的沙箱与审批策略、ACP 门的开关…… CLI 只有两组旗标，其余全是配置字段。</p>
+    <pre><code>{
+  <span class="tok-key">"bridges"</span>: [
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>,  <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span>,
+      <span class="tok-key">"sandbox"</span>: <span class="tok-str">"workspace-write"</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"on-request"</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"claude"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3949</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
+  ]
+}</code></pre>
+    <p class="prose"><a href="configuration.html">完整配置参考</a>列出每个字段的类型、默认值、可选取值，以及 codex 沙箱/审批的取舍指南（包括「想让 codex 少问多做」该配哪一行）。</p>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      agent-bridge · <a href="https://www.npmjs.com/package/@xiaohuzai/agent-bridge" target="_blank" rel="noopener">@xiaohuzai/agent-bridge</a> · MIT
+    </div>
+    <nav class="foot-links" aria-label="页脚导航">
+      <a href="configuration.html">配置参考</a>
+      <a href="https://github.com/xiaohuzai/agent-bridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="en/" hreflang="en">English</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>
