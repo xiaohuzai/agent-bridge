@@ -26,8 +26,10 @@ jobs:
       # ── 验证结果复用（对齐 pi-feishu-notify/browsa，与 publish.yml 同一缓存空间）──
       # 同一内容树 + 同一环境 = 验证结果可转移（零依赖无 install、Node 20 钉死环境）。
       # 缓存键用**树哈希**而非 commit SHA——squash / merge 合并换 SHA 不换树，
-      # 同一份内容重复触发 CI（重跑、PR 合并后 push main）不再重复跑全量；
-      # revert 回旧内容也能命中最初记录。键带 OS/Node 前缀，环境一变自然失效。
+      # re-run、revert 回旧内容都能命中最初记录。键带 OS/Node 前缀，环境一变自然失效。
+      # 注意（实测 2026-09-27，pi-feishu-notify 同样）：GitHub 缓存按分支隔离——
+      # pull_request run 存的记录对 base 分支不可见，故 PR→合并 push main 仍各跑
+      # 一次；push main 这次把记录铺到 main 作用域，发版的 Test gate 靠它免重复全量。
       - name: Compute tree hash
         id: tree
         run: echo "hash=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
