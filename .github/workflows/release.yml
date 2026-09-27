@@ -1,0 +1,20 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.3.0). Leave empty to use the current package.json version'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    uses: xiaohuzai/release-flow/.github/workflows/release.yml@v1
+    with:
+      version: ${{ inputs.version }}
+    secrets: inherit
