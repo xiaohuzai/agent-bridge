@@ -13,12 +13,16 @@
 #   Settings → Actions → General → "Allow GitHub Actions to create and
 #   approve pull requests" (gh pr create), and Settings → General →
 #   "Allow auto-merge" (gh pr merge --auto).
-# The bump commit deliberately carries NO [skip ci] — the version PR must
-# produce the main ruleset's required Test check through normal pull_request
-# CI. NOTE: a PR opened with GITHUB_TOKEN starts its CI runs in "require
-# approval" state — click "Approve and run" on the PR page once; auto-merge
-# finishes the rest. Checks posted via gh workflow run do NOT count toward
-# the PR gate (verified on pi-feishu-notify) — don't retry that route.
+# Version-PR modes (2026-09-27): with secrets.RELEASE_PAT set, the bump
+# commit carries [skip ci] and the PR is merged via --admin directly — no CI
+# on the version PR, no approval needed (version-only diff is guarded by the
+# safety valve; the release run just ran the full suite on this tree). Without
+# the PAT, the bump carries NO [skip ci] so the PR produces the required Test
+# check through normal pull_request CI — and a PR opened with GITHUB_TOKEN
+# starts its CI runs in "require approval" state: click "Approve and run" once
+# on the PR page; auto-merge finishes the rest. Checks posted via gh workflow
+# run do NOT count toward the PR gate (verified on pi-feishu-notify) — don't
+# retry that route.
 
 name: Publish npm
 
