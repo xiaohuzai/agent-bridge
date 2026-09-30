@@ -128,12 +128,14 @@ agent-bridge serve
 
 1. **装 Node 18+**（[nodejs.org](https://nodejs.org)），没有就先装。
 2. **拿到 agent-bridge**：`npm i -g @xiaohuzai/agent-bridge`——之后任意目录敲 `agent-bridge` 都行。（喜欢源码？clone 仓库改用 `node cli.mjs`，效果一样。）
-3. **建配置**：`agent-bridge` 需要在启动目录里有一个 `agents.json`。先跑一次 `agent-bridge serve`——没有配置时它会打印出你这次安装对应的复制命令——或者照[「配置」](#配置)一节手写那份 JSON。这份配置不用改——codex 在 3948、claude 在 3949，自己机器上不需要密码（agent 本身要在第 4 步装）。
-4. **给你配置里的每个 agent 都装好并登录**——起步配置同时开了两个：
+3. **建配置**：`agent-bridge` 需要在启动目录里有一个 `agents.json`。先跑一次 `agent-bridge serve`——没有配置时它会打印出你这次安装对应的复制命令——或者照[「配置」](#配置)一节手写那份 JSON。这份配置不用改——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951，自己机器上不需要密码（agent 本身要在第 4 步装）。
+4. **给你配置里的每个 agent 都装好并登录**——起步配置同时开了四个：
    - **codex**——`npm i -g @openai/codex`，然后 `codex login` 一次。
    - **claude**——`npm i -g @anthropic-ai/claude-code`，跑一次 `claude` 登录，再 `npm i -g @agentclientprotocol/claude-agent-acp`（桥真正启动的是这个 ACP 壳）。
+   - **pi**——pi 本体走官方自安装（或 `npm i -g @earendil-works/pi-coding-agent`），再 `npm i -g pi-acp`（壳），然后跑一次 `pi` 选 provider。
+   - **gemini**——`npm i -g @google/gemini-cli`，跑一次 `gemini` 登录。
 
-   只想要一个？把 `agents.json` 里另一条删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。
+   只想要一两个？把 `agents.json` 里多余的条目删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。
 5. **启动桥**：
 
    ```bash
@@ -143,15 +145,17 @@ agent-bridge serve
    会看到：
 
    ```
-   agent-bridge serve: 2 bridges on http://127.0.0.1
-     codex       :3948  (no api key — loopback only)
-     claude      :3949  (no api key — loopback only)
+   agent-bridge serve: 4 bridges on http://127.0.0.1
+     codex      :3948  (no api key — loopback only)
+     claude     :3949  (no api key — loopback only)
+     pi         :3950  (no api key — loopback only)
+     gemini     :3951  (no api key — loopback only)
    ```
 
 6. **连接 browsa**：在 browsa 的设置里添加一个 bridge provider，地址填 `http://127.0.0.1:3948`——就是上面 codex 那一行。自己机器上不需要 key。
 7. **开聊。** 在 browsa 里输入，回复实时流式到达；agent 要执行命令时 browsa 会弹出审批——once / always / deny 你说了算。
 
-那个终端窗口别关——关了 agent 就停了。想用 claude？在 browsa 里再加一个指向 3949 的桥就行。
+那个终端窗口别关——关了 agent 就停了。想用其余几个？在 browsa 里每个 agent 加一个桥，分别指向 3949–3951。
 
 ## 三扇门
 
