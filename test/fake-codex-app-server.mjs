@@ -85,6 +85,10 @@ function handle(j) {
     case 'thread/resume':
       send({ jsonrpc: '2.0', id: j.id, result: { thread: { id: j.params?.threadId } } });
       break;
+    case 'thread/name/set':
+      send({ jsonrpc: '2.0', id: j.id, result: {} });
+      send({ method: 'thread/name/updated', params: { threadId: j.params?.threadId, threadName: j.params?.name } });
+      break;
     case 'turn/start': {
       const threadId = j.params?.threadId;
       const turnId = `turn-${++turnSeq}`;

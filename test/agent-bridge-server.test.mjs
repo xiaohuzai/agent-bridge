@@ -424,3 +424,30 @@ test('malformed JSON body → 400 naming the problem', async () => {
   assert.equal(res.status, 400);
   assert.match((await res.json()).error, /invalid JSON/);
 });
+
+// ─── thread naming (跨入口接力 2026-10-01) ──────────────────────────────────────
+
+test('POST /threads/:id/title → adapter issues thread/name/set with the name', async () => {
+  const res = await post('/threads/thread-fake-1/title', { title: 'browsa：测试会话' });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).ok, true);
+  assert.ok(logs.some((l) => l.includes('FAKE_METHOD:thread/name/set')), 'the codex adapter must issue thread/name/set');
+  assert.ok(logs.some((l) => l.includes('browsa：测试会话')), 'the name must ride the RPC');
+});
+
+test('POST /threads/:id/title: missing/blank title → 400; adapter without a rename channel → 501 (permanent)', async () => {
+  assert.equal((await post('/threads/thread-fake-1/title', {})).status, 400);
+  assert.equal((await post('/threads/thread-fake-1/title', { title: '   ' })).status, 400);
+  // claude (ACP) has no client rename channel today — the daemon must answer
+  // 501 so the client stamps the attempt as done instead of retrying forever.
+  const bare = createBridgeServer({ adapter: { listSessions: () => [] }, agent: 'acp', version: 'test', log: () => {} });
+  await new Promise((resolve) => bare.listen(0, '127.0.0.1', resolve));
+  try {
+    const r2 = await fetch(`http://127.0.0.1:${bare.address().port}/threads/t1/title`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'x' }),
+    });
+    assert.equal(r2.status, 501);
+  } finally {
+    bare.close();
+  }
+});

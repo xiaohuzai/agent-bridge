@@ -46,6 +46,17 @@
 // were observed (gemini reads/writes files locally in its own process) even
 // with fs clientCapabilities declared — the bridge needs no fs responder.
 //
+// CLAUDE /resume VISIBILITY (source-verified 2026-10-01, claude-agent-acp
+// 0.75.1 with bundled @anthropic-ai/claude-agent-sdk 0.3.257): the SDK spawns
+// the CLI with `{...process.env}` and fills CLAUDE_CODE_ENTRYPOINT="sdk-ts"
+// only when unset — and claude's interactive /resume picker excludes
+// transcripts whose entrypoint is sdk-cli/sdk-ts/sdk-py, so ACP-created
+// sessions were invisible there (resume by id still worked). Fix: the
+// registry's claude entry carries `env: {CLAUDE_CODE_ENTRYPOINT: 'cli'}`
+// (generic per-entry env, applied in adapterFor) — the SDK keeps preset
+// values, the CLI sees a non-sdk entrypoint, sessions list normally. Live
+// /resume behavior itself verified on the owner's Mac.
+//
 // Wire facts (official schema + live frames; v1 facts captured from
 // codex-acp driving codex-cli 0.149.1 through a volcengine gateway):
 //   initialize  {protocolVersion:2, clientCapabilities:{}}
@@ -103,12 +114,13 @@ const REQUESTED_ACP_VERSION = 2; // we speak 1–2; the agent picks ≤ requeste
 
 export class AcpStdioAdapter {
   constructor({
-    command,                 // array: ['claude-code-acp'] or ['gemini','--experimental-acp']
+    command,                 // array: ['claude-agent-acp'] or ['gemini','--acp']
     cwd = process.cwd(),
+    env,                     // optional {VAR: value} merged over process.env for the child
     log = () => {},
   } = {}) {
     if (!Array.isArray(command) || !command.length) throw new Error('acp adapter: command required');
-    this.opts = { command, cwd, log };
+    this.opts = { command, cwd, env, log };
     this.child = null;
     this.ready = false;
     this.starting = null;         // in-flight spawn+initialize (serialization lock)
@@ -141,6 +153,9 @@ export class AcpStdioAdapter {
     this.#sweepStale('acp agent process restarted');
     const child = spawn(command[0], command.slice(1), {
       stdio: ['pipe', 'pipe', 'pipe'],
+      // Entry/registry env rides over the daemon's inherited environment —
+      // e.g. the claude entry's CLAUDE_CODE_ENTRYPOINT (see agents-registry).
+      env: { ...process.env, ...this.opts.env },
       // Windows: npm-installed CLI shims are .cmd — spawn needs a shell there.
       shell: process.platform === 'win32',
       windowsHide: true,

@@ -29,6 +29,11 @@
 //       data: {"type":"error","message":"…"}
 //       (": ka" comment lines are keepalives during silent stretches)
 //   POST /approvals/:requestId  body {choice:'once'|'always'|'deny'} → {ok:true}
+//   POST /threads/:sessionId/title  body {title} → {ok:true}
+//       Names the agent-side thread for discovery in the agent's own UI
+//       (codex: app-server thread/name/set — `codex resume` accepts the name
+//       or the id). 501 when the agent has no rename channel (claude names
+//       its sessions itself).
 //
 // Session ids are ASSIGNED BY THE ADAPTER on the first turn (start event) and
 // passed back by the client on later turns; GET /sessions recovers them after
@@ -141,6 +146,35 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
           res.end(JSON.stringify({ ok: true }));
         } catch (e) {
           res.writeHead(409, { 'Content-Type': 'application/json', ...cors });
+          res.end(JSON.stringify({ ok: false, error: e.message }));
+        }
+        return;
+      }
+      // Name an agent-side thread so it's findable in the agent's own UI
+      // (codex: app-server thread/name/set → `codex resume` lists/parses by
+      // name). Adapters without a rename channel answer 501 — the client
+      // treats that as permanent, not an error to retry.
+      if (req.method === 'POST' && url.pathname.startsWith('/threads/') && url.pathname.endsWith('/title')) {
+        const sessionId = decodeURIComponent(url.pathname.slice('/threads/'.length, -'/title'.length));
+        const body = await readJson(req);
+        const title = typeof body?.title === 'string' ? body.title.trim() : '';
+        if (!sessionId || !title) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
+          res.end(JSON.stringify({ ok: false, error: 'sessionId and title required' }));
+          return;
+        }
+        if (typeof adapter.renameSession !== 'function') {
+          res.writeHead(501, { 'Content-Type': 'application/json', ...cors });
+          res.end(JSON.stringify({ ok: false, error: 'agent has no rename channel' }));
+          return;
+        }
+        try {
+          await adapter.renameSession(sessionId, title);
+          log(`[bridge] thread ${String(sessionId).slice(0, 8)}… named "${title.slice(0, 40)}"`);
+          res.writeHead(200, { 'Content-Type': 'application/json', ...cors });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(502, { 'Content-Type': 'application/json', ...cors });
           res.end(JSON.stringify({ ok: false, error: e.message }));
         }
         return;

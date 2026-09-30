@@ -101,6 +101,7 @@ The starter runs as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
 | `cwd` | optional; omit it and the agent runs in the directory you start `serve` from (writing `"."` is the same thing); `~` and relative paths are resolved |
+| `env` | optional `{VAR: value}` object merged over the daemon's environment for the spawned agent; entry env overrides the registry default (claude presets `CLAUDE_CODE_ENTRYPOINT=cli` so its sessions show in `claude --resume`) |
 | `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket door (see Three ways to connect) |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | optional, codex-specific tuning (values and trade-offs below) |
 
@@ -216,6 +217,7 @@ sequenceDiagram
 | `GET /sessions` | — | `{ok:true, sessions:[{sessionId, busy}]}` |
 | `POST /turns` | `{text, sessionId?, images?}` | SSE event stream |
 | `POST /approvals/:requestId` | `{choice:'once'\|'always'\|'deny'}` | `{ok:true}` |
+| `POST /threads/:sessionId/title` | `{title}` | `{ok:true}` — name the agent-side thread for discovery in the agent's own UI (codex: `codex resume` accepts the name). `501` when the agent has no rename channel (claude names its own sessions). |
 
 A minimal client is curl:
 

@@ -152,6 +152,11 @@
               <td><span class="chip">路径</span></td>
               <td>智能体的工作目录。支持 <code>~</code>；相对路径按 bridge 启动位置解析。</td>
             </tr>
+            <tr>
+              <td>env</td><td>object</td><td>—</td>
+              <td><span class="chip">{VAR: 字符串}</span></td>
+              <td>合并进 daemon 环境传给被 spawn 的智能体；条目 env 覆盖注册表默认（claude 预设 <code>CLAUDE_CODE_ENTRYPOINT=cli</code>，让会话在 <code>claude --resume</code> 里可见）。</td>
+            </tr>
             <tr class="grp"><td colspan="5">客户端门</td></tr>
             <tr>
               <td>acp</td><td>boolean</td><td>false</td>

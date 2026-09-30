@@ -22,11 +22,12 @@ let adapter;
 let port;
 let logs;
 
-async function startServer({ command } = {}) {
+async function startServer({ command, env } = {}) {
   logs = [];
   adapter = new AcpStdioAdapter({
     command: command || [FAKE_ACP],
     cwd: '/tmp',
+    env,
     log: (m) => logs.push(m),
   });
   server = createBridgeServer({ adapter, agent: 'acp', version: 'test', log: (m) => logs.push(m) });
@@ -266,6 +267,21 @@ test('gemini-style v1 agent: usage on _meta.quota.token_count, resume via sessio
   assert.equal(done.data.full, 'ACP_reply');
   assert.deepEqual(done.data.usage, { prompt_tokens: 8, completion_tokens: 2 }, 'gemini _meta.quota usage must map to the same usage event');
   sse.cancel();
+});
+
+test('entry env rides over the inherited environment into the spawned agent', async () => {
+  // The claude /resume-visibility fix rides on this: the registry presets
+  // CLAUDE_CODE_ENTRYPOINT for claude (see agents-registry.mjs) and the
+  // adapter must merge it (and any entry env) over process.env.
+  await stopServer();
+  await startServer({ env: { AGENT_BRIDGE_ENV_PROBE: 'env-rides-ok' } });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'done');
+  sse.cancel();
+  const probe = logs.join(' | ').match(/FAKE_ENV:PROBE=(\S+) ENTRYPOINT=(\S+)/);
+  assert.ok(probe, `env probe line must reach the adapter logs; logs: ${logs.join(' | ').slice(0, 300)}`);
+  assert.equal(probe[1], 'env-rides-ok', 'entry env must reach the agent');
 });
 
 test('pi-acp-style resume: session/resume refused → falls back to session/load (bridge restart, same session)', async () => {

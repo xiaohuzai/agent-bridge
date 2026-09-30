@@ -434,6 +434,17 @@ export class CodexAppServerAdapter {
     }
   }
 
+  /** Name the thread so it's findable in `codex resume` (by name or id).
+   * Codex 0.149.1 app-server: thread/name/set {threadId, name} → {} plus a
+   * thread/name/updated notification (verified live 2026-10-01). Throws on
+   * protocol failure — the server maps that to a 5xx; a thread that was
+   * never started (unknown id) surfaces codex's own error. */
+  async renameSession(sessionId, name) {
+    if (!sessionId || !name || !String(name).trim()) throw new Error('codex rename: sessionId and name required');
+    await this.ensureChild(); // #write is a silent no-op before the child exists — spawn first
+    await this.rpc('thread/name/set', { threadId: sessionId, name: String(name).trim() });
+  }
+
   /** Answer a pending approval. choice ∈ 'once' | 'always' | 'deny'. */
   respondApproval(requestId, choice) {
     const entry = this.approvals.get(String(requestId));
