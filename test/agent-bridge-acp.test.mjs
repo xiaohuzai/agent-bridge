@@ -5,7 +5,7 @@
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync } from 'node:fs';
+import { chmodSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -22,12 +22,14 @@ let adapter;
 let port;
 let logs;
 
-async function startServer({ command, env } = {}) {
+async function startServer({ command, env, transcriptFix, claudeProjectsDir } = {}) {
   logs = [];
   adapter = new AcpStdioAdapter({
     command: command || [FAKE_ACP],
     cwd: '/tmp',
     env,
+    transcriptFix,
+    claudeProjectsDir,
     log: (m) => logs.push(m),
   });
   server = createBridgeServer({ adapter, agent: 'acp', version: 'test', log: (m) => logs.push(m) });
@@ -282,6 +284,63 @@ test('entry env rides over the inherited environment into the spawned agent', as
   const probe = logs.join(' | ').match(/FAKE_ENV:PROBE=(\S+) ENTRYPOINT=(\S+)/);
   assert.ok(probe, `env probe line must reach the adapter logs; logs: ${logs.join(' | ').slice(0, 300)}`);
   assert.equal(probe[1], 'env-rides-ok', 'entry env must reach the agent');
+});
+
+test('transcriptFix claude: sdk-* entrypoint rewritten to cli after the turn settles', async () => {
+  // claude CLI self-stamps SDK-driven transcripts entrypoint:"sdk-cli" and
+  // its /resume picker hides sdk-* (live 2026-10-01). The adapter opts the
+  // claude registry entry into a post-turn rewrite of
+  // ~/.claude/projects/*/<sessionId>.jsonl — exercised here against a fixture
+  // dir with the fake agent's fixed session id.
+  const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'ab-claude-fix-'));
+  const projects = join(dir, 'projects', '-tmp-project');
+  mkdirSync(projects, { recursive: true });
+  const file = join(projects, 'acp-sess-1.jsonl');
+  writeFileSync(file, '{"parentUuid":null,"entrypoint":"sdk-cli","sessionKind":"main"}\n{"entrypoint":"sdk-cli"}\n');
+  await stopServer();
+  await startServer({ transcriptFix: 'claude', claudeProjectsDir: join(dir, 'projects') });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'done');
+  sse.cancel();
+  // the rewrite is fire-and-forget — poll briefly
+  const t0 = Date.now();
+  while (!readFileSync(file, 'utf8').includes('"entrypoint":"cli"') && Date.now() - t0 < 2000) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  const fixed = readFileSync(file, 'utf8');
+  assert.ok(fixed.includes('"entrypoint":"cli"'), `stamp must be rewritten; got: ${fixed}`);
+  assert.ok(!fixed.includes('sdk-cli'), 'no sdk-cli may remain');
+  assert.ok(fixed.includes('"parentUuid":null'), 'the rest of the line must be untouched');
+  assert.ok(logs.join(' | ').includes('[claude-resume]'), 'the rewrite must announce itself in the logs');
+});
+
+test('transcriptFix claude: a lazily-written transcript is caught by the retries', async () => {
+  // claude persists transcripts a moment AFTER the turn settles (observed
+  // live) — the fixer must retry instead of giving up at the first scan.
+  const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'ab-claude-fix-'));
+  const projects = join(dir, 'projects', '-tmp-project');
+  mkdirSync(projects, { recursive: true });
+  const file = join(projects, 'acp-sess-1.jsonl');
+  await stopServer();
+  await startServer({ transcriptFix: 'claude', claudeProjectsDir: join(dir, 'projects') });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'done');
+  sse.cancel();
+  setTimeout(() => writeFileSync(file, '{"entrypoint":"sdk-cli"}\n'), 900); // lazier than the first scan
+  const t0 = Date.now();
+  let fixed = '';
+  while (Date.now() - t0 < 6000) {
+    try { fixed = readFileSync(file, 'utf8'); } catch { }
+    if (fixed.includes('"entrypoint":"cli"')) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.ok(fixed.includes('"entrypoint":"cli"'), 'the late transcript must still be rewritten');
 });
 
 test('pi-acp-style resume: session/resume refused → falls back to session/load (bridge restart, same session)', async () => {

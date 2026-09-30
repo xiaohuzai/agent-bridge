@@ -9,7 +9,12 @@
 
 export const KNOWN_AGENTS = {
   codex: { kind: 'codex', summary: 'codex CLI via its app-server (native adapter)' },
-  claude: { kind: 'acp', command: ['claude-agent-acp'], summary: 'claude code via the official claude-agent-acp shim' },
+  // transcriptFix: claude CLI 2.x self-stamps SDK-driven transcripts
+  // entrypoint:"sdk-cli" and its /resume picker hides sdk-* — after each turn
+  // the adapter rewrites the stamp so sessions stay browsable there
+  // (adapters/claude-transcript-fix.mjs; env alone can't do it, the CLI
+  // ignores CLAUDE_CODE_ENTRYPOINT).
+  claude: { kind: 'acp', command: ['claude-agent-acp'], transcriptFix: 'claude', summary: 'claude code via the official claude-agent-acp shim' },
   pi: { kind: 'acp', command: ['pi-acp'], summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
   gemini: { kind: 'acp', command: ['gemini', '--acp'], summary: 'gemini CLI native ACP mode (needs gemini >= 0.62 on PATH, signed in or env-auth)' },
 };
