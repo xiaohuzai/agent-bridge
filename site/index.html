@@ -181,7 +181,7 @@ Point any wire-protocol client at these addresses.</code></pre>
       <p>bridge 不替你安装智能体：codex、claude、pi、gemini 各自安装并登录后，bridge 只负责把它们接到你的客户端。缺智能体的桥照常启动、照常回答 <code>/health</code>，第一个回合才报错并给出安装提示（含确切命令）。</p>
       <pre><code>npm i -g @openai/codex                                       <span class="tok-com"># codex</span>
 npm i -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp  <span class="tok-com"># claude</span>
-npm i -g @earendil-works/pi-coding-agent pi-acp              <span class="tok-com"># pi</span>
+npm i -g pi-acp                                              <span class="tok-com"># pi(壳;本体走官方自安装)</span>
 npm i -g @google/gemini-cli                                  <span class="tok-com"># gemini</span></code></pre>
     </div>
   </section>

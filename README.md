@@ -54,7 +54,7 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 |---|---|---|
 | **codex** | `npm i -g @openai/codex`, then any ONE of: `codex login` (ChatGPT subscription) · `export OPENAI_API_KEY=…` · custom provider in `~/.codex/config.toml` | ✅ live-verified |
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in · `npm i -g @agentclientprotocol/claude-agent-acp` (official ACP shim) | ✅ live-verified |
-| **pi** | `npm i -g @earendil-works/pi-coding-agent pi-acp` → configure pi's model providers (run `pi` once, or `~/.pi/agent/models.json`) | ✅ live-verified |
+| **pi** | pi itself via its own installer (≥0.98, or `npm i -g @earendil-works/pi-coding-agent`) · `npm i -g pi-acp` → configure pi's model providers (run `pi` once, or `~/.pi/agent/models.json`) | ✅ live-verified |
 | **gemini** | `npm i -g @google/gemini-cli` → run `gemini` once to log in (or env auth: `GEMINI_API_KEY`, or a custom gateway via `GOOGLE_GEMINI_BASE_URL`) | ✅ live-verified |
 | any ACP agent (opencode, kimi, qwen, …) | that agent's own CLI + login | ❓ schema-level |
 

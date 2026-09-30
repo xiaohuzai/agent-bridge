@@ -98,6 +98,9 @@ pi                                      # 首次运行：选 provider / 登录
 # 用于 Terminal Auth（ACP Registry）。
 ```
 
+- **pi 已经用官方自安装装过？**（pi ≥ 0.98 自安装到 `~/.pi/agent/bin/pi`，软链进 `~/.local/bin`。）那只装壳——`npm i -g pi-acp`——别再装 npm 的 `pi` 包：它自带一个 `pi` bin,会和自安装的软链撞 `EEXIST`（2026-10-01 实踩）。另外任何 `npm i -g` 之后先重启终端再测——会话里残留的 PATH/软链中间态会产生莫名其妙的「executable not found」。
+- **终端里找得到 pi、桥却找不到？**daemon 的 PATH 可能比你的 shell 窄。pi-acp 0.0.34+ 支持 `PI_ACP_PI_COMMAND`——用条目的 `env` 指绝对路径：`"env": { "PI_ACP_PI_COMMAND": "/Users/you/.pi/agent/bin/pi" }`。
+
 **agents.json 条目**：
 
 ```json
