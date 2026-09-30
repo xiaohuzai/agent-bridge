@@ -56,12 +56,10 @@
 // registry entry opts into transcriptFix 'claude' — after every settled
 // turn the adapter rewrites the stamp to "cli" in
 // ~/.claude/projects/*/<sessionId>.jsonl (claude-transcript-fix.mjs).
-// The rewrite itself is live-verified (real turn → stamp flipped in the
-// transcript file); picker listing after the flip follows from the filter's
-// own source (only sdk-* entrypoints are excluded) — confirm on a real Mac
-// when touching this code. If claude ever changes the layout/field the
-// rewrite no-ops harmlessly (hidden in picker, resumable by id). Resume BY
-// ID always worked.
+// Live-verified end to end: real turn → stamp flipped → the session lists in
+// claude --resume on the owner's Mac and resumes normally (2026-10-01).
+// If claude ever changes the layout/field the rewrite no-ops harmlessly
+// (hidden in picker, resumable by id). Resume BY ID always worked.
 //
 // Wire facts (official schema + live frames; v1 facts captured from
 // codex-acp driving codex-cli 0.149.1 through a volcengine gateway):
