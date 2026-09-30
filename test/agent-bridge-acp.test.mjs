@@ -22,7 +22,7 @@ let adapter;
 let port;
 let logs;
 
-async function startServer({ command, env, transcriptFix, claudeProjectsDir } = {}) {
+async function startServer({ command, env, transcriptFix, claudeProjectsDir, installHint } = {}) {
   logs = [];
   adapter = new AcpStdioAdapter({
     command: command || [FAKE_ACP],
@@ -30,6 +30,7 @@ async function startServer({ command, env, transcriptFix, claudeProjectsDir } = 
     env,
     transcriptFix,
     claudeProjectsDir,
+    installHint,
     log: (m) => logs.push(m),
   });
   server = createBridgeServer({ adapter, agent: 'acp', version: 'test', log: (m) => logs.push(m) });
@@ -176,10 +177,11 @@ test('missing agent command → friendly SSE error, bridge survives (no uncaught
   // as a clean SSE error (install hint), never an uncaughtException that
   // kills the bridge. This test passing at all proves the crash is gone.
   await stopServer();
-  await startServer({ command: ['definitely-not-installed-xyz'] });
+  await startServer({ command: ['definitely-not-installed-xyz'], installHint: 'npm i -g fake/agent' });
   const res = await post('/turns', { text: 'hi' });
   const err = await sseReader(res.body).readUntil((f) => f.data?.type === 'error');
   assert.match(err.data.message, /agent command not found/);
+  assert.match(err.data.message, /install it with: npm i -g fake\/agent/, 'the registry install line must ride in the error');
   assert.match(err.data.message, /acp --/);
   // Bridge still alive and retrying errors cleanly.
   const health = await (await fetch(`http://127.0.0.1:${port}/health`)).json();

@@ -129,7 +129,7 @@ export class CodexAppServerAdapter {
     // turn's SSE error event) and null the child so a later turn can retry.
     child.on('error', (err) => {
       const msg = err.code === 'ENOENT'
-        ? `codex CLI not found: '${codexBin}' — install the codex CLI (it must be on PATH), or pass --codex-bin /path/to/codex`
+        ? `codex CLI not found: '${codexBin}' — install it with: npm i -g @openai/codex, or pass --codex-bin /path/to/codex`
         : `failed to start codex '${codexBin}': ${err.message}`;
       log(`[codex] ${msg}`);
       this.#childDown(child, msg);
