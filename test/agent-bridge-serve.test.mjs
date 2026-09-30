@@ -80,6 +80,11 @@ test('adapterFor: entry env overrides the registry default (which presets none)'
   assert.equal(plain.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, undefined);
   const gemini = adapterFor({ name: 'gemini', cwd: '/tmp' });
   assert.equal(gemini.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, undefined);
+  // every registry entry carries a copy-pasteable install line for the ENOENT
+  // error (codex's native adapter hardcodes its own in the message)
+  for (const name of ['claude', 'pi', 'gemini']) {
+    assert.match(String(adapterFor({ name, cwd: '/tmp' }).adapter.opts.installHint), /^npm i -g /, `${name} must have an install hint`);
+  }
 });
 
 test('loadConfig: invalid JSON says so; valid file expands ~ and defaults nothing', () => {

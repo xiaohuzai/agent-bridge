@@ -168,6 +168,7 @@ export function adapterFor(b, { log = () => {} } = {}) {
       env: { ...spec.env, ...b.env }, // entry env overrides the registry default
       transcriptFix: b.transcriptFix || spec.transcriptFix,
       claudeProjectsDir: b.claudeProjectsDir,
+      installHint: spec.install,
       log: wrappedLog,
     }),
   };

@@ -124,10 +124,11 @@ export class AcpStdioAdapter {
     env,                     // optional {VAR: value} merged over process.env for the child
     transcriptFix,           // 'claude' → rewrite the transcript entrypoint after each turn (see claude-transcript-fix.mjs)
     claudeProjectsDir,       // test override for the fixer's ~/.claude/projects
+    installHint,             // registry `install` line, surfaced verbatim when the command is missing
     log = () => {},
   } = {}) {
     if (!Array.isArray(command) || !command.length) throw new Error('acp adapter: command required');
-    this.opts = { command, cwd, env, transcriptFix, claudeProjectsDir, log };
+    this.opts = { command, cwd, env, transcriptFix, claudeProjectsDir, installHint, log };
     this.child = null;
     this.ready = false;
     this.starting = null;         // in-flight spawn+initialize (serialization lock)
@@ -181,7 +182,7 @@ export class AcpStdioAdapter {
     // hint (relayed as the turn's SSE error) and allow a later retry.
     child.on('error', (err) => {
       const msg = err.code === 'ENOENT'
-        ? `agent command not found: '${command[0]}' — install it, or pass an existing command after 'acp --'`
+        ? `agent command not found: '${command[0]}' — install it with: ${this.opts.installHint || 'see README → Supported agents'}, or pass an existing command after 'acp --'`
         : `failed to start agent '${command[0]}': ${err.message}`;
       log(`[acp] ${msg}`);
       this.#childDown(child, msg);

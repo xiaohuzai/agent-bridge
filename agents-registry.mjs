@@ -8,15 +8,17 @@
 // whatever its name says; e.g. claude via npx instead of a global install).
 
 export const KNOWN_AGENTS = {
-  codex: { kind: 'codex', summary: 'codex CLI via its app-server (native adapter)' },
+  // install: surfaced verbatim in the ENOENT error when the agent's command
+  // is missing (the moment of need) — keep it one copy-pasteable line.
+  codex: { kind: 'codex', install: 'npm i -g @openai/codex', summary: 'codex CLI via its app-server (native adapter)' },
   // transcriptFix: claude CLI 2.x self-stamps SDK-driven transcripts
   // entrypoint:"sdk-cli" and its /resume picker hides sdk-* — after each turn
   // the adapter rewrites the stamp so sessions stay browsable there
   // (adapters/claude-transcript-fix.mjs; env alone can't do it, the CLI
   // ignores CLAUDE_CODE_ENTRYPOINT).
-  claude: { kind: 'acp', command: ['claude-agent-acp'], transcriptFix: 'claude', summary: 'claude code via the official claude-agent-acp shim' },
-  pi: { kind: 'acp', command: ['pi-acp'], summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
-  gemini: { kind: 'acp', command: ['gemini', '--acp'], summary: 'gemini CLI native ACP mode (needs gemini >= 0.62 on PATH, signed in or env-auth)' },
+  claude: { kind: 'acp', command: ['claude-agent-acp'], install: 'npm i -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp', transcriptFix: 'claude', summary: 'claude code via the official claude-agent-acp shim' },
+  pi: { kind: 'acp', command: ['pi-acp'], install: 'npm i -g @earendil-works/pi-coding-agent pi-acp', summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
+  gemini: { kind: 'acp', command: ['gemini', '--acp'], install: 'npm i -g @google/gemini-cli', summary: 'gemini CLI native ACP mode (needs gemini >= 0.62 on PATH, signed in or env-auth)' },
 };
 
 export function knownAgentNames() {
