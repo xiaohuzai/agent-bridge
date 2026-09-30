@@ -54,7 +54,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 |---|---|---|
 | **codex** | `npm i -g @openai/codex`，然后三选一：`codex login`（ChatGPT 订阅）· `export OPENAI_API_KEY=…` · `~/.codex/config.toml` 配自定义 provider | ✅ 实机验证 |
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录 · `npm i -g @agentclientprotocol/claude-agent-acp`（官方 ACP 壳） | ✅ 实机验证 |
-| **pi** | `npm i -g @earendil-works/pi-coding-agent pi-acp` → 配置 pi 的模型 provider（跑一次 `pi`，或 `~/.pi/agent/models.json`） | ✅ 实机验证 |
+| **pi** | pi 本体走官方自安装（≥0.98，或 `npm i -g @earendil-works/pi-coding-agent`）· `npm i -g pi-acp` → 配置 pi 的模型 provider（跑一次 `pi`，或 `~/.pi/agent/models.json`） | ✅ 实机验证 |
 | **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 

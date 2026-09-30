@@ -17,7 +17,11 @@ export const KNOWN_AGENTS = {
   // (adapters/claude-transcript-fix.mjs; env alone can't do it, the CLI
   // ignores CLAUDE_CODE_ENTRYPOINT).
   claude: { kind: 'acp', command: ['claude-agent-acp'], install: 'npm i -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp', transcriptFix: 'claude', summary: 'claude code via the official claude-agent-acp shim' },
-  pi: { kind: 'acp', command: ['pi-acp'], install: 'npm i -g @earendil-works/pi-coding-agent pi-acp', summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
+  // pi's install hint is shim-only on purpose: users with pi's official
+  // self-installer hit EEXIST if the npm pi package is added on top (the npm
+  // package's `pi` bin collides with the installer's symlink — seen live
+  // 2026-10-01). If pi itself is missing too, pi-acp's own error names it.
+  pi: { kind: 'acp', command: ['pi-acp'], install: 'npm i -g pi-acp', summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
   gemini: { kind: 'acp', command: ['gemini', '--acp'], install: 'npm i -g @google/gemini-cli', summary: 'gemini CLI native ACP mode (needs gemini >= 0.62 on PATH, signed in or env-auth)' },
 };
 

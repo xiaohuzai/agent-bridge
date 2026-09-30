@@ -181,7 +181,7 @@ Point any wire-protocol client at these addresses.</code></pre>
       <p>The bridge installs nothing: set up and log into codex, claude, pi, gemini separately. A bridge whose agent is missing still starts and answers <code>/health</code> — it fails on its first turn, with an install hint (including the exact command).</p>
       <pre><code>npm i -g @openai/codex                                       <span class="tok-com"># codex</span>
 npm i -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp  <span class="tok-com"># claude</span>
-npm i -g @earendil-works/pi-coding-agent pi-acp              <span class="tok-com"># pi</span>
+npm i -g pi-acp                                              <span class="tok-com"># pi (shim; pi itself via its own installer)</span>
 npm i -g @google/gemini-cli                                  <span class="tok-com"># gemini</span></code></pre>
     </div>
   </section>

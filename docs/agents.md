@@ -100,6 +100,9 @@ pi                                      # first run: pick a provider / log in
 # Terminal Auth (ACP Registry).
 ```
 
+- **pi already installed via its own installer?** (pi ≥ 0.98 self-installs to `~/.pi/agent/bin/pi`, symlinked into `~/.local/bin`.) Then install ONLY the shim — `npm i -g pi-acp` — and skip the npm `pi` package: it ships its own `pi` bin and the install aborts with `EEXIST` against the installer's symlink (seen live 2026-10-01). After any `npm i -g`, restart the terminal before retesting — a stale session PATH/symlink state produces confusing "executable not found" errors.
+- **Bridge can't find pi even though your terminal can?** The daemon's PATH may be narrower than your shell's. pi-acp 0.0.34+ honors `PI_ACP_PI_COMMAND` — point it at the absolute pi path via the entry's `env`: `"env": { "PI_ACP_PI_COMMAND": "/Users/you/.pi/agent/bin/pi" }`.
+
 **agents.json entry**:
 
 ```json
