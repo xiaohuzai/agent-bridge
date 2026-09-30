@@ -76,7 +76,7 @@ npm i -g @agentclientprotocol/claude-agent-acp   # ACP 翻译壳（ACP 官方组
 
 - **没有审批/沙箱旋钮可配**——什么时候发审批由 claude 自己的权限体系决定：allowlist 之外的工具调用才问，`always` = claude 记住放行（它的持久化）。桥一律转发。
 - 桥重启后会话恢复：官方壳支持 ACP `session/resume`（claude-agent-acp 会透传成 `claude -p --resume`，已实测方法存在）。
-- **会话不会出现在 `claude --resume` 里**（实机验证 2026-10-01）：claude 的交互式 picker 会隐藏 entrypoint 为 `sdk-cli`/`sdk-ts`/`sdk-py` 的转录，而 claude CLI 2.x 对所有 SDK 驱动的运行自我盖章 `sdk-cli`——它完全无视 `CLAUDE_CODE_ENTRYPOINT` 环境变量（实测：env 预设为 `cli`，转录依然写 `sdk-cli`），所以桥侧任何配置都改不了这个章。**按 id 恢复不受影响**（桥重启续会话路径正常）；要可浏览只能等上游改动（已为 claude-code 起草 issue）。picker 还按项目划分：桥会话落在条目的 `cwd` 里，未来的修复也是按目录生效。
+- **会话在 `claude --resume` 里保持可见**（桥侧修复，2026-10-01）：claude CLI 2.x 给所有 SDK 驱动的转录自我盖章 `entrypoint:"sdk-cli"`——完全无视 `CLAUDE_CODE_ENTRYPOINT` 环境变量（实测：env 预设 `cli`，转录依然 `sdk-cli`）——而交互式 picker 隐藏 `sdk-*` 转录。因此注册表的 claude 条目启用了回合后改写：每回合落定后，桥把 `~/.claude/projects/*/<sessionId>.jsonl` 里的章翻成 `"cli"`（`adapters/claude-transcript-fix.mjs`，带重试以覆盖 claude 延迟落盘）。纯本地 JSON 手术——若 claude 改了目录布局/字段，改写自动空转，退回「不可见但按 id 可恢复」。会话落在条目 `cwd` 的项目里，picker 按目录划分显示（claude 自家的项目模型）。此修复之前写出的旧转录仍是旧章——手动 `sed -i '' 's/"entrypoint":"sdk-cli"/"entrypoint":"cli"/g' <file>` 逐条翻即可。
 - 图片能力取决于它向 ACP 声明的 `promptCapabilities.image`（claude-agent-acp 已声明 `image: true`）；没声明会自动降级为文本提示（不落盘）。
 - 无凭证时表现已实测：session 正常创建，回合以干净的 `Authentication required` SSE error 结束。
 

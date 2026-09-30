@@ -47,18 +47,21 @@
 // with fs clientCapabilities declared — the bridge needs no fs responder.
 //
 // CLAUDE /resume VISIBILITY (live-verified 2026-10-01, claude-agent-acp
-// 0.75.1 / SDK 0.3.257, real turn in a container): claude's interactive
+// 0.75.1 / SDK 0.3.257, real turns in a container): claude's interactive
 // /resume picker hides transcripts whose entrypoint is sdk-cli/sdk-ts/
-// sdk-py (the filter is even vendored into the SDK bundle), so bridge-
-// created sessions are INVISIBLE there — resume by id still works. The
-// obvious env lever does NOT work: the SDK spawns the CLI with
-// CLAUDE_CODE_ENTRYPOINT preset ('sdk-ts' when unset — set-if-unset, preset
-// values survive), but claude CLI 2.x IGNORES that env for the transcript —
-// it self-stamps "sdk-cli" for any SDK-driven run (verified: env 'cli' in,
-// transcript says sdk-cli). No bridge-side env can change the stamp; fixing
-// visibility needs an upstream change (claude-code relaxing the picker
-// filter — issue drafted) . The generic per-entry `env` config stays
-// (agents that DO honor env can use it), but the registry presets none.
+// sdk-py (the filter is even vendored into the SDK bundle), and claude CLI
+// 2.x SELF-STAMPS every SDK-driven run "sdk-cli" — it ignores the
+// CLAUDE_CODE_ENTRYPOINT env entirely (verified: env 'cli' in, transcript
+// says sdk-cli), so no spawn-side lever exists. Bridge-side fix: the claude
+// registry entry opts into transcriptFix 'claude' — after every settled
+// turn the adapter rewrites the stamp to "cli" in
+// ~/.claude/projects/*/<sessionId>.jsonl (claude-transcript-fix.mjs).
+// The rewrite itself is live-verified (real turn → stamp flipped in the
+// transcript file); picker listing after the flip follows from the filter's
+// own source (only sdk-* entrypoints are excluded) — confirm on a real Mac
+// when touching this code. If claude ever changes the layout/field the
+// rewrite no-ops harmlessly (hidden in picker, resumable by id). Resume BY
+// ID always worked.
 //
 // Wire facts (official schema + live frames; v1 facts captured from
 // codex-acp driving codex-cli 0.149.1 through a volcengine gateway):
@@ -110,6 +113,7 @@
 // otherwise). Undeclared-image turns degrade to text with a note.
 
 import { spawn } from 'node:child_process';
+import { rewriteClaudeEntrypoint } from './claude-transcript-fix.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
@@ -120,10 +124,12 @@ export class AcpStdioAdapter {
     command,                 // array: ['claude-agent-acp'] or ['gemini','--acp']
     cwd = process.cwd(),
     env,                     // optional {VAR: value} merged over process.env for the child
+    transcriptFix,           // 'claude' → rewrite the transcript entrypoint after each turn (see claude-transcript-fix.mjs)
+    claudeProjectsDir,       // test override for the fixer's ~/.claude/projects
     log = () => {},
   } = {}) {
     if (!Array.isArray(command) || !command.length) throw new Error('acp adapter: command required');
-    this.opts = { command, cwd, env, log };
+    this.opts = { command, cwd, env, transcriptFix, claudeProjectsDir, log };
     this.child = null;
     this.ready = false;
     this.starting = null;         // in-flight spawn+initialize (serialization lock)
@@ -440,8 +446,19 @@ export class AcpStdioAdapter {
       sessionId: sid, full: '', usage: null, finished: false,
       promptInFlight: true, events: onEvent, child: this.child,
     };
+    // transcriptFix: on any terminal event, flip claude's sdk-* entrypoint
+    // stamp so the session stays listed in claude's /resume picker
+    // (claude-transcript-fix.mjs). Fire-and-forget; no-ops for other agents.
+    if (this.opts.transcriptFix === 'claude') {
+      const fix = () => rewriteClaudeEntrypoint({ sessionId: sid, projectsDir: this.opts.claudeProjectsDir, log: this.opts.log }).catch(() => {});
+      entry.events = (ev) => {
+        onEvent(ev);
+        if (ev.type === 'done' || ev.type === 'aborted' || ev.type === 'error') fix();
+      };
+    }
     this.sessions.set(sid, entry);
-    onEvent({ type: 'start', sessionId: sid, turnId: '' });
+    const emit = entry.events ?? onEvent;
+    emit({ type: 'start', sessionId: sid, turnId: '' });
     this.opts.log(`[acp] prompt → ${text.length} chars, ${Array.isArray(images) ? images.length : 0} image(s)${dropped ? `, ${dropped} dropped` : ''}`);
     let r;
     try {
@@ -456,7 +473,7 @@ export class AcpStdioAdapter {
       if (!entry.finished) {
         entry.finished = true;
         entry.promptInFlight = false;
-        onEvent({ type: 'error', message: e.message || String(e) });
+        emit({ type: 'error', message: e.message || String(e) });
       }
       return { sessionId: sid, turnId: '' };
     }
@@ -473,8 +490,8 @@ export class AcpStdioAdapter {
       this.opts.log(`[acp] ← prompt response: stopReason=${r.stopReason}${entry.usage ? `, usage ${entry.usage.prompt_tokens}/${entry.usage.completion_tokens}` : ', no usage'}`);
       if (!entry.finished) {
         entry.finished = true;
-        if (r.stopReason === 'cancelled') onEvent({ type: 'aborted' });
-        else onEvent({ type: 'done', full: entry.full, usage: entry.usage, finishReason: r.stopReason === 'max_tokens' ? 'length' : '', stopReason: r.stopReason });
+        if (r.stopReason === 'cancelled') emit({ type: 'aborted' });
+        else emit({ type: 'done', full: entry.full, usage: entry.usage, finishReason: r.stopReason === 'max_tokens' ? 'length' : '', stopReason: r.stopReason });
       }
     }
     return { sessionId: sid, turnId: '' };

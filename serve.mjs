@@ -166,6 +166,8 @@ export function adapterFor(b, { log = () => {} } = {}) {
       command: b.command || spec.command,
       cwd: b.cwd || process.cwd(),
       env: { ...spec.env, ...b.env }, // entry env overrides the registry default
+      transcriptFix: b.transcriptFix || spec.transcriptFix,
+      claudeProjectsDir: b.claudeProjectsDir,
       log: wrappedLog,
     }),
   };
