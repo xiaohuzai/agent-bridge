@@ -85,12 +85,14 @@ On Windows, PowerShell runs both lines as-is; in `cmd`, use the path the CLI pri
   "bridges": [
     { "name": "codex",  "port": 3948, "apiKey": "",
       "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "" }
+    { "name": "claude", "port": 3949, "apiKey": "" },
+    { "name": "pi",     "port": 3950, "apiKey": "" },
+    { "name": "gemini", "port": 3951, "apiKey": "" }
   ]
 }
 ```
 
-The starter runs as-is — codex on 3948, claude on 3949, no key needed on your own machine. A single agent is the same thing with one entry. `chmod 600` starts to matter once a real `apiKey` goes in the file.
+The starter runs as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 3951, no key needed on your own machine. A single agent is the same thing with one entry. `chmod 600` starts to matter once a real `apiKey` goes in the file.
 
 | Field | Meaning |
 |---|---|

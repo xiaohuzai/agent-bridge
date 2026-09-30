@@ -85,12 +85,14 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
   "bridges": [
     { "name": "codex",  "port": 3948, "apiKey": "",
       "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "" }
+    { "name": "claude", "port": 3949, "apiKey": "" },
+    { "name": "pi",     "port": 3950, "apiKey": "" },
+    { "name": "gemini", "port": 3951, "apiKey": "" }
   ]
 }
 ```
 
-起步配置开箱即跑——codex 在 3948、claude 在 3949，自己机器上不需要密码。单个智能体也一样，只是 `bridges` 里只有一条。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
+起步配置开箱即跑——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951，自己机器上不需要密码。单个智能体也一样，只是 `bridges` 里只有一条。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
 
 | 字段 | 说明 |
 |---|---|
