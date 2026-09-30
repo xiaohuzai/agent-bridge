@@ -270,9 +270,9 @@ test('gemini-style v1 agent: usage on _meta.quota.token_count, resume via sessio
 });
 
 test('entry env rides over the inherited environment into the spawned agent', async () => {
-  // The claude /resume-visibility fix rides on this: the registry presets
-  // CLAUDE_CODE_ENTRYPOINT for claude (see agents-registry.mjs) and the
-  // adapter must merge it (and any entry env) over process.env.
+  // Generic per-entry env (serve + acp paths merge it in adapterFor and the
+  // spawn). Note: this does NOT change claude's transcript entrypoint — the
+  // CLI self-stamps it regardless of env (see acp-stdio.mjs).
   await stopServer();
   await startServer({ env: { AGENT_BRIDGE_ENV_PROBE: 'env-rides-ok' } });
   const res = await post('/turns', { text: 'hi' });

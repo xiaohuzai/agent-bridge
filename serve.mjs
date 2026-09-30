@@ -20,7 +20,7 @@
 //
 // `env` is optional on every entry: {VAR: "value"} merged over the daemon's
 // environment for the spawned agent (entry env overrides the registry
-// default — the claude entry presets CLAUDE_CODE_ENTRYPOINT, see registry).
+// default).
 // `acp: true` on an entry opts it into the ACP-over-WebSocket FRONT: the
 // bridge additionally speaks ACP v1 at `ws://<host>:<port>/acp` so ACP
 // clients (editors, acpx, acp-ui, …) can attach without learning the v1

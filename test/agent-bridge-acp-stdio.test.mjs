@@ -32,7 +32,7 @@ process.on('exit', () => {
 
 // A config WITHOUT ports — legal for acp mode (entries listen on nothing).
 const CONFIG = join(tmp, 'agents.json');
-writeFileSync(CONFIG, JSON.stringify({ bridges: [{ name: 'claude', command: [FAKE_ACP], cwd: '/tmp' }] }));
+writeFileSync(CONFIG, JSON.stringify({ bridges: [{ name: 'claude', command: [FAKE_ACP], cwd: '/tmp', env: { AGENT_BRIDGE_ENV_PROBE: 'cfg-env-ok' } }] }));
 
 // Zero-setup fallback fixture: an empty "project" dir (no agents.json
 // anywhere near it) whose PATH carries the fake agent disguised as the
@@ -158,6 +158,8 @@ test('transport contract: stdout is pure protocol JSONL, human logs live on stde
   // chatter (FAKE_METHOD lines) must be on stderr, never on stdout.
   const errText = c.stderr.join('');
   assert.ok(errText.includes('FAKE_METHOD:initialize'), `agent logs on stderr; got: ${errText.slice(0, 200)}`);
+  // the config entry's env rides through the cli → adapterFor → spawn chain
+  assert.ok(errText.includes('FAKE_ENV:PROBE=cfg-env-ok'), `config entry env must reach the agent; got: ${errText.slice(0, 300)}`);
   for (const f of c.frames) assert.equal(typeof f, 'object');
 });
 
@@ -254,12 +256,13 @@ test('no config anywhere: acp mode falls back to the registry default spawn', as
   const chunk = await c.wait((f) => f.method === 'session/update' && f.params.update.sessionUpdate === 'agent_message_chunk');
   assert.equal(chunk.params.update.content.text, 'ACP_reply');
   assert.ok(c.stderr.join('').includes('registry default'), 'the fallback must announce itself on stderr');
-  // The registry's claude env must ride into the spawn: CLAUDE_CODE_ENTRYPOINT
-  // =cli is what keeps bridge sessions visible in claude's /resume picker.
+  // The registry presets NO env for claude (CLAUDE_CODE_ENTRYPOINT does not
+  // reach claude's transcript — the CLI self-stamps it; see acp-stdio.mjs) —
+  // the spawned agent must see a clean environment.
   assert.match(
     c.stderr.join(''),
-    /FAKE_ENV:PROBE=- ENTRYPOINT=cli/,
-    'registry claude env (CLAUDE_CODE_ENTRYPOINT=cli) must reach the spawned agent',
+    /FAKE_ENV:PROBE=- ENTRYPOINT=-/,
+    'registry claude entry must not inject env',
   );
   c.end();
   assert.equal(await c.exit(), 0);

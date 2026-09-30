@@ -46,16 +46,19 @@
 // were observed (gemini reads/writes files locally in its own process) even
 // with fs clientCapabilities declared — the bridge needs no fs responder.
 //
-// CLAUDE /resume VISIBILITY (source-verified 2026-10-01, claude-agent-acp
-// 0.75.1 with bundled @anthropic-ai/claude-agent-sdk 0.3.257): the SDK spawns
-// the CLI with `{...process.env}` and fills CLAUDE_CODE_ENTRYPOINT="sdk-ts"
-// only when unset — and claude's interactive /resume picker excludes
-// transcripts whose entrypoint is sdk-cli/sdk-ts/sdk-py, so ACP-created
-// sessions were invisible there (resume by id still worked). Fix: the
-// registry's claude entry carries `env: {CLAUDE_CODE_ENTRYPOINT: 'cli'}`
-// (generic per-entry env, applied in adapterFor) — the SDK keeps preset
-// values, the CLI sees a non-sdk entrypoint, sessions list normally. Live
-// /resume behavior itself verified on the owner's Mac.
+// CLAUDE /resume VISIBILITY (live-verified 2026-10-01, claude-agent-acp
+// 0.75.1 / SDK 0.3.257, real turn in a container): claude's interactive
+// /resume picker hides transcripts whose entrypoint is sdk-cli/sdk-ts/
+// sdk-py (the filter is even vendored into the SDK bundle), so bridge-
+// created sessions are INVISIBLE there — resume by id still works. The
+// obvious env lever does NOT work: the SDK spawns the CLI with
+// CLAUDE_CODE_ENTRYPOINT preset ('sdk-ts' when unset — set-if-unset, preset
+// values survive), but claude CLI 2.x IGNORES that env for the transcript —
+// it self-stamps "sdk-cli" for any SDK-driven run (verified: env 'cli' in,
+// transcript says sdk-cli). No bridge-side env can change the stamp; fixing
+// visibility needs an upstream change (claude-code relaxing the picker
+// filter — issue drafted) . The generic per-entry `env` config stays
+// (agents that DO honor env can use it), but the registry presets none.
 //
 // Wire facts (official schema + live frames; v1 facts captured from
 // codex-acp driving codex-cli 0.149.1 through a volcengine gateway):

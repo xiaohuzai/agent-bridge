@@ -9,10 +9,7 @@
 
 export const KNOWN_AGENTS = {
   codex: { kind: 'codex', summary: 'codex CLI via its app-server (native adapter)' },
-  // env: the Agent SDK inside claude-agent-acp defaults CLAUDE_CODE_ENTRYPOINT
-  // to "sdk-ts" when unset, and claude's /resume picker hides sdk-* transcripts
-  // — presetting 'cli' keeps bridge sessions visible there (see acp-stdio.mjs).
-  claude: { kind: 'acp', command: ['claude-agent-acp'], env: { CLAUDE_CODE_ENTRYPOINT: 'cli' }, summary: 'claude code via the official claude-agent-acp shim' },
+  claude: { kind: 'acp', command: ['claude-agent-acp'], summary: 'claude code via the official claude-agent-acp shim' },
   pi: { kind: 'acp', command: ['pi-acp'], summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
   gemini: { kind: 'acp', command: ['gemini', '--acp'], summary: 'gemini CLI native ACP mode (needs gemini >= 0.62 on PATH, signed in or env-auth)' },
 };
