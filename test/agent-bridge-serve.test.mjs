@@ -20,7 +20,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const FAKE_ACP = join(__dirname, 'fake-acp-agent.mjs');
 const FAKE_CODEX = join(__dirname, 'fake-codex-app-server.mjs');
 
-const { validateConfig, loadConfig, startServe, configPermissionsWarning } = await import('../serve.mjs');
+const { validateConfig, loadConfig, startServe, configPermissionsWarning, adapterFor } = await import('../serve.mjs');
 
 chmodSync(FAKE_ACP, 0o755);
 chmodSync(FAKE_CODEX, 0o755);
@@ -53,7 +53,8 @@ test('validateConfig: all problems reported at once, with the fix hint', () => {
       { name: 'codex', port: 3949, apiKey: 'k', command: ['x'] },   // command on codex
       { name: 'codex', port: 3950, apiKey: 'k' },                   // dup name
       { name: 'claude', port: 3949, apiKey: 'k' },                  // dup port (with codex above)
-      { name: 'claude', port: 70000, apiKey: 'k', sandbox: 'yolo' } // bad port + bad sandbox
+      { name: 'claude', port: 70000, apiKey: 'k', sandbox: 'yolo' }, // bad port + bad sandbox
+      { name: 'pi', port: 3951, apiKey: 'k', env: 'FOO=bar' }       // env must be an object
     ] }),
     (e) => /unknown agent "nope".*known agents: codex, claude, pi, gemini/s.test(e.message)
       && /native adapter.*codexBin.*not "command"/s.test(e.message)
@@ -61,7 +62,24 @@ test('validateConfig: all problems reported at once, with the fix hint', () => {
       && /duplicate port 3949/.test(e.message)
       && /"port" must be an integer/.test(e.message)
       && /"sandbox" must be one of/.test(e.message)
+      && /"env" must be an object of strings/.test(e.message)
   );
+  // env itself must not be the trigger above — valid shapes pass untouched
+  const ok = validateConfig({ bridges: [{ name: 'claude', port: 1, apiKey: 'k', env: { FOO: 'bar' } }] });
+  assert.deepEqual(ok.bridges[0].env, { FOO: 'bar' });
+});
+
+test('adapterFor: registry env is the default, entry env overrides it', () => {
+  // claude presets CLAUDE_CODE_ENTRYPOINT in the registry (the /resume
+  // visibility fix) — it must apply with no per-entry config...
+  const withDefault = adapterFor({ name: 'claude', cwd: '/tmp' });
+  assert.equal(withDefault.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, 'cli');
+  // ...an entry may override it (e.g. to opt back out)...
+  const overridden = adapterFor({ name: 'claude', cwd: '/tmp', env: { CLAUDE_CODE_ENTRYPOINT: 'sdk-py' } });
+  assert.equal(overridden.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, 'sdk-py');
+  // ...and agents without a registry env get none (undefined, not {}).
+  const plain = adapterFor({ name: 'gemini', cwd: '/tmp' });
+  assert.equal(plain.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, undefined);
 });
 
 test('loadConfig: invalid JSON says so; valid file expands ~ and defaults nothing', () => {

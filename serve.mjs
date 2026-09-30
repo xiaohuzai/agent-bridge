@@ -18,6 +18,9 @@
 //     ]
 //   }
 //
+// `env` is optional on every entry: {VAR: "value"} merged over the daemon's
+// environment for the spawned agent (entry env overrides the registry
+// default — the claude entry presets CLAUDE_CODE_ENTRYPOINT, see registry).
 // `acp: true` on an entry opts it into the ACP-over-WebSocket FRONT: the
 // bridge additionally speaks ACP v1 at `ws://<host>:<port>/acp` so ACP
 // clients (editors, acpx, acp-ui, …) can attach without learning the v1
@@ -111,6 +114,9 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
       }
     }
     if (b.cwd !== undefined && (typeof b.cwd !== 'string' || !b.cwd.trim())) errors.push(`${at}: "cwd" must be a non-empty string`);
+    if (b.env !== undefined && (typeof b.env !== 'object' || b.env === null || Array.isArray(b.env) || Object.entries(b.env).some(([, v]) => typeof v !== 'string'))) {
+      errors.push(`${at}: "env" must be an object of strings (extra environment variables for the spawned agent)`);
+    }
     if (b.codexBin !== undefined && (typeof b.codexBin !== 'string' || !b.codexBin.trim())) errors.push(`${at}: "codexBin" must be a non-empty string`);
     if (b.codexHome !== undefined && (typeof b.codexHome !== 'string' || !b.codexHome.trim())) errors.push(`${at}: "codexHome" must be a non-empty string`);
     if (b.network !== undefined && typeof b.network !== 'boolean') errors.push(`${at}: "network" must be a boolean (workspace-write network access)`);
@@ -159,6 +165,7 @@ export function adapterFor(b, { log = () => {} } = {}) {
     adapter: new AcpStdioAdapter({
       command: b.command || spec.command,
       cwd: b.cwd || process.cwd(),
+      env: { ...spec.env, ...b.env }, // entry env overrides the registry default
       log: wrappedLog,
     }),
   };

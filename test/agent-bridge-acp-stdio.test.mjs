@@ -254,6 +254,13 @@ test('no config anywhere: acp mode falls back to the registry default spawn', as
   const chunk = await c.wait((f) => f.method === 'session/update' && f.params.update.sessionUpdate === 'agent_message_chunk');
   assert.equal(chunk.params.update.content.text, 'ACP_reply');
   assert.ok(c.stderr.join('').includes('registry default'), 'the fallback must announce itself on stderr');
+  // The registry's claude env must ride into the spawn: CLAUDE_CODE_ENTRYPOINT
+  // =cli is what keeps bridge sessions visible in claude's /resume picker.
+  assert.match(
+    c.stderr.join(''),
+    /FAKE_ENV:PROBE=- ENTRYPOINT=cli/,
+    'registry claude env (CLAUDE_CODE_ENTRYPOINT=cli) must reach the spawned agent',
+  );
   c.end();
   assert.equal(await c.exit(), 0);
 });

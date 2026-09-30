@@ -78,6 +78,7 @@ npm i -g @agentclientprotocol/claude-agent-acp   # the ACP shim (maintained by t
 
 - **There is no approval/sandbox knob** — when approvals happen is decided by claude's own permission system: tool calls outside its allowlist trigger a request, and `always` = claude remembers the allowance (its persistence). The bridge always relays.
 - Session recovery across bridge restarts: the official shim supports ACP `session/resume` (claude-agent-acp passes it down as `claude -p --resume`; method existence verified live).
+- **Sessions show up in `claude --resume`** (fixed 2026-10-01): claude's interactive picker hides transcripts whose entrypoint is `sdk-*`, and the Agent SDK inside claude-agent-acp defaults `CLAUDE_CODE_ENTRYPOINT` to `sdk-ts` — which made bridge-created sessions invisible there (resume by id always worked). The registry presets `env: {"CLAUDE_CODE_ENTRYPOINT": "cli"}` for claude (the SDK keeps preset values); per-entry `env` overrides it. Note the picker is per-project: bridge sessions land in the entry's `cwd`, so `claude --resume` shows them only when run in that directory.
 - Image support depends on the `promptCapabilities.image` it advertises (claude-agent-acp advertises `image: true`); without it, images degrade to a text note (never written to disk).
 - Unauthenticated behavior verified live: the session is created normally and the turn ends with a clean `Authentication required` SSE error.
 

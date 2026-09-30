@@ -76,6 +76,7 @@ npm i -g @agentclientprotocol/claude-agent-acp   # ACP 翻译壳（ACP 官方组
 
 - **没有审批/沙箱旋钮可配**——什么时候发审批由 claude 自己的权限体系决定：allowlist 之外的工具调用才问，`always` = claude 记住放行（它的持久化）。桥一律转发。
 - 桥重启后会话恢复：官方壳支持 ACP `session/resume`（claude-agent-acp 会透传成 `claude -p --resume`，已实测方法存在）。
+- **会话在 `claude --resume` 里可见**（2026-10-01 修复）：claude 的交互式 picker 会隐藏 entrypoint 为 `sdk-*` 的转录，而 claude-agent-acp 内部 Agent SDK 默认给 `CLAUDE_CODE_ENTRYPOINT` 填 `sdk-ts`——桥创建的会话因此在 picker 里不可见（按 id 恢复一直可用）。注册表现在给 claude 预设 `env: {"CLAUDE_CODE_ENTRYPOINT": "cli"}`（SDK 保留已设置的值）；条目 `env` 可覆盖。注意 picker 按项目划分：桥会话落在条目的 `cwd` 里，`claude --resume` 要在同一目录下运行才看得到。
 - 图片能力取决于它向 ACP 声明的 `promptCapabilities.image`（claude-agent-acp 已声明 `image: true`）；没声明会自动降级为文本提示（不落盘）。
 - 无凭证时表现已实测：session 正常创建，回合以干净的 `Authentication required` SSE error 结束。
 
