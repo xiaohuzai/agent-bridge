@@ -128,12 +128,14 @@ New here? The whole journey is about five minutes:
 
 1. **Install Node 18+** from [nodejs.org](https://nodejs.org) if you don't have it.
 2. **Get agent-bridge**: `npm i -g @xiaohuzai/agent-bridge` — after this the `agent-bridge` command works in any directory. (Prefer source? Clone the repo and use `node cli.mjs` instead.)
-3. **Create your config**: `agent-bridge` needs an `agents.json` in the directory you start it from. Run `agent-bridge serve` once — with no config it prints the exact copy command for your install — or write the JSON shown under [Configure](#configure). The config needs no edits — codex on port 3948, claude on 3949, no password needed on your own machine (step 4 installs the agents themselves).
-4. **Install & log in to every agent your config lists** — the starter enables two:
+3. **Create your config**: `agent-bridge` needs an `agents.json` in the directory you start it from. Run `agent-bridge serve` once — with no config it prints the exact copy command for your install — or write the JSON shown under [Configure](#configure). The config needs no edits — codex on port 3948, claude on 3949, pi on 3950, gemini on 3951, no password needed on your own machine (step 4 installs the agents themselves).
+4. **Install & log in to every agent your config lists** — the starter enables four:
    - **codex** — `npm i -g @openai/codex`, then `codex login` once.
    - **claude** — `npm i -g @anthropic-ai/claude-code`, run `claude` once, then `npm i -g @agentclientprotocol/claude-agent-acp` (the ACP shim the bridge actually spawns).
+   - **pi** — pi via its own installer (or `npm i -g @earendil-works/pi-coding-agent`), then `npm i -g pi-acp` (the shim), then run `pi` once to pick a provider.
+   - **gemini** — `npm i -g @google/gemini-cli`, then run `gemini` once to log in.
 
-   Only want one? Delete the other entry from `agents.json`. A bridge whose agent isn't installed still starts and answers `/health` — it only fails on its first turn, with an install hint — so a missing agent is easy to miss until you try it.
+   Only want one or two? Delete the other entries from `agents.json`. A bridge whose agent isn't installed still starts and answers `/health` — it only fails on its first turn, with an install hint — so a missing agent is easy to miss until you try it.
 5. **Start the bridge**:
 
    ```bash
@@ -143,15 +145,17 @@ New here? The whole journey is about five minutes:
    You'll see:
 
    ```
-   agent-bridge serve: 2 bridges on http://127.0.0.1
-     codex       :3948  (no api key — loopback only)
-     claude      :3949  (no api key — loopback only)
+   agent-bridge serve: 4 bridges on http://127.0.0.1
+     codex      :3948  (no api key — loopback only)
+     claude     :3949  (no api key — loopback only)
+     pi         :3950  (no api key — loopback only)
+     gemini     :3951  (no api key — loopback only)
    ```
 
 6. **Connect browsa**: in browsa's settings, add a bridge provider and point it at `http://127.0.0.1:3948` — that's the codex line above. No key needed on your own machine.
 7. **Chat.** Type in browsa; the reply streams back live. When the agent wants to run a command, browsa shows the approval — once / always / deny is your call.
 
-Keep that terminal window open — closing it stops the agents. Want claude too? Add a second bridge in browsa pointing at port 3949.
+Keep that terminal window open — closing it stops the agents. Want the other agents too? Add one bridge per agent in browsa, pointing at ports 3949–3951.
 
 ## Three ways to connect
 
