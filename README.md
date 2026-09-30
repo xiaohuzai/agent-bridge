@@ -101,7 +101,7 @@ The starter runs as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
 | `cwd` | optional; omit it and the agent runs in the directory you start `serve` from (writing `"."` is the same thing); `~` and relative paths are resolved |
-| `env` | optional `{VAR: value}` object merged over the daemon's environment for the spawned agent; entry env overrides the registry default (claude presets `CLAUDE_CODE_ENTRYPOINT=cli` so its sessions show in `claude --resume`) |
+| `env` | optional `{VAR: value}` object merged over the daemon's environment for the spawned agent; entry env overrides any registry default |
 | `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket door (see Three ways to connect) |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | optional, codex-specific tuning (values and trade-offs below) |
 

@@ -69,17 +69,17 @@ test('validateConfig: all problems reported at once, with the fix hint', () => {
   assert.deepEqual(ok.bridges[0].env, { FOO: 'bar' });
 });
 
-test('adapterFor: registry env is the default, entry env overrides it', () => {
-  // claude presets CLAUDE_CODE_ENTRYPOINT in the registry (the /resume
-  // visibility fix) — it must apply with no per-entry config...
-  const withDefault = adapterFor({ name: 'claude', cwd: '/tmp' });
-  assert.equal(withDefault.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, 'cli');
-  // ...an entry may override it (e.g. to opt back out)...
-  const overridden = adapterFor({ name: 'claude', cwd: '/tmp', env: { CLAUDE_CODE_ENTRYPOINT: 'sdk-py' } });
-  assert.equal(overridden.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, 'sdk-py');
-  // ...and agents without a registry env get none (undefined, not {}).
-  const plain = adapterFor({ name: 'gemini', cwd: '/tmp' });
+test('adapterFor: entry env overrides the registry default (which presets none)', () => {
+  // No registry entry presets env today — claude's CLAUDE_CODE_ENTRYPOINT
+  // theory was disproven live (the CLI self-stamps the transcript's
+  // entrypoint, ignoring the env; see acp-stdio.mjs). The merge order still
+  // must hold: spec.env as default, entry env on top.
+  const overridden = adapterFor({ name: 'claude', cwd: '/tmp', env: { CLAUDE_CODE_ENTRYPOINT: 'cli' } });
+  assert.equal(overridden.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, 'cli');
+  const plain = adapterFor({ name: 'claude', cwd: '/tmp' });
   assert.equal(plain.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, undefined);
+  const gemini = adapterFor({ name: 'gemini', cwd: '/tmp' });
+  assert.equal(gemini.adapter.opts.env.CLAUDE_CODE_ENTRYPOINT, undefined);
 });
 
 test('loadConfig: invalid JSON says so; valid file expands ~ and defaults nothing', () => {
