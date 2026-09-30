@@ -16,7 +16,8 @@ node cli.mjs serve            # 读 ./agents.json（或：serve --config FILE）
 | codex 走官方壳 | 注册表加一行 + `{ "name": "codexacp", "port": …, "command": ["codex-acp"] }`（见下） | ⚠️ 过桥真回合 ✅；非流式后端丢答案文本（上游缺陷，见下） |
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08——真回合（流式完整）、会话连续、usage、审批流程；断连中断与桥重启续会话有测试覆盖，实机未跑 |
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11——经 svkozak/pi-acp 0.0.33 + pi 0.85.1 真回合（流式、工具调用），由 mock OpenAI provider 驱动；桥重启续会话（自动 `session/load` 回退）实机已跑 |
-| gemini / opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
+| gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01——原生 `gemini --acp` 0.62.0 真回合（流式、shell 工具+审批请求、cancel），由 mock Google GenAI 后端驱动；桥重启续会话（`session/load` 回退）实机已跑；usage 走响应的 `_meta.quota.token_count`（已映射） |
+| opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
 
 ---
 
@@ -123,13 +124,18 @@ pi                                      # 首次运行：选 provider / 登录
 
 候选命令（已与生态交叉核对，各 CLI 需先安装并登录）：
 
-- **gemini**：原生支持 ACP，无需壳——注册表行是 `"gemini": { "kind": "acp", "command": ["gemini", "--experimental-acp"] }`（需先 `gemini` 登录）。
 - **qwen**：`"qwen": { "kind": "acp", "command": ["qwen", "--acp"] }`（`npm i -g @qwen-code/qwen-code`）。
 - **opencode**：`"opencode": { "kind": "acp", "command": ["opencode", "acp"] }`。
 - **auggie**（Augment Code）：`"auggie": { "kind": "acp", "command": ["auggie", "--acp"] }`。
 - **kimi 等**：各自的 ACP 支持方式以其官方文档为准；核心判断只有一条——配置里的 command 得能在 stdio 上说 ACP（桥接受 protocolVersion 1 或 2）。
 
 这些都还没实机验证——把你的结果（好的坏的）带回来，我们更新表格。
+
+## gemini
+
+原生 ACP，无需壳——注册表行 `"gemini": { "kind": "acp", "command": ["gemini", "--acp"] }`（`npm i -g @google/gemini-cli`；0.62 起旗标是 `--acp`，`--experimental-acp` 仍可用但已弃用）。首回合前的鉴权三选一：跑一次 `gemini` 登录，或设 `GEMINI_API_KEY`，或把 `GOOGLE_GEMINI_BASE_URL` 指到网关——env 鉴权时 ACP 的 `session/new` 不需要 `authenticate`。
+
+实机验证 2026-10-01（gemini-cli 0.62.0，mock Google GenAI 后端，过桥真回合）：protocolVersion 1（prompt 响应即终结者）；流式 delta；shell 工具在危险命令上会发 `session/request_permission`（按 kind 映射选项）；cancel 后挂起的 prompt 会应答 `stopReason:'cancelled'`；usage 在响应的 `_meta.quota.token_count`（桥已映射）；`session/resume` 被拒（`-32601`），桥重启走 `session/load` 恢复；声明了图片能力（`promptCapabilities.image`）但实机未跑图片回合。文件读写由 CLI 在本地完成——桥不会收到 fs 代理请求。
 
 ## ACP 客户端（门）
 

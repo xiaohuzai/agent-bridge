@@ -51,7 +51,7 @@ test('acp with no agents.json: zero-setup fallback to the registry default', asy
 test('acp with no agents.json and an unknown name: names the known agents', async () => {
   const { code, stderr } = await runCli(['acp', 'nope'], tmp);
   assert.equal(code, 1);
-  assert.match(stderr, /known agents: codex, claude, pi/);
+  assert.match(stderr, /known agents: codex, claude, pi, gemini/);
   assert.match(stderr, /create an agents\.json/);
 });
 
