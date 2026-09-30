@@ -252,6 +252,22 @@ test('v1 wedged shim (never answers the prompt after cancel): interrupt settles 
   sse2.cancel();
 });
 
+test('gemini-style v1 agent: usage on _meta.quota.token_count, resume via session/load', async () => {
+  // gemini-cli 0.62.0 (live 2026-10-01, mock Google GenAI backend): v1 dialect
+  // (prompt response is the terminator) with NO `usage` key — the counts ride
+  // on `_meta.quota.token_count` (snake_case) — and session/resume is refused
+  // (-32601), so the restore goes through the session/load fallback.
+  await stopServer();
+  await startServer({ command: [FAKE_ACP, 'v1', 'NORESUME', 'GEMMETA'] });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'start');
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  assert.equal(done.data.full, 'ACP_reply');
+  assert.deepEqual(done.data.usage, { prompt_tokens: 8, completion_tokens: 2 }, 'gemini _meta.quota usage must map to the same usage event');
+  sse.cancel();
+});
+
 test('pi-acp-style resume: session/resume refused → falls back to session/load (bridge restart, same session)', async () => {
   // pi-acp 0.0.33 (live 2026-09-11) answers session/resume with -32601 and
   // only restores via session/load. A bridge restart must therefore degrade

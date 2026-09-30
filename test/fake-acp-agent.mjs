@@ -31,8 +31,12 @@ const sessions = new Set();
 // terminator ({stopReason, usage}). v2 mode: ack + state_update idle.
 // argv 'NORESUME' (pi-acp dialect, live 2026-09-11): session/resume is
 // answered with -32601 Method not found; only session/load restores.
+// argv 'GEMMETA' (gemini-cli dialect, live 2026-10-01): with v1, usage rides
+// on the prompt response's `_meta.quota.token_count` (snake_case) instead of
+// a `usage` key.
 const V1 = process.argv.includes('v1');
 const NORESUME = process.argv.includes('NORESUME');
+const GEMMETA = process.argv.includes('GEMMETA');
 const pendingPrompt = new Map(); // sessionId → pending session/prompt rpc id
 const hangSessions = new Set();  // v1: sessions whose prompt must NEVER be answered (wedged-shim simulation)
 let permId = 900;                // rpc id of the last permission request (string under 'STRID')
@@ -42,8 +46,13 @@ function finish(sessionId, stopReason) {
     const id = pendingPrompt.get(sessionId);
     if (id !== undefined) {
       pendingPrompt.delete(sessionId);
-      // usage shape as captured live from codex-acp 1.10.0
-      send({ jsonrpc: '2.0', id, result: { stopReason, usage: { totalTokens: 10, inputTokens: 8, cachedReadTokens: 0, outputTokens: 2, thoughtTokens: 0 } } });
+      if (GEMMETA) {
+        // usage shape as captured live from gemini-cli 0.62.0 (2026-10-01)
+        send({ jsonrpc: '2.0', id, result: { stopReason, _meta: { quota: { token_count: { input_tokens: 8, output_tokens: 2 } } } } });
+      } else {
+        // usage shape as captured live from codex-acp 1.10.0
+        send({ jsonrpc: '2.0', id, result: { stopReason, usage: { totalTokens: 10, inputTokens: 8, cachedReadTokens: 0, outputTokens: 2, thoughtTokens: 0 } } });
+      }
     }
   } else {
     idle(sessionId, stopReason);

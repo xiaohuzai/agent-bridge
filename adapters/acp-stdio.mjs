@@ -24,6 +24,28 @@
 // bridge drops them (no live turn entry), so the first turn's deltas stay
 // clean. Slash commands (/compact, /session, …) ride as prompt text.
 //
+// GEMINI (gemini-cli 0.62.0 native ACP mode, live-verified 2026-10-01 in a
+// container against a mock Google GenAI backend via GOOGLE_GEMINI_BASE_URL):
+// protocolVersion 1; spawns `gemini --acp` (`--experimental-acp` still works
+// but is deprecated). initialize advertises 4 authMethods, but with env auth
+// (GEMINI_API_KEY or a gateway base URL) session/new succeeds WITHOUT an
+// explicit authenticate. promptCapabilities.image=true (images ride through;
+// audio/embeddedContext also advertised — not exercised). session/new's
+// response also carries modes{availableModes,currentModeId} and
+// models{availableModels,currentModelId} — ignored (like codex-acp's models).
+// Usage rides on the prompt response's `_meta.quota.token_count` (snake_case
+// input_tokens/output_tokens; NO `usage` key, no usage_update) — mapped as a
+// fallback. Tool calls stream tool_call(pending/in_progress)+tool_call_update
+// (kind 'execute'); risky commands raise session/request_permission with
+// options carrying kind allow_always|allow_once|reject_once + the full
+// toolCall block — the generic kind-mapped answering covers it. After
+// session/cancel the pending prompt rpc IS answered {stopReason:'cancelled'}.
+// session/resume is refused (-32601) → the session/load fallback restores
+// across process restarts (verified live); the replayed history arrives as
+// session/updates OUTSIDE any turn and is dropped. NO fs/* proxy requests
+// were observed (gemini reads/writes files locally in its own process) even
+// with fs clientCapabilities declared — the bridge needs no fs responder.
+//
 // Wire facts (official schema + live frames; v1 facts captured from
 // codex-acp driving codex-cli 0.149.1 through a volcengine gateway):
 //   initialize  {protocolVersion:2, clientCapabilities:{}}
@@ -425,6 +447,11 @@ export class AcpStdioAdapter {
       // the turn's usage (v2 completes via state_update instead).
       entry.promptInFlight = false;
       if (r.usage) entry.usage = { prompt_tokens: r.usage.inputTokens ?? 0, completion_tokens: r.usage.outputTokens ?? 0 };
+      else if (r._meta?.quota?.token_count) {
+        // gemini-cli (0.62.0, live 2026-10-01): usage on _meta.quota.token_count
+        const q = r._meta.quota.token_count;
+        entry.usage = { prompt_tokens: q.input_tokens ?? 0, completion_tokens: q.output_tokens ?? 0 };
+      }
       this.opts.log(`[acp] ← prompt response: stopReason=${r.stopReason}${entry.usage ? `, usage ${entry.usage.prompt_tokens}/${entry.usage.completion_tokens}` : ', no usage'}`);
       if (!entry.finished) {
         entry.finished = true;

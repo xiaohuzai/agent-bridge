@@ -16,6 +16,8 @@ Verification status at a glance (honesty first — tell us what works or breaks,
 | codex via official shim | registry line + `{ "name": "codexacp", "port": …, "command": ["codex-acp"] }` (see below) | ⚠️ real turn ✅; drops the answer text on non-streaming backends (upstream bug, see below) |
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08 — real turns (streaming, full answer text), session continuity, usage, approval flow; disconnect-interrupt and bridge-restart resume are test-covered but not yet exercised live |
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11 — real turns (streaming, tool calls) through svkozak/pi-acp 0.0.33 + pi 0.85.1, driven by a mock OpenAI provider; bridge-restart resume (automatic `session/load` fallback) exercised live |
+| gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01 — real turns (streaming, shell tool + approval request, cancel) through native `gemini --acp` 0.62.0, driven by a mock Google GenAI backend; bridge-restart resume (`session/load` fallback) exercised live; usage rides on `_meta.quota.token_count` (mapped) |
+| opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
 | gemini / opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
 
 ---
@@ -124,13 +126,18 @@ Any agent that speaks ACP v2 on stdio joins with two lines: a registry entry in 
 
 Candidate commands cross-checked against the wider ecosystem (each CLI must be installed and signed in first):
 
-- **gemini**: native ACP support, no shim — the registry line would be `"gemini": { "kind": "acp", "command": ["gemini", "--experimental-acp"] }` (sign in with `gemini` first).
 - **qwen**: `"qwen": { "kind": "acp", "command": ["qwen", "--acp"] }` (`npm i -g @qwen-code/qwen-code`).
 - **opencode**: `"opencode": { "kind": "acp", "command": ["opencode", "acp"] }`.
 - **auggie** (Augment Code): `"auggie": { "kind": "acp", "command": ["auggie", "--acp"] }`.
 - **kimi etc.**: check each agent's docs for its ACP story; the single test is that the configured command speaks ACP on stdio (the bridge accepts protocolVersion 1 or 2).
 
 None of these are live-verified yet — report your results (good or bad) and we'll update the table.
+
+## gemini
+
+Native ACP, no shim — registered as `"gemini": { "kind": "acp", "command": ["gemini", "--acp"] }` (`npm i -g @google/gemini-cli`; on ≥0.62 the flag is `--acp`, `--experimental-acp` still works but is deprecated). Auth before the first turn: either sign in once with `gemini`, or set `GEMINI_API_KEY`, or point `GOOGLE_GEMINI_BASE_URL` at a gateway — with env auth the ACP `session/new` needs no `authenticate` call.
+
+Live-verified 2026-10-01 (gemini-cli 0.62.0, mock Google GenAI backend, real turns through the bridge): protocolVersion 1 (prompt-response terminator); streaming deltas; shell tool with `session/request_permission` (kind-mapped options) on risky commands; cancel answers the pending prompt with `stopReason:'cancelled'`; usage arrives on the response's `_meta.quota.token_count` (the bridge maps it); `session/resume` is refused (`-32601`) so bridge-restart restore goes through `session/load`; images advertised (`promptCapabilities.image`) but not yet exercised live. Files are read/written locally by the CLI — no fs-proxy requests hit the bridge.
 
 ## ACP clients (the front)
 
