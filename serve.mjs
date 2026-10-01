@@ -36,8 +36,9 @@
 // fast, naming the bridge) after shutting down the bridges that did start.
 
 import { homedir } from 'node:os';
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createBridgeServer } from './server.mjs';
 import { attachAcpFront } from './acp-front-ws.mjs';
 import { CodexAppServerAdapter } from './adapters/codex-app-server.mjs';
@@ -46,7 +47,23 @@ import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 
 const SANDBOXES = ['read-only', 'workspace-write', 'danger-full-access'];
 const APPROVALS = ['never', 'on-request', 'untrusted'];
-const LOOPBACKS = ['127.0.0.1', 'localhost', '::1'];
+export const LOOPBACKS = ['127.0.0.1', 'localhost', '::1'];
+
+// The shipped starter lives next to this module — both in a repo checkout and
+// inside a globally installed npm package. The missing-config hint must point
+// THERE: a global install's cwd does not contain agents.example.json.
+const SHIPPED_STARTER = fileURLToPath(new URL('./agents.example.json', import.meta.url));
+
+/** The hint for a failed config read — the exact `cp` line for the shipped
+ * starter when the DEFAULT path is missing (an explicit --config miss gets
+ * the raw error only). Shared by the CLI's serve/acp error paths and doctor. */
+export function missingConfigHint(configPath, message) {
+  if (!/cannot read config/.test(message) || configPath !== 'agents.json') return '';
+  if (existsSync(SHIPPED_STARTER)) {
+    return `\n  No agents.json here — copy the shipped starter first:\n  cp ${SHIPPED_STARTER} agents.json`;
+  }
+  return `\n  No agents.json here — the config format is documented at https://github.com/xiaohuzai/agent-bridge#configure`;
+}
 
 /** Expand a leading ~/ to the user's home directory (JSON can't do it). */
 function expandHome(p) {

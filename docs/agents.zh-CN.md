@@ -149,6 +149,7 @@ pi                                      # 首次运行：选 provider / 登录
 
 ## 故障排查
 
+- **先跑 `agent-bridge doctor`**——它会预检配置、每个条目的 agent 二进制是否在 PATH、端口冲突（已在运行的本桥自身算通过）以及非 loopback 绑定的 apiKey 规则；每行 FAIL 都打印修法，`--json` 可接脚本。下面的条目覆盖静态检查看不到的部分。
 - **报问题时把桥终端里 `[acp]` / `[bridge]` 开头的行一起贴上**——它们覆盖了握手协商、会话创建/恢复、每回合的 prompt 与响应（含 stopReason 和 usage）、审批请求、以及被忽略的未知通知，能直接定位问题在哪一层。
 - **回合里流出 `Reconnecting... waiting for network` 且一直重试** —— codex 连不上它的模型后端。最常见原因：自定义 provider 的鉴权来自**环境变量**（config.toml 的 `env_key`，如 `OPENAI_API_KEY`），它必须在你**起桥的那个终端**里已导出（`echo $OPENAI_API_KEY` 验证）——桥只继承起桥 shell 的环境，每个终端窗口是独立的。export 之后**同一终端**重新起桥。
 - `codex CLI not found: 'codex' …` / `agent command not found: '…'` —— agent 二进制没装或不在 PATH；装上，或在配置条目里设 `"codexBin"` / `"command"`。

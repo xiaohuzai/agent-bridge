@@ -189,7 +189,7 @@ test('--bind is rejected in acp mode (it opens no port)', async () => {
   const c = spawnAcp({ extraArgs: ['--bind', '127.0.0.1'] });
   const code = await c.exit();
   assert.equal(code, 1);
-  assert.match(c.stderr.join(''), /--bind is a serve flag/);
+  assert.match(c.stderr.join(''), /--bind is a serve\/doctor flag/);
 });
 
 // --- third-party client compat pins (mirror of the WS-front coverage) -------
