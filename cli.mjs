@@ -17,35 +17,23 @@
 // registry's built-in default for the name — so `agent-bridge acp claude`
 // runs with zero setup, which is what registry-style auto-install invokes.
 
-import { loadConfig, startServe, configPermissionsWarning, adapterFor } from './serve.mjs';
+import { loadConfig, startServe, configPermissionsWarning, adapterFor, missingConfigHint } from './serve.mjs';
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 import { runAcpStdio } from './acp-front-stdio.mjs';
+import { runDoctor, formatReport } from './doctor.mjs';
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 // The daemon version reported to clients (/health, ACP agentInfo) is the
 // package version — one source of truth, no drift between npm and the wire.
 const PKG_VERSION = createRequire(import.meta.url)('./package.json').version;
 
-// The shipped starter lives next to this file — both in a repo checkout and
-// inside a globally installed npm package. The missing-config hint must point
-// THERE: a global install's cwd does not contain agents.example.json.
-const SHIPPED_STARTER = fileURLToPath(new URL('./agents.example.json', import.meta.url));
-
-function missingConfigHint(configPath, message) {
-  if (!/cannot read config/.test(message) || configPath !== 'agents.json') return '';
-  if (existsSync(SHIPPED_STARTER)) {
-    return `\n  No agents.json here — copy the shipped starter first:\n  cp ${SHIPPED_STARTER} agents.json`;
-  }
-  return `\n  No agents.json here — the config format is documented at https://github.com/xiaohuzai/agent-bridge#configure`;
-}
-
 function parseArgs(argv) {
   const args = {};
   let i = 0;
   if (argv[0] === 'serve') { args.mode = 'serve'; i = 1; }
   else if (argv[0] === 'acp') { args.mode = 'acp'; i = 1; }
+  else if (argv[0] === 'doctor') { args.mode = 'doctor'; i = 1; }
   for (; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--config' || a === '--bind' || a === '--name') {
@@ -58,11 +46,12 @@ function parseArgs(argv) {
       }
       args[a.slice(2)] = v;
     }
+    else if (a === '--json') args.json = true; // doctor: machine-readable report
     else if (args.mode === 'acp' && args.name === undefined && !a.startsWith('-')) args.name = a; // positional name
     else if (a === '--help' || a === '-h') args.help = true;
     else {
       console.error(`unknown argument: ${a}
-usage: agent-bridge [serve] [--config FILE] [--bind ADDR] | agent-bridge acp <name> [--config FILE] — see --help`);
+usage: agent-bridge [serve] [--config FILE] [--bind ADDR] | agent-bridge acp <name> [--config FILE] | agent-bridge doctor [--config FILE] [--bind ADDR] [--json] — see --help`);
       process.exit(1);
     }
   }
@@ -75,15 +64,22 @@ if (args.help) {
   console.log(`usage:
   agent-bridge serve [--config FILE] [--bind ADDR]
   agent-bridge acp <name> [--config FILE]
+  agent-bridge doctor [--config FILE] [--bind ADDR] [--json]
 
-  serve  Starts every bridge described in the config file — one per known
-         agent, each on its own port. --config defaults to ./agents.json;
-         agents.example.json in this repo is a working starter.
-  acp    Spawns ONE config entry as an ACP v1 agent on stdio — for clients
-         that launch agents as local commands (Zed, vscode-acp, …). Point
-         them at:  agent-bridge acp <name> --config /abs/path/agents.json
-         Without any config it spawns the registry's built-in default for
-         the name:  agent-bridge acp claude
+  serve   Starts every bridge described in the config file — one per known
+          agent, each on its own port. --config defaults to ./agents.json;
+          agents.example.json in this repo is a working starter.
+  acp     Spawns ONE config entry as an ACP v1 agent on stdio — for clients
+          that launch agents as local commands (Zed, vscode-acp, …). Point
+          them at:  agent-bridge acp <name> --config /abs/path/agents.json
+          Without any config it spawns the registry's built-in default for
+          the name:  agent-bridge acp claude
+  doctor  Pre-flight-checks the config and this machine BEFORE the first
+          chat: config validity, every entry's agent binary on PATH, port
+          availability (a bridge already serving this entry passes), and
+          the non-loopback apiKey rule. Exits 1 iff a check FAILed; every
+          FAIL carries its own fix. --json prints the machine-readable
+          report (for agent-driven setup flows).
 
 options:
   --config FILE   JSON config: {"bridges":[…]} — name must be a known agent
@@ -91,8 +87,9 @@ options:
                   apiKey is optional on loopback and required for non-loopback
                   binds; "acp": true on a serve entry also serves ACP clients
                   at ws://…/acp
-  --bind ADDR     serve only: bind address (default 127.0.0.1; 0.0.0.0 for
-                  LAN/VPN)`);
+  --bind ADDR     serve/doctor only: bind address (default 127.0.0.1; 0.0.0.0
+                  for LAN/VPN)
+  --json          doctor only: print the report as JSON`);
   process.exit(0);
 }
 
@@ -101,7 +98,7 @@ const configPath = args.config || 'agents.json';
 
 if (args.mode === 'acp') {
   if (args.bind) {
-    console.error('acp mode opens no port — --bind is a serve flag');
+    console.error('acp mode opens no port — --bind is a serve/doctor flag');
     process.exit(1);
   }
   if (!args.name) {
@@ -134,6 +131,11 @@ if (args.mode === 'acp') {
   }
   const { adapter, agent } = adapterFor(entry, { log: (m) => console.error(m) });
   runAcpStdio({ adapter, agent, version: PKG_VERSION, log: (m) => console.error(m) });
+} else if (args.mode === 'doctor') {
+  const { ok, checks } = await runDoctor({ configPath, bind });
+  if (args.json) console.log(JSON.stringify({ ok, checks }, null, 2));
+  else for (const line of formatReport({ ok, checks })) console.log(line);
+  process.exit(ok ? 0 : 1);
 } else {
   let running;
   try {

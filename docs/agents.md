@@ -151,6 +151,7 @@ Spawn-style clients that launch agents as local commands (Zed, vscode-acp, …) 
 
 ## Troubleshooting
 
+- **Start with `agent-bridge doctor`** — it pre-flights the config, every entry's agent binary on PATH, port conflicts (a bridge already serving passes its own check), and the non-loopback apiKey rule; every FAIL prints its fix, and `--json` makes it scriptable. The bullets below cover what a static check can't see.
 - **When reporting a problem, include the `[acp]` / `[bridge]` lines from the bridge terminal** — they cover the handshake negotiation, session create/resume, each turn's prompt and response (with stopReason and usage), permission requests, and ignored unknown notifications, and pinpoint which layer failed.
 - **The turn streams `Reconnecting... waiting for network` and keeps retrying** — codex cannot reach its model backend. The most common cause: a custom provider authenticates via an **environment variable** (the `env_key` in config.toml, e.g. `OPENAI_API_KEY`), and that variable must be exported in the terminal where you start the bridge (`echo $OPENAI_API_KEY` to check) — the bridge inherits the starting shell's environment only, and every terminal window is its own environment. Export it, then restart the bridge **in that same terminal**.
 - `codex CLI not found: 'codex' …` / `agent command not found: '…'` — the agent binary isn't installed or isn't on PATH; install it, or set `"codexBin"` / `"command"` in the config entry.

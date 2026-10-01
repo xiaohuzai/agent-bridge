@@ -118,9 +118,16 @@ agent-bridge serve
 # or: agent-bridge serve --config /path/to/agents.json
 ```
 
-Every bridge in the file starts and prints its address; Ctrl+C stops them all. Only two flags exist: `--config` (default `./agents.json`) and `--bind` (default `127.0.0.1`) — every other knob is a config-file field (see the table above). From a clone, use `node cli.mjs serve` — same flags.
+Every bridge in the file starts and prints its address; Ctrl+C stops them all. Serve has only two flags: `--config` (default `./agents.json`) and `--bind` (default `127.0.0.1`) — every other knob is a config-file field (see the table above). From a clone, use `node cli.mjs serve` — same flags.
 
-There is exactly one other command: `agent-bridge acp <entry>` (or `node cli.mjs acp <entry>` from a clone) spawns a single config entry as an ACP agent on stdio — see Three ways to connect below.
+Two other commands exist. `agent-bridge acp <entry>` (or `node cli.mjs acp <entry>` from a clone) spawns a single config entry as an ACP agent on stdio — see Three ways to connect below. And before your first chat (or after any config change), `agent-bridge doctor` pre-flights the whole setup:
+
+```bash
+agent-bridge doctor          # config validity · every agent binary on PATH · ports · apiKey rules
+agent-bridge doctor --json   # machine-readable, for agent-driven setup flows
+```
+
+Every `FAIL` line carries its own fix, and the exit code is 1 iff something actually failed. A port already serving **this** bridge passes (the check doubles as the health probe of a running serve); a different bridge or a foreign process fails, with the port holder named.
 
 ## From zero to your first chat
 
@@ -135,7 +142,7 @@ New here? The whole journey is about five minutes:
    - **pi** — pi via its own installer (or `npm i -g @earendil-works/pi-coding-agent`), then `npm i -g pi-acp` (the shim), then run `pi` once to pick a provider.
    - **gemini** — `npm i -g @google/gemini-cli`, then run `gemini` once to log in.
 
-   Only want one or two? Delete the other entries from `agents.json`. A bridge whose agent isn't installed still starts and answers `/health` — it only fails on its first turn, with an install hint — so a missing agent is easy to miss until you try it.
+   Only want one or two? Delete the other entries from `agents.json`. A bridge whose agent isn't installed still starts and answers `/health` — it only fails on its first turn, with an install hint — so a missing agent is easy to miss until you try it. `agent-bridge doctor` catches it before you try.
 5. **Start the bridge**:
 
    ```bash

@@ -118,9 +118,16 @@ agent-bridge serve
 # 或：agent-bridge serve --config /path/to/agents.json
 ```
 
-配置里的每个桥都会启动并打印自己的地址；Ctrl+C 全停。旗标只有两个：`--config`（默认 `./agents.json`）和 `--bind`（默认 `127.0.0.1`）——其余旋钮全是配置文件字段（见上表）。源码 clone 的用户用 `node cli.mjs serve`，旗标相同。
+配置里的每个桥都会启动并打印自己的地址；Ctrl+C 全停。serve 的旗标只有两个：`--config`（默认 `./agents.json`）和 `--bind`（默认 `127.0.0.1`）——其余旋钮全是配置文件字段（见上表）。源码 clone 的用户用 `node cli.mjs serve`，旗标相同。
 
-还有且仅有另一条命令：`agent-bridge acp <条目名>`（源码 clone 则为 `node cli.mjs acp <条目名>`）把单个配置条目变成 stdio 上的 ACP agent——见下方「三扇门」。
+另外还有两条命令。`agent-bridge acp <条目名>`（源码 clone 则为 `node cli.mjs acp <条目名>`）把单个配置条目变成 stdio 上的 ACP agent——见下方「三扇门」。第一次开聊之前（以及每次改完配置之后），用 `agent-bridge doctor` 把整套环境预检一遍：
+
+```bash
+agent-bridge doctor          # 配置合法性 · 各 agent 二进制在不在 PATH · 端口 · apiKey 规则
+agent-bridge doctor --json   # 机器可读，供 agent 自动安装流程使用
+```
+
+每行 `FAIL` 都自带修法，退出码仅在真的有检查失败时才为 1——接脚本很省事。端口若已被**本桥**占用则算通过（该检查兼作运行中 serve 的健康探测）；被别的桥或无关进程占用则失败，并点名占用者。
 
 ## 从零到第一句对话
 
@@ -135,7 +142,7 @@ agent-bridge serve
    - **pi**——pi 本体走官方自安装（或 `npm i -g @earendil-works/pi-coding-agent`），再 `npm i -g pi-acp`（壳），然后跑一次 `pi` 选 provider。
    - **gemini**——`npm i -g @google/gemini-cli`，跑一次 `gemini` 登录。
 
-   只想要一两个？把 `agents.json` 里多余的条目删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。
+   只想要一两个？把 `agents.json` 里多余的条目删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。`agent-bridge doctor` 会在你试之前先抓出来。
 5. **启动桥**：
 
    ```bash
