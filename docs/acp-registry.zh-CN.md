@@ -16,7 +16,7 @@ Roadmap #4（owner 决策 2026-09-08：双门策略——v1 留给 browsa，**�
 {
   "id": "agent-bridge",
   "name": "agent-bridge",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "One bridge for many CLI coding agents. Spawn any entry as a stdio ACP agent — codex (native app-server adapter), Claude Code, pi, or any ACP agent by name — with correct approval-flow mapping (once/always/deny by kind), session resume across restarts, image passthrough, and zero npm dependencies.",
   "repository": "https://github.com/xiaohuzai/agent-bridge",
   "authors": ["xiaohuzai"],
