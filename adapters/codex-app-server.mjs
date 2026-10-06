@@ -33,13 +33,39 @@
 //
 // Short replies may carry their full text only in item/completed (or even
 // only inside turn/completed.items) with no agentMessage deltas at all (known
-// codex behavior) — the turn assembler concatenates the streamed deltas with
-// completed-item texts that never streamed, de-duped by item id. `tool` events
-// carry the item's own id in an additive `id` field so clients can pair a
-// call's started/completed updates (the detail strings differ between them);
-// fileChange/mcpToolCall items emit BOTH, like commandExecution.
+// codex behavior) — the turn assembler falls back to those texts, de-duped by
+// item id. `tool` events carry the item's own id in an additive `id` field so
+// clients can pair a call's started/completed updates (the detail strings
+// differ between them); fileChange/mcpToolCall items emit BOTH, like
+// commandExecution.
+//
+// MULTI-MESSAGE TURNS (2026-10-06, user field report): one turn can carry
+// SEVERAL agentMessage items — the model narrates before tool calls ("I'm
+// using the X skill to check which workflows apply.") and answers after them.
+// Concatenating every item into done.full leaks the narration into the reply
+// body (browsa bug report: a bare "hi" came back as narration + answer in one
+// bubble). Classification uses codex's OWN phase field (present on the
+// agentMessage item in app-server 0.149.1, verified in the generated schema:
+// "commentary" | "final_answer"; per the schema, providers do not always emit
+// it, so null = unknown):
+//
+//   done.full   = the last item NOT labeled 'commentary' (phase null counts —
+//                 legacy-model compat). All-commentary turns fall back to the
+//                 last item so the reply is never silently emptied.
+//   note events = every other item, emitted just before done as
+//                 {type:'note', text, phase?} — additive; v1 clients that
+//                 ignore unknown event types keep the old concat only if they
+//                 also ignore done.full, so clients SHOULD prefer done.full
+//                 when it is non-empty.
+//
+// Single-message turns (the overwhelming majority) are byte-identical to the
+// old behavior. The official codex-acp shim was evaluated for this and NOT
+// adopted (user decision 2026-10-06): it hides phase behind the JetBrains AIR
+// _meta (airOnlyMeta) and still `return null`s completed agentMessages, so
+// the boundary work would land in OUR ACP adapter anyway with worse signal.
 
 import { spawn } from 'node:child_process';
+import { agentSpawnEnv } from './agent-env.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
@@ -51,14 +77,25 @@ function toolEv(name, status, detail, id) {
   return { type: 'tool', name, status, detail, ...(id ? { id } : {}) };
 }
 
-/** Can this completed agentMessage text join the turn's full text? De-dupes
- * against streamed deltas and against texts already taken from
- * item/completed; an item with NO id cannot be de-duped, so it is trusted
- * only when nothing streamed at all. */
-function takeable(t, it) {
+/** Can this completed agentMessage text still join the turn's item list?
+ * De-dupes against streamed deltas and already-captured items; an item with
+ * NO id cannot be de-duped, so it is trusted only when nothing streamed. */
+function unseen(t, it) {
   return it.type === 'agentMessage' && !!it.text
     && !t.deltaItems.has(it.id) && !t.itemIds.has(it.id)
     && (it.id != null || !t.sawDelta);
+}
+
+/** Close the agentMessage currently being streamed into the ordered item
+ * list (a NEW agentMessage boundary supersedes it — it can no longer be the
+ * turn's final message). Empty text (e.g. an item/started with no deltas yet)
+ * closes to nothing. */
+function closeCurMsg(t) {
+  if (t.curMsg?.text) {
+    t.items.push({ id: t.curMsg.id, text: t.curMsg.text, phase: t.curMsg.phase ?? null });
+    if (t.curMsg.id != null) t.itemIds.add(t.curMsg.id);
+  }
+  t.curMsg = null;
 }
 
 export class CodexAppServerAdapter {
@@ -77,7 +114,7 @@ export class CodexAppServerAdapter {
     this.starting = null;          // in-flight spawn+initialize (serialization lock)
     this.nextId = 1;
     this.pending = new Map();      // rpc id → {resolve, reject}
-    this.threads = new Map();      // sessionId(threadId) → {turnId, full, sawDelta, itemTexts, usage, events}
+    this.threads = new Map();      // sessionId(threadId) → {turnId, items, curMsg, sawDelta, usage, events}
     this.approvals = new Map();    // approval requestId → {method, params}
     this.buf = '';
     this.closed = false;
@@ -101,8 +138,9 @@ export class CodexAppServerAdapter {
     // fresh child so nothing can hang on a dead process, and kill the
     // half-dead one (e.g. an initialize that timed out) instead of leaking it.
     this.#sweepStale('codex app-server restarted');
-    const env = { ...process.env };
-    if (codexHome) env.CODEX_HOME = codexHome;
+    // env: bundled agent CLIs (this package's optionalDependencies) ride a
+    // PATH with their bin dir prepended; CODEX_HOME overrides on top.
+    const env = agentSpawnEnv(codexHome ? { CODEX_HOME: codexHome } : {});
     const child = spawn(codexBin, ['app-server'], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -129,7 +167,7 @@ export class CodexAppServerAdapter {
     // turn's SSE error event) and null the child so a later turn can retry.
     child.on('error', (err) => {
       const msg = err.code === 'ENOENT'
-        ? `codex CLI not found: '${codexBin}' — install it with: npm i -g @openai/codex, or pass --codex-bin /path/to/codex`
+        ? `codex CLI not found: '${codexBin}' — reinstall agent-bridge to restore the bundled codex, install it with: npm i -g @openai/codex, or pass --codex-bin /path/to/codex`
         : `failed to start codex '${codexBin}': ${err.message}`;
       log(`[codex] ${msg}`);
       this.#childDown(child, msg);
@@ -249,16 +287,30 @@ export class CodexAppServerAdapter {
       }
       case 'item/agentMessage/delta': {
         if (!matches(params.turnId)) break;
+        // A delta for a DIFFERENT item than the one streaming = the previous
+        // message just got superseded (multi-message turn): close it as a
+        // future note before appending to the new one. Delta frames carry no
+        // phase — it arrives on the item's started/completed frames.
+        if (t.curMsg && params.itemId !== t.curMsg.id) closeCurMsg(t);
+        if (!t.curMsg) t.curMsg = { id: params.itemId, text: '', phase: null };
         t.sawDelta = true;
         t.deltaItems.add(params.itemId);
-        t.full += params.delta || '';
+        t.curMsg.text += params.delta || '';
         t.events?.({ type: 'delta', text: params.delta || '' });
         break;
       }
       case 'item/started': {
         const it = params.item || {};
         if (!matches(params.turnId)) break;
-        if (it.type === 'commandExecution') t.events?.(toolEv('command', 'started', it.command || '', it.id ?? params.itemId));
+        if (it.type === 'agentMessage') {
+          // agentMessage items frame message boundaries too — a started for a
+          // new id supersedes whatever was streaming (defensive: the delta
+          // handler closes on id change anyway, so this only moves the
+          // boundary earlier when codex sends started before deltas). The
+          // started frame is where phase usually arrives first.
+          if (t.curMsg && it.id !== t.curMsg.id) closeCurMsg(t);
+          if (!t.curMsg && it.id != null) t.curMsg = { id: it.id, text: '', phase: it.phase ?? null };
+        } else if (it.type === 'commandExecution') t.events?.(toolEv('command', 'started', it.command || '', it.id ?? params.itemId));
         else if (it.type === 'fileChange') t.events?.(toolEv('file', 'started', it.files?.join?.(', ') || '', it.id ?? params.itemId));
         else if (it.type === 'mcpToolCall') t.events?.(toolEv(it.tool || 'mcp', 'started', it.server || '', it.id ?? params.itemId));
         break;
@@ -271,11 +323,21 @@ export class CodexAppServerAdapter {
         if (it.type === 'commandExecution') t.events?.(toolEv('command', 'completed', `${it.command || ''}${it.exitCode != null ? ` (exit ${it.exitCode})` : ''}`, it.id ?? params.itemId));
         else if (it.type === 'fileChange') t.events?.(toolEv('file', 'completed', it.files?.join?.(', ') || '', it.id ?? params.itemId));
         else if (it.type === 'mcpToolCall') t.events?.(toolEv(it.tool || 'mcp', 'completed', it.server || '', it.id ?? params.itemId));
-        // Short replies can arrive with NO deltas at all — remember completed
-        // agentMessage texts so the assembler can fall back to them.
-        if (takeable(t, it)) {
-          t.itemIds.add(it.id);
-          t.itemTexts.push(it.text);
+        if (it.type !== 'agentMessage' || !it.text) break;
+        if (t.curMsg && it.id === t.curMsg.id) {
+          // The streaming item's own completed: deltas are authoritative;
+          // adopt the completed text only when it carries MORE than they did,
+          // and the phase whenever the item frame carries one.
+          if (it.text.length > t.curMsg.text.length) t.curMsg.text = it.text;
+          if (it.phase != null) t.curMsg.phase = it.phase;
+          closeCurMsg(t);
+        } else if (unseen(t, it)) {
+          // A message delivered whole, never streamed (known short-reply
+          // behavior). Its arrival also supersedes any still-open item —
+          // codex emits items sequentially, so this one comes after it.
+          closeCurMsg(t);
+          t.items.push({ id: it.id, text: it.text, phase: it.phase ?? null });
+          if (it.id != null) t.itemIds.add(it.id);
         }
         break;
       }
@@ -306,12 +368,33 @@ export class CodexAppServerAdapter {
         } else if (status === 'failed') {
           t.events?.({ type: 'error', message: params.turn?.error?.message || 'codex turn failed' });
         } else {
-          // Assembled full text: streamed deltas + completed-item texts that
-          // never streamed (delivered via item/completed OR only inside
-          // turn/completed.items) — concatenated when a turn mixed delta'd
-          // and non-delta'd items, de-duped by item id.
-          const tailItems = (params.turn?.items || []).filter((it) => takeable(t, it)).map((it) => it.text).join('');
-          const full = t.full + t.itemTexts.join('') + tailItems;
+          // Assemble the turn's ordered agentMessage list: closed items in
+          // arrival order (streamed + completed-only), plus texts that never
+          // left turn/completed.items — de-duped by item id. The answer is
+          // the last item NOT labeled phase:'commentary' (null = unknown
+          // counts, legacy-model compat; an all-commentary turn falls back
+          // to the last item so the reply is never silently emptied). Every
+          // other item rides out as a `note` event (additive) just before
+          // done, instead of leaking into the reply body.
+          closeCurMsg(t);
+          for (const it of params.turn?.items || []) {
+            if (unseen(t, it)) {
+              t.items.push({ id: it.id, text: it.text, phase: it.phase ?? null });
+              if (it.id != null) t.itemIds.add(it.id);
+            }
+          }
+          let answer = -1;
+          for (let i = t.items.length - 1; i >= 0; i--) {
+            if (t.items[i].phase !== 'commentary') { answer = i; break; }
+          }
+          if (answer === -1) answer = t.items.length - 1;
+          for (let i = 0; i < t.items.length; i++) {
+            const item = t.items[i];
+            if (i !== answer && item.text) {
+              t.events?.({ type: 'note', text: item.text, ...(item.phase ? { phase: item.phase } : {}) });
+            }
+          }
+          const full = answer >= 0 ? (t.items[answer].text || '') : '';
           t.events?.({ type: 'done', full, usage: t.usage });
         }
         break;
@@ -376,9 +459,12 @@ export class CodexAppServerAdapter {
     // and a post-await registration would drop that whole batch. The turnId
     // is patched in when the response (or turn/started) arrives; the
     // awaitingTurnStart window accepts turn-scoped frames until then.
+    // items/curMsg carry the multi-message assembly (see the file header):
+    // curMsg is the agentMessage item currently streaming; items is the
+    // ordered closed list whose last entry becomes done.full.
     const entry = {
-      turnId: null, awaitingTurnStart: true, full: '', sawDelta: false,
-      deltaItems: new Set(), itemTexts: [], itemIds: new Set(),
+      turnId: null, awaitingTurnStart: true, sawDelta: false,
+      deltaItems: new Set(), itemIds: new Set(), items: [], curMsg: null,
       usage: null, finished: false, events: onEvent, child: this.child,
     };
     this.threads.set(threadId, entry);

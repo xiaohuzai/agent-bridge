@@ -122,6 +122,8 @@ pi                                      # 首次运行：选 provider / 登录
 
 `npm i -g @agentclientprotocol/codex-acp` 也能把 codex 挂进桥——2026-09-07 已过桥实测真回合（volcengine 网关，start → done + usage 全通）。由于 serve 只认注册表名字，走这条路线需在 [`agents-registry.mjs`](../agents-registry.mjs) 加一行（`"codexacp": { "kind": "acp", "command": ["codex-acp"] }`）并写一条 `{ "name": "codexacp", … }` 配置。**但有一个上游缺陷**：非流式后端（只发 `item/completed` 不发 delta，例如 deepseek 网关）会把最终答案文本整个丢掉——turn 以 `end_turn` 结束但 `full` 为空（codex-acp 对 completed 的 agentMessage 直接 `return null`，只转发 delta）。上面的 codex 原生条目仍是主推荐（有 completed-items 兜底，不受影响）。（注：市面上还有 Zed 的 `@zed-industries/codex-acp`；这里实测的是官方 `@agentclientprotocol/codex-acp`。）
 
+**2026-10-06 复评（用户拍板：留原生）。** browsa 一份现场报告（只发了个 "hi"，回复里模型的自述和回答粘在一起）触发重新对比。codex app-server 协议（0.149.1 schema）有**官方边界信号**——agentMessage item 带 `phase: "commentary" | "final_answer"`（schema 原文：区分临时自述与最终回答；各 provider 发得不一致，None 视为未知保持兼容）。codex-acp 认识 phase 但只通过 `_meta.jetbrains.air.phase` 转发给 AIR 客户端（JetBrains 扩展）——普通 ACP 客户端拿到的还是扁平 `agent_message_chunk` 文本、没有边界，修泄漏的代码反正要落在我们自己的 ACP 门里、且只能用「末条=回答」启发式而非真信号。上面的 completed 丢文本缺陷在 main 分支也仍在（2026-10-06 源码核实）。原生适配器现按 phase 分类（commentary → `note` 事件，其余 → done.full；null phase 回落末条启发式）——详见适配器头注。
+
 ## 其他 ACP v2 agent
 
 任何在 stdio 上说 ACP v2 的 agent，两行接入：[`agents-registry.mjs`](../agents-registry.mjs) 加一条注册（`"kimi": { "kind": "acp", "command": ["kimi-acp"] }`），agents.json 加一条引用（`{ "name": "kimi", "port": …, "apiKey": … }`）。注册表对客户端相当于「已支持」的宣称，所以等 agent 有过验证回合再加。

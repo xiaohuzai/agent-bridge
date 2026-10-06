@@ -16,7 +16,11 @@
 //   'FAIL'      → error notification + turn/completed status:'failed'.
 //   'MIXED'     → one agentMessage streamed as deltas, one delivered only via
 //                 item/completed, one only inside turn/completed.items (the
-//                 assembler must concatenate all three).
+//                 first two must surface as notes, the last one as done.full).
+//   'NARRATION' → the multi-message shape behind the 2026-10-06 leak report:
+//                 narration item (streamed + item/started framing) → command
+//                 item → final answer item; the narration must ride a note,
+//                 done.full must be the answer alone.
 //   'EDIT'      → fileChange + mcpToolCall items, started AND completed.
 //   otherwise   → two deltas + tokenUsage + turn/completed (completed).
 // Every request method received is echoed to stderr as FAKE_METHOD:<m>.
@@ -116,14 +120,35 @@ function handle(j) {
       }
       if (text.includes('MIXED')) {
         // One agentMessage streamed as deltas, one delivered only via
-        // item/completed, one only inside turn/completed.items — the turn
-        // assembler must concatenate all three.
+        // item/completed, one only inside turn/completed.items — the first
+        // two are superseded messages (notes), the last one is done.full.
         send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'm1', delta: 'AAA' } });
         send({ method: 'item/completed', params: { threadId, turnId, item: { type: 'agentMessage', id: 'm2', text: 'BBB' } } });
         complete(threadId, turnId, 'completed', [
           { type: 'agentMessage', id: 'm1', text: 'AAA' },
           { type: 'agentMessage', id: 'm2', text: 'BBB' },
           { type: 'agentMessage', id: 'm3', text: 'CCC' },
+        ]);
+        return;
+      }
+      if (text.includes('NARRATION')) {
+        // Narration → command → answer, all framed with item/started like the
+        // real app-server does, with the official phase classifier on the
+        // agentMessage frames (0.149.1 schema: "commentary" | "final_answer").
+        // done.full must be the answer; the narration must arrive as a note
+        // BEFORE done.
+        send({ method: 'item/started', params: { threadId, turnId, item: { type: 'agentMessage', id: 'm1', phase: 'commentary' } } });
+        send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'm1', delta: "I'm using the fake skill" } });
+        send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'm1', delta: ' to check workflows.' } });
+        send({ method: 'item/completed', params: { threadId, turnId, item: { type: 'agentMessage', id: 'm1', text: "I'm using the fake skill to check workflows.", phase: 'commentary' } } });
+        send({ method: 'item/started', params: { threadId, turnId, item: { type: 'commandExecution', id: 'c1', command: 'skill invoke' } } });
+        send({ method: 'item/completed', params: { threadId, turnId, item: { type: 'commandExecution', id: 'c1', command: 'skill invoke', exitCode: 0 } } });
+        send({ method: 'item/started', params: { threadId, turnId, item: { type: 'agentMessage', id: 'm2', phase: 'final_answer' } } });
+        send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'm2', delta: 'Hi! ' } });
+        send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'm2', delta: 'What can I do for you?' } });
+        complete(threadId, turnId, 'completed', [
+          { type: 'agentMessage', id: 'm1', text: "I'm using the fake skill to check workflows.", phase: 'commentary' },
+          { type: 'agentMessage', id: 'm2', text: 'Hi! What can I do for you?', phase: 'final_answer' },
         ]);
         return;
       }

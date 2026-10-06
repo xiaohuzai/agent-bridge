@@ -112,6 +112,7 @@
 
 import { spawn } from 'node:child_process';
 import { rewriteClaudeEntrypoint } from './claude-transcript-fix.mjs';
+import { agentSpawnEnv } from './agent-env.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
@@ -162,8 +163,10 @@ export class AcpStdioAdapter {
     const child = spawn(command[0], command.slice(1), {
       stdio: ['pipe', 'pipe', 'pipe'],
       // Entry/registry env rides over the daemon's inherited environment —
-      // e.g. the claude entry's CLAUDE_CODE_ENTRYPOINT (see agents-registry).
-      env: { ...process.env, ...this.opts.env },
+      // e.g. the claude entry's CLAUDE_CODE_ENTRYPOINT (see agents-registry) —
+      // and bundled agent CLIs (optionalDependencies) ride a PATH with their
+      // bin dir prepended (adapters/agent-env.mjs).
+      env: agentSpawnEnv(this.opts.env),
       // Windows: npm-installed CLI shims are .cmd — spawn needs a shell there.
       shell: process.platform === 'win32',
       windowsHide: true,

@@ -386,14 +386,46 @@ test('string approval ids round-trip verbatim (no Number() coercion)', async () 
   sse.cancel();
 });
 
-test("done.full concatenates delta'd and non-delta'd agent messages", async () => {
+test("multi-message turns: notes for superseded items, done.full = the answer", async () => {
   // m1 streams as deltas, m2 only via item/completed, m3 only inside
-  // turn/completed.items — the assembler must concatenate all three and
-  // de-dupes by item id (the header contract).
+  // turn/completed.items — all three carry NO phase (legacy-model compat), so
+  // the last item is the answer and the earlier ones surface as notes
+  // (de-duped by item id, the header contract).
   const res = await post('/turns', { text: 'MIXED please' });
   const sse = sseReader(res.body);
   const done = await sse.readUntil((f) => f.data?.type === 'done');
-  assert.equal(done.data.full, 'AAABBBCCC');
+  assert.equal(done.data.full, 'CCC');
+  const notes = sse.frames.filter((f) => f.data?.type === 'note').map((f) => f.data.text);
+  assert.deepEqual(notes, ['AAA', 'BBB']);
+  sse.cancel();
+});
+
+test("phase-labeled narration → note; final_answer → done.full (the leak fix)", async () => {
+  // The 2026-10-06 browsa field report: a bare "hi" came back as the model's
+  // skill narration + the answer in ONE reply body. codex labels the narration
+  // item phase:'commentary' and the answer phase:'final_answer' — the adapter
+  // must classify on that, not concatenate.
+  const res = await post('/turns', { text: 'NARRATION please' });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  assert.equal(done.data.full, 'Hi! What can I do for you?');
+  const notes = sse.frames.filter((f) => f.data?.type === 'note');
+  assert.deepEqual(notes.map((f) => f.data.text), ["I'm using the fake skill to check workflows."]);
+  assert.equal(notes[0].data.phase, 'commentary');
+  // notes arrive BEFORE done so a client folding them into its step history
+  // has them by the time the reply body finalizes.
+  const noteIdx = sse.frames.findIndex((f) => f.data?.type === 'note');
+  const doneIdx = sse.frames.findIndex((f) => f.data?.type === 'done');
+  assert.ok(noteIdx < doneIdx, 'note must precede done');
+  sse.cancel();
+});
+
+test("single-message turns keep the legacy shape byte-for-byte (no notes)", async () => {
+  const res = await post('/turns', { text: 'hello' });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  assert.equal(done.data.full, 'FAKE_reply');
+  assert.equal(sse.frames.filter((f) => f.data?.type === 'note').length, 0);
   sse.cancel();
 });
 

@@ -52,13 +52,13 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 
 | Agent | Install & log in first | Status |
 |---|---|---|
-| **codex** | `npm i -g @openai/codex`, then any ONE of: `codex login` (ChatGPT subscription) · `export OPENAI_API_KEY=…` · custom provider in `~/.codex/config.toml` | ✅ live-verified |
-| **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in · `npm i -g @agentclientprotocol/claude-agent-acp` (official ACP shim) | ✅ live-verified |
-| **pi** | pi itself via its own installer (≥0.98, or `npm i -g @earendil-works/pi-coding-agent`) · `npm i -g pi-acp` → configure pi's model providers (run `pi` once, or `~/.pi/agent/models.json`) | ✅ live-verified |
-| **gemini** | `npm i -g @google/gemini-cli` → run `gemini` once to log in (or env auth: `GEMINI_API_KEY`, or a custom gateway via `GOOGLE_GEMINI_BASE_URL`) | ✅ live-verified |
+| **codex** | bundled — log in with any ONE of: `codex login` (ChatGPT subscription) · `export OPENAI_API_KEY=…` · custom provider in `~/.codex/config.toml` | ✅ live-verified |
+| **claude code** | bundled — run `claude` once to log in | ✅ live-verified |
+| **pi** | pi itself via its own installer (≥0.98, or `npm i -g @earendil-works/pi-coding-agent`) → run `pi` once to pick a provider (the `pi-acp` shim is bundled; pi itself can't be — its installer collides with the npm package) | ✅ live-verified |
+| **gemini** | bundled — run `gemini` once to log in (or env auth: `GEMINI_API_KEY`, or a custom gateway via `GOOGLE_GEMINI_BASE_URL`) | ✅ live-verified |
 | any ACP agent (opencode, kimi, qwen, …) | that agent's own CLI + login | ❓ schema-level |
 
-agent-bridge installs none of these for you — it has zero dependencies and only spawns the CLI you already have. A bridge whose agent is missing still starts and answers `/health`; it fails on its first turn, with an install hint.
+All agent CLIs ship as **bundled optional dependencies** — one `npm i -g @xiaohuzai/agent-bridge` installs codex, claude code, gemini and the ACP shims with it, so there is nothing to forget. The daemon core itself still pulls no runtime dependencies. Login/auth is always yours (one command per agent, above). pi is the one exception: its own installer collides with its npm package, so pi stays manual while its shim ships bundled. The bundled binaries win over a system install — the codex adapter is verified against its exact pin — and the manual commands above remain for `--omit=optional` installs. A bridge whose agent is missing still starts and answers `/health`; it fails on its first turn, with an install hint.
 
 Per-agent details, behavior notes and troubleshooting: [docs/agents.md](./docs/agents.md).
 
@@ -135,12 +135,12 @@ New here? The whole journey is about five minutes:
 
 1. **Install Node 18+** from [nodejs.org](https://nodejs.org) if you don't have it.
 2. **Get agent-bridge**: `npm i -g @xiaohuzai/agent-bridge` — after this the `agent-bridge` command works in any directory. (Prefer source? Clone the repo and use `node cli.mjs` instead.)
-3. **Create your config**: `agent-bridge` needs an `agents.json` in the directory you start it from. Run `agent-bridge serve` once — with no config it prints the exact copy command for your install — or write the JSON shown under [Configure](#configure). The config needs no edits — codex on port 3948, claude on 3949, pi on 3950, gemini on 3951, no password needed on your own machine (step 4 installs the agents themselves).
-4. **Install & log in to every agent your config lists** — the starter enables four:
-   - **codex** — `npm i -g @openai/codex`, then `codex login` once.
-   - **claude** — `npm i -g @anthropic-ai/claude-code`, run `claude` once, then `npm i -g @agentclientprotocol/claude-agent-acp` (the ACP shim the bridge actually spawns).
-   - **pi** — pi via its own installer (or `npm i -g @earendil-works/pi-coding-agent`), then `npm i -g pi-acp` (the shim), then run `pi` once to pick a provider.
-   - **gemini** — `npm i -g @google/gemini-cli`, then run `gemini` once to log in.
+3. **Create your config**: `agent-bridge` needs an `agents.json` in the directory you start it from. Run `agent-bridge serve` once — with no config it prints the exact copy command for your install — or write the JSON shown under [Configure](#configure). The config needs no edits — codex on port 3948, claude on 3949, pi on 3950, gemini on 3951, no password needed on your own machine (step 4 logs you in — the agent CLIs ship bundled).
+4. **Log in to every agent your config lists** — the starter enables four, and the agent CLIs themselves are already installed (they ship as bundled dependencies of agent-bridge):
+   - **codex** — `codex login` once (or an API key / custom provider in `~/.codex/config.toml`).
+   - **claude** — run `claude` once to log in.
+   - **pi** — the one agent not bundled: install pi via its own installer, then run `pi` once to pick a provider.
+   - **gemini** — run `gemini` once to log in.
 
    Only want one or two? Delete the other entries from `agents.json`. A bridge whose agent isn't installed still starts and answers `/health` — it only fails on its first turn, with an install hint — so a missing agent is easy to miss until you try it. `agent-bridge doctor` catches it before you try.
 5. **Start the bridge**:
@@ -304,7 +304,7 @@ The authoritative contract — edge rules like first-turn session assignment and
 - **Multi-agent by design.** One daemon, one config file, N agents — each on its own port with its own key. The first wave of "a web UI for one CLI" projects is gone (archived, sunset); what survived is multi-agent.
 - **Approvals are first-class.** Permission requests stream to the client with the agent's own options, and the client decides once / always / deny. The best-known multi-agent HTTP bridge answers "always allow" server-side on the client's behalf — we think that's a bug, not a feature.
 - **Live-verified adapters.** codex is driven through its native app-server protocol; everything else through ACP against the official shims. Every protocol fact was captured from real agents, not from docs.
-- **Zero dependencies.** One clone, one command. No installer, no container, no database.
+- **Zero runtime dependencies.** One clone, one command. No installer, no container, no database — and the agent CLIs themselves ship as bundled optional dependencies, so the one install covers them too.
 - **ACP on both ends.** The bridge speaks ACP toward agents (stdio adapters) and toward clients (WebSocket / stdio fronts) — which is also what qualifies it for the ACP Registry (submission record: [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md); editors spawn it directly via `npx @xiaohuzai/agent-bridge acp claude`).
 
 ## Run it on a remote server
