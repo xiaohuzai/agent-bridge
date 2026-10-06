@@ -1,7 +1,7 @@
 {
   "name": "@xiaohuzai/agent-bridge",
   "version": "0.4.0",
-  "description": "Local daemon that turns CLI coding agents (codex, claude code, gemini, pi, … any ACP agent) into an HTTP+SSE chat backend any client can drive — plus opt-in ACP doors: a WebSocket endpoint for ACP clients and a spawnable stdio agent mode. Ships the agent CLIs as bundled optional dependencies.",
+  "description": "Local daemon that turns CLI coding agents (codex, claude code, gemini, pi, … any ACP agent) into an HTTP+SSE chat backend any client can drive — plus opt-in ACP doors: a WebSocket endpoint for ACP clients and a spawnable stdio agent mode. Bundles the ACP shims; the agent CLIs stay the user's own installs.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -50,10 +50,7 @@
   },
   "homepage": "https://github.com/xiaohuzai/agent-bridge#readme",
   "optionalDependencies": {
-    "@openai/codex": "0.149.1",
     "@agentclientprotocol/claude-agent-acp": "^0.86.0",
-    "@anthropic-ai/claude-code": "^2.1.291",
-    "@google/gemini-cli": "^0.62.0",
     "pi-acp": "^0.0.34"
   }
 }

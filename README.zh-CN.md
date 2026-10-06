@@ -52,13 +52,13 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 
 | 智能体 | 需要先装好并登录 | 状态 |
 |---|---|---|
-| **codex** | 已随包内置——三选一登录：`codex login`（ChatGPT 订阅）· `export OPENAI_API_KEY=…` · `~/.codex/config.toml` 配自定义 provider | ✅ 实机验证 |
-| **claude code** | 已随包内置——跑一次 `claude` 完成登录 | ✅ 实机验证 |
-| **pi** | pi 本体走官方自安装（≥0.98，或 `npm i -g @earendil-works/pi-coding-agent`）→ 跑一次 `pi` 选 provider（`pi-acp` 壳已内置；pi 本体不行——它的安装器和 npm 包冲突） | ✅ 实机验证 |
-| **gemini** | 已随包内置——跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
+| **codex** | `npm i -g @openai/codex`，然后三选一：`codex login`（ChatGPT 订阅）· `export OPENAI_API_KEY=…` · `~/.codex/config.toml` 配自定义 provider | ✅ 实机验证 |
+| **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录（官方 `claude-agent-acp` 壳已随包内置） | ✅ 实机验证 |
+| **pi** | pi 本体走官方自安装（≥0.98，或 `npm i -g @earendil-works/pi-coding-agent`）→ 跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置；pi 本体走不了 npm——安装器和 npm 包冲突） | ✅ 实机验证 |
+| **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 
-所有 agent CLI 都作为**内置可选依赖**随包分发——一条 `npm i -g @xiaohuzai/agent-bridge` 会把 codex、claude code、gemini 和 ACP 壳一并装上，没有可漏装的东西。守护进程本体仍然零运行时依赖。登录/鉴权永远是你的事（每个 agent 一条命令，见上表）。pi 是唯一的例外：它的安装器和 npm 包冲突，所以 pi 本体仍需手装、壳随包内置。内置二进制优先于系统安装——codex 适配器按精确版本验证——上表的手装命令留给 `--omit=optional` 安装用。某个 agent 没装时，对应的桥照样会启动、`/health` 也正常，只有第一次对话才失败（带安装提示）。
+ACP **壳**（`claude-agent-acp`、`pi-acp`）作为内置可选依赖随包分发——无状态胶水，无需单独安装；你自己维护的壳优先生效，壳始终跟你在用的 CLI 版本配对（内置副本只是零配置兜底）。agent **CLI 本体**刻意留在你自己手里：它们各自独立演进、自带状态，塞一份固定版本进 agent-bridge 会把终端写入的 CLI 状态（`~/.codex`、`~/.claude`）分叉成两套——桥启动的就是你已经在用、已经登录的那个 CLI。pi 本体额外走不了 npm（安装器冲突，见上表）。某个 agent 没装时，对应的桥照样会启动、`/health` 也正常，只有第一次对话才失败（带安装提示）。
 
 各 agent 的详细安装、行为注意事项与故障排查：[docs/agents.zh-CN.md](./docs/agents.zh-CN.md)。
 
@@ -136,11 +136,11 @@ agent-bridge doctor --json   # 机器可读，供 agent 自动安装流程使用
 1. **装 Node 18+**（[nodejs.org](https://nodejs.org)），没有就先装。
 2. **拿到 agent-bridge**：`npm i -g @xiaohuzai/agent-bridge`——之后任意目录敲 `agent-bridge` 都行。（喜欢源码？clone 仓库改用 `node cli.mjs`，效果一样。）
 3. **建配置**：`agent-bridge` 需要在启动目录里有一个 `agents.json`。先跑一次 `agent-bridge serve`——没有配置时它会打印出你这次安装对应的复制命令——或者照[「配置」](#配置)一节手写那份 JSON。这份配置不用改——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951，自己机器上不需要密码（agent 本身要在第 4 步装）。
-4. **给你配置里的每个 agent 都登录**——起步配置同时开了四个，agent CLI 本身已随包内置：
-   - **codex**——`codex login` 一次（或 API key / `~/.codex/config.toml` 配自定义 provider）。
-   - **claude**——跑一次 `claude` 登录。
-   - **pi**——唯一不内置的：pi 本体走官方自安装，然后跑一次 `pi` 选 provider。
-   - **gemini**——跑一次 `gemini` 登录。
+4. **给你配置里的每个 agent 都装好并登录**——起步配置同时开了四个：
+   - **codex**——`npm i -g @openai/codex`，然后 `codex login` 一次。
+   - **claude**——`npm i -g @anthropic-ai/claude-code`，跑一次 `claude` 登录（它需要的 ACP 壳已随包内置）。
+   - **pi**——pi 本体走官方自安装，然后跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置）。
+   - **gemini**——`npm i -g @google/gemini-cli`，跑一次 `gemini` 登录。
 
    只想要一两个？把 `agents.json` 里多余的条目删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。`agent-bridge doctor` 会在你试之前先抓出来。
 5. **启动桥**：
@@ -304,7 +304,7 @@ async function turn(text, sessionId) {
 - **为多 agent 而生。** 一个守护进程、一份配置文件、N 个 agent——各自端口、各自 apiKey。第一代"单 CLI 配个网页 UI"的项目已经谢幕（归档的归档、弃养的弃养）；活下来的都是多 agent。
 - **审批是一等公民。** 权限请求带着 agent 自己的选项流向客户端，由客户端决定 once / always / deny。知名度最高的多 agent HTTP 桥在服务端替客户端自动回答"总是允许"——我们认为那是 bug，不是 feature。
 - **实机验证的适配器。** codex 走原生 app-server 协议，其余走 ACP 对接官方壳——每一条协议事实都来自真实 agent，不是文档。
-- **零运行时依赖。** 一次 clone，一条命令。没有安装器、没有容器、没有数据库——agent CLI 本身也作为内置可选依赖随包分发，一次安装全覆盖。
+- **零运行时依赖。** 一次 clone，一条命令。没有安装器、没有容器、没有数据库——仅两个无状态 ACP 壳作为内置可选依赖随包分发，agent CLI 本体留在你自己手里。
 - **两端都是 ACP。** 桥对 agent 说 ACP（stdio 适配器），对客户端也说 ACP（WebSocket / stdio 门）——这也是它有资格进入 ACP Registry 的原因（提交记录见 [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md)；编辑器里 `npx @xiaohuzai/agent-bridge acp claude` 即可拉起）。
 
 ## 部署到远程服务器

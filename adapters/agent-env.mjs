@@ -1,18 +1,20 @@
-// adapters/agent-env.mjs — where agent CLIs live, for every spawn site.
+// adapters/agent-env.mjs — where agent binaries live, for every spawn site.
 //
-// agent-bridge ships its agents as bundled optionalDependencies
-// (`@openai/codex`, the claude/gemini ACP shims and CLIs, `pi-acp`) so ONE
-// `npm i -g @xiaohuzai/agent-bridge` leaves nothing else to remember. Their
-// bins land in a node_modules/.bin that is NOT on PATH for local/checkout
-// installs (global installs also get npm's own bin links). Every adapter
-// spawn therefore gets a PATH with those directories PREPENDED: the bundled
-// binary wins over a system one (the codex adapter's protocol facts are
-// verified against its exact pin — a random PATH codex may be newer than
-// what the adapter was verified against), and a system install still works
-// whenever the bundled dep was skipped (`--omit=optional`).
+// Philosophy (2026-10-06, user direction): agent-bridge is a GUEST on the
+// user's agent environment — everything resolves USER-FIRST. The ACP shims
+// (`claude-agent-acp`, `pi-acp`) ship as bundled optionalDependencies purely
+// as a zero-config fallback; a shim the user installed themselves WINS,
+// because the shim must track the user's CLI version (the pair they keep
+// working in their terminal), and a shadowing bundled copy would be
+// unfixable-by-user the moment the CLI outruns our release cadence. The
+// agent CLIs proper (codex, claude, gemini, pi) are never bundled at all —
+// same reason, stronger: stateful, versioned, auto-updating tools that a
+// pinned copy would fork (`~/.codex`, `~/.claude`).
 //
-// doctor.mjs resolves through the SAME augmented path so its "binary found"
-// verdicts can never disagree with what a spawn would actually use.
+// Concretely: the bundled bin dirs are APPENDED to the child PATH — the
+// system PATH wins, bundled fills the gaps. doctor.mjs resolves through the
+// SAME augmented path so its "binary found" verdicts can never disagree with
+// what a spawn would actually use.
 
 import path from 'node:path';
 import { statSync } from 'node:fs';
@@ -23,8 +25,8 @@ const pkgRoot = path.resolve(here, '..');
 
 const PATH_KEY = process.platform === 'win32' ? 'Path' : 'PATH';
 
-/** Bin dirs that hold this package's bundled agent CLIs, filtered to those
- * that exist. Two layouts to cover:
+/** Bin dirs holding this package's bundled ACP shims, filtered to those that
+ * exist. Two layouts to cover:
  *   npm install (global or local):  <…>/node_modules/@xiaohuzai/agent-bridge
  *     → the deps' .bin is the package tree's own node_modules/.bin;
  *   repo checkout: deps install into the repo root's node_modules/.bin.
@@ -40,18 +42,19 @@ export function bundledBinDirs() {
   });
 }
 
-/** The PATH string a child should get: bundled bin dirs first, system PATH
- * after. Idempotent — never duplicates a dir that is already on PATH. */
+/** The PATH string a child should get: the system PATH first, the bundled
+ * shim dirs appended after it (user-installed agents and shims win; bundled
+ * copies only fill the gaps). Idempotent — never duplicates a dir. */
 export function agentPath() {
   const cur = process.env.PATH || process.env.Path || '';
   const parts = cur.split(path.delimiter);
   const add = bundledBinDirs().filter((d) => !parts.includes(d));
-  return add.length ? `${add.join(path.delimiter)}${path.delimiter}${cur}` : cur;
+  return add.length ? `${cur}${path.delimiter}${add.join(path.delimiter)}` : cur;
 }
 
 /** The spawn env for an agent child: the daemon's environment with the
- * bundled-bin PATH. `extra` rides OVER it (entry/registry env — e.g. the
- * claude entry's CLAUDE_CODE_ENTRYPOINT, or CODEX_HOME). */
+ * bundled-shim PATH appended. `extra` rides OVER it (entry/registry env —
+ * e.g. the claude entry's CLAUDE_CODE_ENTRYPOINT, or CODEX_HOME). */
 export function agentSpawnEnv(extra = {}) {
   return { ...process.env, ...extra, [PATH_KEY]: agentPath() };
 }

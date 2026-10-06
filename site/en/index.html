@@ -178,11 +178,11 @@ Point any wire-protocol client at these addresses.</code></pre>
     </ol>
     <div class="note">
       <p class="note-title">Install the agents themselves</p>
-      <p>The bridge installs nothing: set up and log into codex, claude, pi, gemini separately. A bridge whose agent is missing still starts and answers <code>/health</code> — it fails on its first turn, with an install hint (including the exact command).</p>
+      <p>The bridge installs nothing: set up codex, claude and gemini with one npm command each, pi via its own installer, then log in to each. The ACP shims claude and pi run through (claude-agent-acp, pi-acp) ship bundled — nothing to install there. A bridge whose agent is missing still starts and answers <code>/health</code> — it fails on its first turn, with an install hint (including the exact command).</p>
       <pre><code>npm i -g @openai/codex                                       <span class="tok-com"># codex</span>
-npm i -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp  <span class="tok-com"># claude</span>
-npm i -g pi-acp                                              <span class="tok-com"># pi (shim; pi itself via its own installer)</span>
-npm i -g @google/gemini-cli                                  <span class="tok-com"># gemini</span></code></pre>
+npm i -g @anthropic-ai/claude-code                           <span class="tok-com"># claude</span>
+npm i -g @google/gemini-cli                                  <span class="tok-com"># gemini</span>
+# pi comes from its own installer; run `pi` once to pick a provider <span class="tok-com"># pi</span></code></pre>
     </div>
   </section>
 

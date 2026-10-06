@@ -164,8 +164,8 @@ export class AcpStdioAdapter {
       stdio: ['pipe', 'pipe', 'pipe'],
       // Entry/registry env rides over the daemon's inherited environment —
       // e.g. the claude entry's CLAUDE_CODE_ENTRYPOINT (see agents-registry) —
-      // and bundled agent CLIs (optionalDependencies) ride a PATH with their
-      // bin dir prepended (adapters/agent-env.mjs).
+      // with the bundled ACP shims' (optionalDependencies) bin dir APPENDED
+      // to the PATH (adapters/agent-env.mjs; a user-installed shim wins).
       env: agentSpawnEnv(this.opts.env),
       // Windows: npm-installed CLI shims are .cmd — spawn needs a shell there.
       shell: process.platform === 'win32',

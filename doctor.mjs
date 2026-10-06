@@ -37,10 +37,10 @@ const HEALTH_TIMEOUT_MS = 1500;
 const HEALTH_BODY_CAP = 4096;
 
 /** Resolve a command to an executable file: bare names walk the SAME PATH a
- * spawn would get (bundled agent CLIs first — see adapters/agent-env.mjs —
- * then the system PATH, with PATHEXT on Windows where npm CLI shims are
- * .cmd), anything with a path separator is checked as-is. Returns the
- * resolved path or null. */
+ * spawn would get (the system PATH first, then this package's bundled shim
+ * dirs APPENDED — see adapters/agent-env.mjs — with PATHEXT on Windows where
+ * npm CLI shims are .cmd), anything with a path separator is checked as-is.
+ * Returns the resolved path or null. */
 export function findOnPath(cmd) {
   const hasSep = cmd.includes('/') || cmd.includes('\\');
   if (hasSep || isAbsolute(cmd)) {

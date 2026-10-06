@@ -138,8 +138,8 @@ export class CodexAppServerAdapter {
     // fresh child so nothing can hang on a dead process, and kill the
     // half-dead one (e.g. an initialize that timed out) instead of leaking it.
     this.#sweepStale('codex app-server restarted');
-    // env: bundled agent CLIs (this package's optionalDependencies) ride a
-    // PATH with their bin dir prepended; CODEX_HOME overrides on top.
+    // env: the system PATH first, this package's bundled ACP shim dirs
+    // APPENDED after it (adapters/agent-env.mjs); CODEX_HOME overrides on top.
     const env = agentSpawnEnv(codexHome ? { CODEX_HOME: codexHome } : {});
     const child = spawn(codexBin, ['app-server'], {
       env,
@@ -167,7 +167,7 @@ export class CodexAppServerAdapter {
     // turn's SSE error event) and null the child so a later turn can retry.
     child.on('error', (err) => {
       const msg = err.code === 'ENOENT'
-        ? `codex CLI not found: '${codexBin}' — reinstall agent-bridge to restore the bundled codex, install it with: npm i -g @openai/codex, or pass --codex-bin /path/to/codex`
+        ? `codex CLI not found: '${codexBin}' — install it with: npm i -g @openai/codex, or pass --codex-bin /path/to/codex`
         : `failed to start codex '${codexBin}': ${err.message}`;
       log(`[codex] ${msg}`);
       this.#childDown(child, msg);

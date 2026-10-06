@@ -18,19 +18,27 @@ test('bundledBinDirs only returns existing directories (no dead PATH entries)', 
   }
 });
 
-test('agentPath() prepends the bundled dirs and is idempotent', () => {
+test('agentPath() appends the bundled dirs AFTER the system PATH (user installs win) and is idempotent', () => {
   const dirs = bundledBinDirs();
-  const once = agentPath();
-  if (dirs.length) {
-    assert.ok(once.startsWith(dirs[0] + SEP), 'the first bundled dir must come first');
-    // Re-augmenting an already-augmented PATH must not duplicate entries.
-    process.env.PATH = once;
-    const twice = agentPath();
-    for (const d of dirs) {
-      assert.equal(twice.split(SEP).filter((p) => p === d).length, 1, `no duplicate for ${d}`);
+  // Controlled PATH: bundled dirs must land AFTER it, never shadow it.
+  const saved = process.env.PATH;
+  process.env.PATH = '/usr/bin';
+  try {
+    if (dirs.length) {
+      const once = agentPath();
+      assert.ok(once.startsWith('/usr/bin' + SEP), 'system PATH comes first');
+      assert.ok(once.endsWith(dirs.join(SEP)), 'bundled dirs come last');
+      // Re-augmenting an already-augmented PATH must not duplicate entries.
+      process.env.PATH = once;
+      const twice = agentPath();
+      for (const d of dirs) {
+        assert.equal(twice.split(SEP).filter((p) => p === d).length, 1, `no duplicate for ${d}`);
+      }
+    } else {
+      assert.equal(agentPath(), '/usr/bin', 'nothing bundled → PATH unchanged');
     }
-  } else {
-    assert.equal(once, process.env.PATH || process.env.Path || '', 'nothing bundled → PATH unchanged');
+  } finally {
+    process.env.PATH = saved;
   }
 });
 
