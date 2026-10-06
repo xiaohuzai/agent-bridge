@@ -31,13 +31,16 @@ import { accessSync, constants } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { loadConfig, configPermissionsWarning, missingConfigHint, LOOPBACKS } from './serve.mjs';
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
+import { agentPath } from './adapters/agent-env.mjs';
 
 const HEALTH_TIMEOUT_MS = 1500;
 const HEALTH_BODY_CAP = 4096;
 
-/** Resolve a command to an executable file: bare names walk PATH (with
- * PATHEXT on Windows, where npm CLI shims are .cmd), anything with a path
- * separator is checked as-is. Returns the resolved path or null. */
+/** Resolve a command to an executable file: bare names walk the SAME PATH a
+ * spawn would get (the system PATH first, then this package's bundled shim
+ * dirs APPENDED — see adapters/agent-env.mjs — with PATHEXT on Windows where
+ * npm CLI shims are .cmd), anything with a path separator is checked as-is.
+ * Returns the resolved path or null. */
 export function findOnPath(cmd) {
   const hasSep = cmd.includes('/') || cmd.includes('\\');
   if (hasSep || isAbsolute(cmd)) {
@@ -47,7 +50,7 @@ export function findOnPath(cmd) {
   const exts = process.platform === 'win32'
     ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';')
     : [''];
-  for (const dir of (process.env.PATH || '').split(delimiter)) {
+  for (const dir of agentPath().split(delimiter)) {
     if (!dir) continue;
     for (const ext of exts) {
       try { accessSync(join(dir, cmd + ext), constants.X_OK); return join(dir, cmd + ext); } catch (_) {}

@@ -31,7 +31,7 @@ Roadmap #4（owner 决策 2026-09-08：双门策略——v1 留给 browsa，**�
 }
 ```
 
-**args 为什么是 `["acp", "claude"]`**：cli 的 acp 模式带免配置回退（显式 `--config` > `./agents.json` > 注册表内置默认），所以这条命令自包含可跑——claude 本体与官方壳 `@agentclientprotocol/claude-agent-acp` 是 agent 自己的前置，与其他 registry 条目同例。编辑器想换 agent/加配置时覆盖 args 即可（如 `["acp", "codex", "--config", "/abs/agents.json"]`）。
+**args 为什么是 `["acp", "claude"]`**：cli 的 acp 模式带免配置回退（显式 `--config` > `./agents.json` > 注册表内置默认），所以这条命令自包含可跑——claude 本体是 agent 自己的前置（官方壳 `@agentclientprotocol/claude-agent-acp` 已随 agent-bridge 内置，无需另装），与其他 registry 条目同例。编辑器想换 agent/加配置时覆盖 args 即可（如 `["acp", "codex", "--config", "/abs/agents.json"]`）。
 
 **version 必须跟 npm latest 对齐**：listing 的 `npx` 分发解析到 npm 的 latest dist-tag，`version` 字段要与它一致——每次 npm 发版后同步更新这里与上游条目。
 

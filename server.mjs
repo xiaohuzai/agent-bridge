@@ -15,6 +15,13 @@
 //       body cap (4MB) bounds their total size.
 //       data: {"type":"start","sessionId":"…","turnId":"…"}
 //       data: {"type":"delta","text":"…"}
+//       data: {"type":"note","text":"…"}          ← the agent's INTERIM message
+//             (additive 2026-10-06: codex narrates before tool calls — "I'm
+//             using the X skill…" — and labels those items phase:'commentary'
+//             while the reply is 'final_answer'. Notes never belong in the
+//             reply body: render them as agent process/steps. done.full
+//             carries only the agent's final message and is authoritative
+//             over the client-side delta concat.)
 //       data: {"type":"tool","name":"command","status":"started","detail":"…"}
 //             (additive: optional "id" — the agent's own tool-call id, stable
 //             across one call's started/completed events; v1 clients that
