@@ -73,7 +73,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { agentSpawnEnv } from './agent-env.mjs';
 
 const INIT_TIMEOUT_MS = 30_000;     // server boot + services init (measured 1.5–4s)
@@ -247,6 +247,49 @@ function resolveNodeBin({ nodeBin, home = homedir() } = {}) {
   return process.execPath; // the node running agent-bridge (the server needs a modern Node)
 }
 
+/** Resolve the zcode AGENT CLI the server child must spawn — exported for
+ * doctor. The official server's own resolution chain (env → monorepo →
+ * Electron runtime → native binary in ~/.zcode/server/agents) comes up empty
+ * on a desktop-only Mac install, and the server then refuses every turn with
+ * "ZCode agent server command is not configured. Set
+ * ZCODE_AGENT_SERVER_COMMAND before integration." (fault observed live via
+ * browsa 2026-10-08). We therefore hand the server its agent explicitly.
+ * Candidates: explicit config > the deployed wrapper next to the server
+ * bundle (Linux desktop layout) > the macOS app bundle's zcode.cjs.
+ * Returns the env patch to merge into the child's environment. */
+export function resolveAgentCommandEnv({ serverCjs, agentCommand, home = homedir() } = {}) {
+  const explicit = agentCommand;
+  if (explicit) {
+    // A .cjs needs a node interpreter in front; anything else is an
+    // executable wrapper the server can spawn directly (args default to
+    // app-server --stdio server-side).
+    if (explicit.endsWith('.cjs')) {
+      return {
+        ZCODE_AGENT_SERVER_COMMAND: process.execPath,
+        ZCODE_AGENT_SERVER_ARGS_JSON: JSON.stringify([explicit, 'app-server', '--stdio']),
+      };
+    }
+    return { ZCODE_AGENT_SERVER_COMMAND: explicit };
+  }
+  const dir = serverCjs ? dirname(serverCjs) : null;
+  const candidates = [
+    ...(dir ? [join(dir, 'agents', 'glm', 'zcode-agent'), join(dir, 'zcode-agent')] : []),
+    join(home, '.zcode', 'server', 'agents', 'glm', 'zcode-agent'),
+    '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs',
+  ];
+  for (const c of candidates) {
+    if (!existsSync(c)) continue;
+    if (c.endsWith('.cjs')) {
+      return {
+        ZCODE_AGENT_SERVER_COMMAND: process.execPath,
+        ZCODE_AGENT_SERVER_ARGS_JSON: JSON.stringify([c, 'app-server', '--stdio']),
+      };
+    }
+    return { ZCODE_AGENT_SERVER_COMMAND: c };
+  }
+  return {};
+}
+
 function parseDataUrl(dataUrl) {
   const m = /^data:([^;,]+);base64,(.*)$/s.exec(String(dataUrl || ''));
   if (!m) return null;
@@ -381,10 +424,11 @@ export class ZcodeServerAdapter {
   constructor({
     serverCjs,               // explicit path; auto-resolved from the desktop install otherwise
     nodeBin,                 // explicit node binary; desktop-bundled node / agent-bridge's node otherwise
+    agentCommand,            // explicit zcode agent CLI; auto-resolved (desktop install) otherwise
     cwd = process.cwd(),     // the zcode workspace every session lives in
     log = () => {},
   } = {}) {
-    this.opts = { cwd, log };
+    this.opts = { cwd, log, agentCommand };
     this.serverCjs = serverCjs;
     this.nodeBin = nodeBin;
     this.child = null;
@@ -419,12 +463,21 @@ export class ZcodeServerAdapter {
     }
     const serverCjs = resolveServerCjs({ serverCjs: this.serverCjs });
     const nodeBin = resolveNodeBin({ nodeBin: this.nodeBin });
+    // The server child inherits the explicit agent command (config/env) or the
+    // one resolved from the desktop install — without it the official server
+    // refuses every turn on desktop-only Mac installs (see resolveAgentCommandEnv).
+    const agentEnv = resolveAgentCommandEnv({ serverCjs, agentCommand: this.opts.agentCommand });
+    if (agentEnv.ZCODE_AGENT_SERVER_COMMAND) {
+      this.opts.log(`agent command: ${agentEnv.ZCODE_AGENT_SERVER_COMMAND}${agentEnv.ZCODE_AGENT_SERVER_ARGS_JSON ? ' ' + agentEnv.ZCODE_AGENT_SERVER_ARGS_JSON : ''}`);
+    } else {
+      this.opts.log('WARNING: no zcode agent CLI found next to the server bundle or in /Applications/ZCode.app — if the first turn fails with "ZCode agent server command is not configured", set "agentCommand" on the bridge entry');
+    }
     this.opts.log(`spawning zcode server: ${nodeBin} ${serverCjs} (workspace ${this.opts.cwd})`);
     // A respawn only starts once the previous child is gone; settle its work first.
     this.#sweepStale('zcode server restarted');
     const child = spawn(nodeBin, [serverCjs], {
       cwd: this.opts.cwd,
-      env: agentSpawnEnv(),
+      env: agentSpawnEnv(agentEnv),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });

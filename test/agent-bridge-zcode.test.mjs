@@ -91,6 +91,24 @@ function sseReader(body) {
   return { readUntil, cancel, frames };
 }
 
+test('explicit agentCommand rides the server child env', async () => {
+  await stopServer();
+  logs = [];
+  adapter = new ZcodeServerAdapter({
+    serverCjs: FAKE_ZCODE,
+    nodeBin: process.execPath,
+    agentCommand: 'fake-agent-cli',
+    cwd: process.cwd(),
+    log: (m) => logs.push(m),
+  });
+  server = createBridgeServer({ adapter, agent: 'zcode', version: 'test', log: (m) => logs.push(m) });
+  await new Promise((resolve) => { server.listen(0, '127.0.0.1', () => { port = server.address().port; resolve(); }); });
+  const res = await post('/turns', { text: 'hello' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  assert.ok(logs.some((l) => l.includes('FAKE_AGENT_ENV:fake-agent-cli')), `agentCommand must reach the child env; logs: ${logs.join(' | ')}`);
+});
+
 test('zcode happy path: handshake → start → streamed deltas (thinking folded) → done with usage', async () => {
   const res = await post('/turns', { text: 'hello there' });
   assert.equal(res.status, 200);
