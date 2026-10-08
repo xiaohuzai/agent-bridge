@@ -108,6 +108,7 @@ test('explicit agentCommand rides the server child env', async () => {
   await sse.readUntil((f) => f.data.type === 'done');
   assert.ok(logs.some((l) => l.includes('FAKE_AGENT_ENV:fake-agent-cli')), `agentCommand must reach the child env; logs: ${logs.join(' | ')}`);
   assert.ok(logs.some((l) => l.includes('FAKE_AUTHORITY:desktop-attached-remote')), `desktop authority mode must reach the child env; logs: ${logs.join(' | ')}`);
+  assert.ok(logs.some((l) => l.includes('FAKE_APP_VERSION:') && !l.includes('FAKE_APP_VERSION:unset')), `the app version must reach the child env; logs: ${logs.join(' | ')}`);
 });
 
 test('zcode happy path: handshake → start → streamed deltas (thinking folded) → done with usage', async () => {
