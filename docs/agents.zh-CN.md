@@ -17,7 +17,6 @@ node cli.mjs serve            # 读 ./agents.json（或：serve --config FILE）
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08——真回合（流式完整）、会话连续、usage、审批流程；断连中断与桥重启续会话有测试覆盖，实机未跑 |
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11——经 svkozak/pi-acp 0.0.33 + pi 0.85.1 真回合（流式、工具调用），由 mock OpenAI provider 驱动；桥重启续会话（自动 `session/load` 回退）实机已跑 |
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01——原生 `gemini --acp` 0.62.0 真回合（流式、shell 工具+审批请求、cancel），由 mock Google GenAI 后端驱动；桥重启续会话（`session/load` 回退）实机已跑；usage 走响应的 `_meta.quota.token_count`（已映射） |
-| zcode | `{ "name": "zcode", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ✅ 2026-10-08——真实回合（流式、thinking 折叠、v4 附件面传图、中止、命名）走原生 stdio 适配器对接官方 server 3.14.4；审批卡为 fixture 级验证（默认 yolo 实机不问） |
 | workbuddy | `{ "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/your/project" }` | ✅ 2026-10-08——真实回合（流式、thinking 折叠、ACP 内容块传图、审批往返、中止）走原生回环适配器对接运行中的 WorkBuddy AI 桌面 5.4.3 |
 | opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
 
@@ -174,23 +173,10 @@ pi                                      # 首次运行：选 provider / 登录
 
 2026-10-08 实机验证（WorkBuddy AI 5.4.3，macOS，真实回合过桥）：connect（回环免鉴权）→ initialize → session/new / session/prompt 走 Streamable HTTP + SSE；流式增量中 reasoning 折成 `<thinking>` 块；工具调用出 tool 事件；权限请求以审批卡呈现（`session/request_permission` 按映射的 optionId 应答）；图片以 ACP image 内容块随行（`promptCapabilities.image: true`）；`session/cancel` 中止；`loadSession: true` 让 sessionId 跨桥重启存活（`session/load` 续接）。该面未暴露用量（省略）；无命名通道（桥答 501）；AskUserQuestion 类提问未接线——会话权限模式（默认 `bypassPermissions`）会自动消解。
 
-## zcode
+会话模型，2026-10-08 在用户机器上实测确认——先知道，免得找不到自己的对话：
 
-原生适配器（`adapters/zcode-server.mjs`，`kind: 'zcode'`），对接 **ZCode 桌面应用**安装的 server 运行时——没有可单独安装的 CLI（命令行发行版无公开下载渠道；桌面版 CLI 也没有 `--web`）。适配器自动解析最新的内容寻址 server bundle（macOS：`~/Library/Application Support/ZCode/remote-assets-cache/components/server-bundle/*/zcode-server.cjs` 取最新；Linux 桌面布局：`~/.zcode/server/zcode-server.cjs`），优先用桌面自带的 node 运行，缺省回落到跑 agent-bridge 的 node。条目可用 `"serverCjs"` / `"nodeBin"` 覆盖；`"cwd"` 即 zcode 的 **workspace**（所有会话都活在里面）。
+- **worker 的网关会话只存内存。** ACP 会话 id 在应用的全部存储位置都搜不到——重启 WorkBuddy 桌面版会清掉所有桥对话的 worker 侧上下文。下一条消息自动在新会话里继续，流中有一条 `note` 说明「此前上下文不带过来」；start 事件会把新会话 id 重映射回客户端，客户端无需改动。
+- **桌面版自己的 UI 不会列出经桥开始的对话。** 这是 ACP「会话归客户端管」的设计（网关没有列表/命名通道），不是 bug——你的客户端（browsa、你的脚本）才是会话管理器。想把对话搬进桌面：从客户端导出内容，粘贴到桌面的新聊天里即可。
+- **自动发现依赖 `lsof` + `curl`**（macOS/Linux 自带；Windows 10+ 虽带 curl 但没有 lsof）。Windows 上请在条目里显式写 `"workbuddyPort"`。
 
-配置条目：
-
-```json
-{ "name": "zcode", "port": 3952, "apiKey": "", "cwd": "/path/to/your/project" }
-```
-
-模型与登录态都在用户自己的 ZCode 应用里——适配器不碰凭据；会话就是应用自己的（`sess_…` id，桌面/TUI 里可见可续；browsa 会通过命名通道把它们起名为 `browsa：<首行>`）。2026-10-08 已实机验证（官方 server 3.14.4，Linux，真实 GLM-5.3 回合走桥）：二进制 RPC 协议全部手写（VS Code 同款 13 字节帧 + VQL 值编码，细节见适配器文件头）；createSession/sendText/stop/renameSession 走 v4 命令；流式增量中 reasoning 折成 `<thinking>` 块；工具调用出 `tool` 事件；权限请求以 `approval` 呈现（pendingInteractions → `resolveInteraction`）；用量是会话累计值的回合差；**图片**走 v4 附件面（begin/chunk/commit，sha256 校验，≤20MiB）——agent 用自己的工具消费（`Read` + GLM `analyze_image`），与桌面版附图行为一致。
-
-ZCode 专属事实（都已实测，勿"简化"）：
-
-- v4 草稿会话（createSession 不带 firstInput）**既不 active 也不 persisted**——附件面和会话订阅都会拒（`fault.subscribe.sessionNotFound`）；空的 `persistence:'immediate'` legacy 会话也出不了这个状态。所以带图回合的 refs 传给一个已有日志行的会话：本桥上一会话，否则 workspace 里最近的（legacy `listSessions`）；两者都没有（全新工作区 + 首条消息就带图）时图片降级为正文里的一条说明。
-- 官方版的 legacy `createSession` 要顶层平铺的 `workspacePath`；OSS schema 的 `workspace{path,key}` ref 会被 400。官方 `resumeSession` 反而要 OSS 的嵌套 `workspace` ref。分歧是真实存在的——信实测，别信 OSS schema。
-- AskUserQuestion 类提问被自动消解（握手声明 `askUserQuestionAutoResolutionEnabled`），不会阻塞回合；只有 `kind:'permission'` 交互会出审批卡。审批卡是 fixture 级验证，尚未在真实回合中触发过（默认 yolo 不问）。
-- 一桥一 server 子进程常驻；首回合付 CLI 冷启动（约 5-15 秒）。
-`agentCommand` (optional) points the server at a specific zcode agent CLI when auto-resolution comes up empty — a bare command name (PATH) or a path; paths ending in `.cjs` are run with the bridge's node. On desktop-only Mac installs this is normally unnecessary: the adapter hands the server the app bundle's `zcode.cjs` (`/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`) or the deployed wrapper next to the server bundle automatically, because the official server's own resolution chain refuses every turn with "ZCode agent server command is not configured" there (observed live via browsa 2026-10-08).
 

@@ -56,6 +56,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录（官方 `claude-agent-acp` 壳已随包内置） | ✅ 实机验证 |
 | **pi** | pi 本体走官方自安装（≥0.98，或 `npm i -g @earendil-works/pi-coding-agent`）→ 跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置；pi 本体走不了 npm——安装器和 npm 包冲突） | ✅ 实机验证 |
 | **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
+| **workbuddy** | WorkBuddy AI 桌面版已安装、已登录且**正在运行**（适配器是其本地 CodeBuddy worker 网关的纯客户端——端口自动发现，`workbuddyPort` 可覆盖） | ✅ 实机验证 |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 
 ACP **壳**（`claude-agent-acp`、`pi-acp`）作为内置可选依赖随包分发——无状态胶水，无需单独安装；你自己维护的壳优先生效，壳始终跟你在用的 CLI 版本配对（内置副本只是零配置兜底）。agent **CLI 本体**刻意留在你自己手里：它们各自独立演进、自带状态，塞一份固定版本进 agent-bridge 会把终端写入的 CLI 状态（`~/.codex`、`~/.claude`）分叉成两套——桥启动的就是你已经在用、已经登录的那个 CLI。pi 本体额外走不了 npm（安装器冲突，见上表）。某个 agent 没装时，对应的桥照样会启动、`/health` 也正常，只有第一次对话才失败（带安装提示）。
@@ -96,7 +97,7 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 
 | 字段 | 说明 |
 |---|---|
-| `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`、`pi`、`gemini`） |
+| `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`、`pi`、`gemini`、`workbuddy`） |
 | `port` | serve 必填，每桥唯一（仅用于 `acp` 的条目可省略） |
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
@@ -104,6 +105,7 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 | `env` | 可选 `{VAR: value}` 对象，合并进 daemon 环境后传给被 spawn 的 agent；条目 env 覆盖注册表默认 |
 | `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见「三扇门」） |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优（取值与取舍见下） |
+| `workbuddyPort` | 可选；自动发现（扫描回环监听端口匹配 worker 的 `/health` 特征）落空时，钉住 WorkBuddy worker 的端口 |
 
 每个字段的类型、默认值与**全部可选取值**，以及 codex 沙箱/审批的取舍（「审批卡太多怎么办」的配方），都整理在网站的[配置参考](https://xiaohuzai.github.io/agent-bridge/configuration.html)。
 
@@ -303,7 +305,7 @@ async function turn(text, sessionId) {
 
 - **为多 agent 而生。** 一个守护进程、一份配置文件、N 个 agent——各自端口、各自 apiKey。第一代"单 CLI 配个网页 UI"的项目已经谢幕（归档的归档、弃养的弃养）；活下来的都是多 agent。
 - **审批是一等公民。** 权限请求带着 agent 自己的选项流向客户端，由客户端决定 once / always / deny。知名度最高的多 agent HTTP 桥在服务端替客户端自动回答"总是允许"——我们认为那是 bug，不是 feature。
-- **实机验证的适配器。** codex 走原生 app-server 协议，其余走 ACP 对接官方壳——每一条协议事实都来自真实 agent，不是文档。
+- **实机验证的适配器。** codex 走原生 app-server 协议，workbuddy 走其桌面版 ACP-over-HTTP 网关的原生客户端，claude/pi/gemini 走 ACP 对接官方壳——每一条协议事实都来自真实 agent，不是文档。
 - **零运行时依赖。** 一次 clone，一条命令。没有安装器、没有容器、没有数据库——仅两个无状态 ACP 壳作为内置可选依赖随包分发，agent CLI 本体留在你自己手里。
 - **两端都是 ACP。** 桥对 agent 说 ACP（stdio 适配器），对客户端也说 ACP（WebSocket / stdio 门）——这也是它有资格进入 ACP Registry 的原因（提交记录见 [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md)；编辑器里 `npx @xiaohuzai/agent-bridge acp claude` 即可拉起）。
 
@@ -350,6 +352,7 @@ bridge.example.com {
 
 - codex 的 `request_user_input` 工具会被桥拒绝（回合可继续）。
 - 网络抖动触发的重试会重发整条 prompt——agent 侧可能把一个回合跑两遍。
+- **workbuddy** 的网关会话只存内存：重启 WorkBuddy 桌面版会清掉所有对话的 worker 侧上下文，下一条消息自动在新会话里继续（流中有说明提示；客户端自己的历史不受影响）。按 ACP「会话归客户端管」的设计，桌面版自己的 UI 不会列出经桥开始的对话。
 
 回合只在线（所有门）：
 
@@ -368,7 +371,7 @@ npm test   # 真适配器 + 真 HTTP 服务 对阵 脚本化假 agent——无�
 node --test test/agent-bridge-acp.test.mjs   # 跑单个文件（别用 `node --test test/`——走 npm 脚本的 glob）
 ```
 
-布局一句话：[`server.mjs`](./server.mjs) 是 v1 HTTP+SSE 线协议（头注释即权威、已冻结的契约）· `serve.mjs`/`cli.mjs` 读配置、拉起服务 · [`adapters/`](./adapters/) 对接 agent（codex 原生 app-server + 通用 ACP-stdio 适配器）· `acp-front*.mjs` + `wire-ws.mjs` 是可选的 ACP 门 · `test/` 放脚本化假 agent。
+布局一句话：[`server.mjs`](./server.mjs) 是 v1 HTTP+SSE 线协议（头注释即权威、已冻结的契约）· `serve.mjs`/`cli.mjs` 读配置、拉起服务 · [`adapters/`](./adapters/) 对接 agent（codex 原生 app-server、workbuddy 原生 HTTP 客户端、通用 ACP-stdio 适配器）· `acp-front*.mjs` + `wire-ws.mjs` 是可选的 ACP 门 · `test/` 放脚本化假 agent。
 
 长尾 agent 接入只需在 [`agents-registry.mjs`](./agents-registry.mjs) 加一行（ACP agent 给个启动命令即可）。适配器开发只有一条铁律：协议事实必须从真 agent 实测捕获、记进适配器头注释——验证纪律、已踩过的坑和发版流程都在 [AGENTS.md](./AGENTS.md)。
 
