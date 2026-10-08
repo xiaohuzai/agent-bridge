@@ -33,6 +33,7 @@ import { loadConfig, configPermissionsWarning, missingConfigHint, LOOPBACKS } fr
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 import { agentPath } from './adapters/agent-env.mjs';
 import { resolveServerCjs } from './adapters/zcode-server.mjs';
+import { resolveWorkbuddyPort } from './adapters/workbuddy.mjs';
 
 const HEALTH_TIMEOUT_MS = 1500;
 const HEALTH_BODY_CAP = 4096;
@@ -108,6 +109,12 @@ function spawnCommandOf(b) {
     try { resolved = resolveServerCjs({ serverCjs: b.serverCjs }); } catch (_) {}
     return { cmd: resolved || 'zcode-server.cjs (not found)', overridden: b.serverCjs !== undefined, isFile: !!resolved };
   }
+  if (spec.kind === 'workbuddy') {
+    // No spawn: the adapter is a pure client of the RUNNING desktop worker.
+    let port = null;
+    try { port = resolveWorkbuddyPort({ workbuddyPort: b.workbuddyPort, log: () => {} }); } catch (_) {}
+    return { cmd: port ? `http://127.0.0.1:${port} (workbuddy worker)` : 'workbuddy worker (not found)', overridden: b.workbuddyPort !== undefined, isFile: !!port };
+  }
   return { cmd: (b.command || spec.command)[0], overridden: b.command !== undefined };
 }
 
@@ -131,6 +138,17 @@ export async function runDoctor({ configPath = 'agents.json', bind = '127.0.0.1'
       push('config', 'warn', `no agents.json here — checking the registry defaults instead`, hint.trim() || undefined);
       for (const name of knownAgentNames()) {
         const spec = KNOWN_AGENTS[name];
+        if (spec.kind === 'workbuddy') {
+          // No PATH command exists — the adapter is a pure client of the
+          // running desktop worker, so the check is worker discovery.
+          let worker = null;
+          try { worker = resolveWorkbuddyPort({ log: () => {} }); } catch (_) {}
+          push(`agent ${name}`,
+            worker ? 'pass' : 'warn',
+            worker ? `workbuddy worker found (http://127.0.0.1:${worker}) — ready to configure` : 'workbuddy worker not found (registry default: the WorkBuddy AI desktop app\'s local gateway)',
+            worker ? undefined : `install: ${spec.install}`);
+          continue;
+        }
         if (spec.kind === 'zcode') {
           // No PATH command exists — the adapter reuses the desktop app's
           // installed runtime bundle, so the check is bundle discovery.
@@ -158,7 +176,19 @@ export async function runDoctor({ configPath = 'agents.json', bind = '127.0.0.1'
   if (perm) push('config', 'warn', perm);
 
   for (const b of cfg.bridges) {
-    if (KNOWN_AGENTS[b.name]?.kind === 'zcode') {
+    if (KNOWN_AGENTS[b.name]?.kind === 'workbuddy') {
+      // workbuddy checks the RUNNING desktop worker (port auto-discovery or
+      // the entry's "workbuddyPort"), not a PATH command.
+      let worker = null;
+      try { worker = resolveWorkbuddyPort({ workbuddyPort: b.workbuddyPort, log: () => {} }); } catch (_) {}
+      if (worker) {
+        push(`bridge ${b.name}`, 'pass', `workbuddy worker found (http://127.0.0.1:${worker})`);
+      } else {
+        push(`bridge ${b.name}`, 'fail',
+          `workbuddy worker not found — serve still starts and answers /health, but this bridge's first turn dies with a resolution error`,
+          `install/open the WorkBuddy AI desktop app (it must be running), or set the entry's "workbuddyPort" to the running worker port`);
+      }
+    } else if (KNOWN_AGENTS[b.name]?.kind === 'zcode') {
       // zcode checks the resolved runtime bundle, not a PATH command.
       const { cmd, isFile } = spawnCommandOf(b);
       if (isFile) {
@@ -168,16 +198,16 @@ export async function runDoctor({ configPath = 'agents.json', bind = '127.0.0.1'
           `zcode server bundle not found — serve still starts and answers /health, but this bridge's first turn dies with a resolution error`,
           `install/open the ZCode desktop app once, or set the entry's "serverCjs" to the zcode-server.cjs inside it`);
       }
-      continue;
-    }
-    const { cmd, overridden } = spawnCommandOf(b);
-    const found = findOnPath(cmd);
-    if (found) {
-      push(`bridge ${b.name}`, 'pass', `command "${cmd}" found (${found})`);
     } else {
-      push(`bridge ${b.name}`, 'fail',
-        `command "${cmd}" not found on PATH — serve still starts and answers /health, but this bridge's first turn dies with ENOENT`,
-        overridden ? `install "${cmd}" or fix the entry's command/codexBin override` : `install: ${KNOWN_AGENTS[b.name].install}`);
+      const { cmd, overridden } = spawnCommandOf(b);
+      const found = findOnPath(cmd);
+      if (found) {
+        push(`bridge ${b.name}`, 'pass', `command "${cmd}" found (${found})`);
+      } else {
+        push(`bridge ${b.name}`, 'fail',
+          `command "${cmd}" not found on PATH — serve still starts and answers /health, but this bridge's first turn dies with ENOENT`,
+          overridden ? `install "${cmd}" or fix the entry's command/codexBin override` : `install: ${KNOWN_AGENTS[b.name].install}`);
+      }
     }
 
     const free = await portFree(b.port, bind);

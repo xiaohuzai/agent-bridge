@@ -41,6 +41,12 @@ export const KNOWN_AGENTS = {
   // login state live in the user's ZCode app — the adapter never touches
   // credentials; the conversation sessions are the app's own (visible/resumable
   // there, named "browsa：<first line>" when browsa titles them).
+  // workbuddy runs on its NATIVE adapter (adapters/workbuddy.mjs) against the
+  // CodeBuddy Code worker that the WorkBuddy AI desktop app spawns and keeps
+  // warm (ACP over Streamable HTTP on a loopback port, auto-discovered via the
+  // /health signature; "workbuddyPort" overrides). Model/login state lives in
+  // the user's WorkBuddy app — the adapter never touches credentials.
+  workbuddy: { kind: 'workbuddy', install: 'WorkBuddy AI desktop app (installed, logged in, and running)', summary: 'WorkBuddy AI desktop via its local CodeBuddy worker gateway (native adapter)' },
   zcode: { kind: 'zcode', install: 'ZCode desktop app (open it once so its runtime is cached)', summary: 'ZCode via its local stdio server (native adapter; model/login from the ZCode app)' },
 };
 
