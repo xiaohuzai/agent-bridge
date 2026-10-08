@@ -35,6 +35,10 @@
 //              config_option_update / session_info_update (noise → heartbeat).
 //   loadSession: true — a sessionId survives across worker/bridge lifetimes;
 //              resume with session/load {sessionId, cwd, mcpServers:[]}.
+//              If load FAILS (worker lost the session — e.g. the desktop
+//              restarted without keeping ACP sessions), the turn falls back
+//              to a fresh session and re-keys: the start event carries the
+//              new id (clients re-map), a note explains the context reset.
 //
 // Worker discovery: the worker port is dynamic (random per desktop boot).
 // Order: explicit `workbuddyPort` config > env WORKBUDDY_PORT > auto-discovery
@@ -366,9 +370,24 @@ export class WorkbuddyAdapter {
         entry.sessionId = sessionId;
         this.sessions.set(sessionId, entry);
         if (!this.loadedSessions.has(sessionId)) {
-          // First use on this connection: resume the persisted session.
-          await this.#rpc('session/load', { sessionId, cwd: this.opts.cwd, mcpServers: [] });
-          this.loadedSessions.add(sessionId);
+          // First use on this connection: resume the persisted session. If
+          // the worker no longer knows it, fall back to a FRESH session and
+          // re-key — the start event carries the new id so clients re-map;
+          // the note says plainly that earlier context does not carry over.
+          try {
+            await this.#rpc('session/load', { sessionId, cwd: this.opts.cwd, mcpServers: [] });
+            this.loadedSessions.add(sessionId);
+          } catch (e) {
+            const created = await this.#rpc('session/new', { cwd: this.opts.cwd, mcpServers: [] }, RPC_TIMEOUT_MS);
+            const sid = created?.sessionId;
+            if (!sid) throw new Error('workbuddy session/new: no sessionId');
+            this.sessions.delete(sessionId);
+            entry.sessionId = sid;
+            this.sessions.set(sid, entry);
+            this.loadedSessions.add(sid);
+            emit({ type: 'note', text: `previous session ${sessionId} is gone on the workbuddy worker (${e?.message || 'load failed'}) — continuing in a fresh session; earlier context does not carry over` });
+            sessionId = sid;
+          }
         }
         emit({ type: 'start', sessionId, turnId: '' });
         const blocks = buildPromptBlocks(text, images);

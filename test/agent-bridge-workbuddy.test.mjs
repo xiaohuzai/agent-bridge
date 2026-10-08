@@ -3,7 +3,8 @@
 // test/fake-workbuddy-daemon.mjs, a scripted stand-in for the CodeBuddy Code
 // worker gateway (ACP over Streamable HTTP — wire facts mirrored from the
 // real worker, see adapters/workbuddy.mjs header). Covers: connect +
-// initialize, streamed deltas with thinking folds, session resume,
+// initialize, streamed deltas with thinking folds, session resume, the
+// lost-session fallback (load fails → fresh session + note + re-key),
 // images as content blocks, approval round trip, cancel → aborted, failed
 // turns, and the workbuddyPort override. Keeps buffers tiny per low-memory CI.
 
@@ -131,6 +132,38 @@ test('resume: a second turn with the same sessionId rides the loaded session', a
   assert.equal(done2.data.full, 'FAKE_reply');
   // same connection reused → no session/load needed
   assert.ok(!logs.some((l) => l.includes('FAKE_SESSION_LOAD')), 'same connection: no reload');
+});
+
+test('worker lost the session: load fails → fresh session + note + re-key', async () => {
+  // first turn to establish the connection (and its loadedSessions state)
+  const r1 = await post('/turns', { text: 'first' });
+  const s1 = sseReader(r1.body);
+  await s1.readUntil((f) => f.data.type === 'start');
+  await s1.readUntil((f) => f.data.type === 'done');
+
+  // hand the bridge a sessionId the worker never issued — "gone" trips the
+  // fake daemon's session/load error (desktop restarted, ACP sessions lost)
+  const dead = 'sess_gone_1234';
+  const r2 = await post('/turns', { text: 'after restart', sessionId: dead });
+  const s2 = sseReader(r2.body);
+  const note = await s2.readUntil((f) => f.data.type === 'note');
+  assert.match(note.data.text, /gone on the workbuddy worker/);
+  assert.match(note.data.text, /earlier context does not carry over/);
+  const start2 = await s2.readUntil((f) => f.data.type === 'start');
+  assert.match(start2.data.sessionId, /^sess_fake\d+$/);
+  assert.notEqual(start2.data.sessionId, dead);
+  const done2 = await s2.readUntil((f) => f.data.type === 'done');
+  assert.equal(done2.data.full, 'FAKE_reply');
+  assert.ok(logs.some((l) => l.includes(`FAKE_SESSION_LOAD:${dead}`)), `logs: ${logs.join(' | ')}`);
+
+  // a third turn rides the NEW id on the same connection — no reload
+  const loadCount = logs.filter((l) => l.includes('FAKE_SESSION_LOAD')).length;
+  const r3 = await post('/turns', { text: 'third', sessionId: start2.data.sessionId });
+  const s3 = sseReader(r3.body);
+  const start3 = await s3.readUntil((f) => f.data.type === 'start');
+  assert.equal(start3.data.sessionId, start2.data.sessionId);
+  await s3.readUntil((f) => f.data.type === 'done');
+  assert.equal(logs.filter((l) => l.includes('FAKE_SESSION_LOAD')).length, loadCount, 'no extra session/load');
 });
 
 test('images ride as ACP image content blocks', async () => {

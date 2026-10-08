@@ -115,6 +115,12 @@ const server = createServer((req, res) => {
         }
         case 'session/load': {
           err(`FAKE_SESSION_LOAD:${body.params?.sessionId}`);
+          // sessionIds containing "gone" simulate a worker that lost the
+          // session (desktop restart without persistence)
+          if (/gone/.test(body.params?.sessionId || '')) {
+            replyErr(body.id, 'FAKE_session_not_found');
+            return;
+          }
           reply(body.id, {});
           return;
         }
