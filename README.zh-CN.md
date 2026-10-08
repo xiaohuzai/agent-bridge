@@ -56,6 +56,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录（官方 `claude-agent-acp` 壳已随包内置） | ✅ 实机验证 |
 | **pi** | pi 本体走官方自安装（≥0.98，或 `npm i -g @earendil-works/pi-coding-agent`）→ 跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置；pi 本体走不了 npm——安装器和 npm 包冲突） | ✅ 实机验证 |
 | **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
+| **dsh**（DeepSeek Harness） | dsh 桌面版菜单 **Manage dsh Command… → Install**（版本跟桌面发行版锁死），或 `npm i -g @deepseek-ai/dsh`；模型 key 在应用/Web UI 里配（或 `DEEPSEEK_API_KEY`） | ⚠️ 协议链实机验证（真回合需有凭据的机器） |
 | **workbuddy** | WorkBuddy AI 桌面版已安装、已登录且**正在运行**（适配器是其本地 CodeBuddy worker 网关的纯客户端——端口自动发现，`workbuddyPort` 可覆盖） | ✅ 实机验证 |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 
@@ -107,7 +108,7 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 
 | 字段 | 说明 |
 |---|---|
-| `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`、`pi`、`gemini`、`workbuddy`） |
+| `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`、`pi`、`gemini`、`dsh`、`workbuddy`、`zcode`） |
 | `port` | serve 必填，每桥唯一（仅用于 `acp` 的条目可省略） |
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
@@ -315,7 +316,7 @@ async function turn(text, sessionId) {
 
 - **为多 agent 而生。** 一个守护进程、一份配置文件、N 个 agent——各自端口、各自 apiKey。第一代"单 CLI 配个网页 UI"的项目已经谢幕（归档的归档、弃养的弃养）；活下来的都是多 agent。
 - **审批是一等公民。** 权限请求带着 agent 自己的选项流向客户端，由客户端决定 once / always / deny。知名度最高的多 agent HTTP 桥在服务端替客户端自动回答"总是允许"——我们认为那是 bug，不是 feature。
-- **实机验证的适配器。** codex 走原生 app-server 协议，workbuddy 走其桌面版 ACP-over-HTTP 网关的原生客户端，claude/pi/gemini 走 ACP 对接官方壳——每一条协议事实都来自真实 agent，不是文档。
+- **实机验证的适配器。** codex 走原生 app-server 协议，workbuddy 走其桌面版 ACP-over-HTTP 网关的原生客户端，claude/pi/gemini 走 ACP 对接官方壳，dsh 走其官方 ACP 自动化 profile——每一条协议事实都来自真实 agent，不是文档。
 - **零运行时依赖。** 一次 clone，一条命令。没有安装器、没有容器、没有数据库——仅两个无状态 ACP 壳作为内置可选依赖随包分发，agent CLI 本体留在你自己手里。
 - **两端都是 ACP。** 桥对 agent 说 ACP（stdio 适配器），对客户端也说 ACP（WebSocket / stdio 门）——这也是它有资格进入 ACP Registry 的原因（提交记录见 [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md)；编辑器里 `npx @xiaohuzai/agent-bridge acp claude` 即可拉起）。
 

@@ -17,6 +17,7 @@ node cli.mjs serve            # 读 ./agents.json（或：serve --config FILE）
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08——真回合（流式完整）、会话连续、usage、审批流程；断连中断与桥重启续会话有测试覆盖，实机未跑 |
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11——经 svkozak/pi-acp 0.0.33 + pi 0.85.1 真回合（流式、工具调用），由 mock OpenAI provider 驱动；桥重启续会话（自动 `session/load` 回退）实机已跑 |
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01——原生 `gemini --acp` 0.62.0 真回合（流式、shell 工具+审批请求、cancel），由 mock Google GenAI 后端驱动；桥重启续会话（`session/load` 回退）实机已跑；usage 走响应的 `_meta.quota.token_count`（已映射） |
+| dsh（DeepSeek Harness） | `{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ⚠️ 2026-10-09——协议链对 dsh 0.2.0-rc.2 实机验证（spawn → ACP v1 握手 → session/new → prompt → 干净的鉴权错误 SSE；模型调用本身需有凭据的机器） |
 | workbuddy | `{ "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/your/project" }` | ✅ 2026-10-08——真实回合（流式、thinking 折叠、ACP 内容块传图、审批往返、中止）走原生回环适配器对接运行中的 WorkBuddy AI 桌面 5.4.3 |
 | opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
 
@@ -143,6 +144,14 @@ pi                                      # 首次运行：选 provider / 登录
 原生 ACP，无需壳——注册表行 `"gemini": { "kind": "acp", "command": ["gemini", "--acp"] }`（`npm i -g @google/gemini-cli`；0.62 起旗标是 `--acp`，`--experimental-acp` 仍可用但已弃用）。首回合前的鉴权三选一：跑一次 `gemini` 登录，或设 `GEMINI_API_KEY`，或把 `GOOGLE_GEMINI_BASE_URL` 指到网关——env 鉴权时 ACP 的 `session/new` 不需要 `authenticate`。
 
 实机验证 2026-10-01（gemini-cli 0.62.0，mock Google GenAI 后端，过桥真回合）：protocolVersion 1（prompt 响应即终结者）；流式 delta；shell 工具在危险命令上会发 `session/request_permission`（按 kind 映射选项）；cancel 后挂起的 prompt 会应答 `stopReason:'cancelled'`；usage 在响应的 `_meta.quota.token_count`（桥已映射）；`session/resume` 被拒（`-32601`），桥重启走 `session/load` 恢复；声明了图片能力（`promptCapabilities.image`）但实机未跑图片回合。文件读写由 CLI 在本地完成——桥不会收到 fs 代理请求。
+
+## dsh（DeepSeek Harness）
+
+原生 ACP，无需壳——`dsh --profile acp` 本身就是一个 stdio ACP v1 agent（`@deepseek-ai/dsh-acp`，官方「automation-only」profile；注册行 `"dsh": { "kind": "acp", "command": ["dsh", "--profile", "acp"] }`）。首选安装是桌面版菜单 **Manage dsh Command… → Install**：装出的 `dsh` 版本永远跟运行中的桌面发行版一致。CLI 与桌面共享 `~/.dsh` 的产品数据（会话、凭据、设置），但不共享可执行包——从桥发起的回合会出现在桌面应用的会话列表里（ACP 面没有标题通道，这些会话用 dsh 的确定性兜底标题）。
+
+实机验证 2026-10-09（dsh 0.2.0-rc.2）：握手答 protocolVersion 1（桥请求 2 并接受）；`sessionCapabilities` = list/resume/close——桥重启恢复走适配器 `session/resume` 第一分支；审批走标准 `session/request_permission`（one-shot allow/reject）；思考块走 `agent_thought_chunk`；模型（`deepseek-v4-flash` / `-v4-pro` 等）与 `reasoning_effort`（`off`/`low`/`high`/`max`）都是标准 `session/set_config_option` 选项。裸安装时图片声明为 `false`（该 profile 只在「有持久附件存储 + 声明图片能力的 exact route」时开启）。协议链（spawn → 握手 → session/new → prompt → 干净的鉴权错误 SSE）已用真实二进制过桥跑通；模型调用本身需要那台机器没有的 provider 凭据。
+
+**已知取舍：无 token 级流式。** 官方 ACP 面按 committed 消息粒度投递更新（源码实锤：只对 `assistant/message` / `tool/call` / `tool/result` 事件反应）——工具调用实时到，但纯文本长回答会整段落下而不是逐 token 流。第三方 `dsh-acp-gateway` 有 token 流但仍锁 dsh 0.1.x——不建议压过官方 profile。
 
 ## ACP 客户端（门）
 
