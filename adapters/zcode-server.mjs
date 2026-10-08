@@ -73,7 +73,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { agentSpawnEnv } from './agent-env.mjs';
 
 const INIT_TIMEOUT_MS = 30_000;     // server boot + services init (measured 1.5–4s)
@@ -272,22 +272,58 @@ export function resolveAgentCommandEnv({ serverCjs, agentCommand, home = homedir
     return { ZCODE_AGENT_SERVER_COMMAND: explicit };
   }
   const dir = serverCjs ? dirname(serverCjs) : null;
+  const appRoot = '/Applications/ZCode.app/Contents';
+  const appGlm = join(appRoot, 'Resources', 'glm');
+  const appCjs = join(appGlm, 'zcode.cjs');
   const candidates = [
     ...(dir ? [join(dir, 'agents', 'glm', 'zcode-agent'), join(dir, 'zcode-agent')] : []),
     join(home, '.zcode', 'server', 'agents', 'glm', 'zcode-agent'),
-    '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs',
   ];
   for (const c of candidates) {
     if (!existsSync(c)) continue;
-    if (c.endsWith('.cjs')) {
-      return {
-        ZCODE_AGENT_SERVER_COMMAND: process.execPath,
-        ZCODE_AGENT_SERVER_ARGS_JSON: JSON.stringify([c, 'app-server', '--stdio']),
-      };
-    }
     return { ZCODE_AGENT_SERVER_COMMAND: c };
   }
+  // macOS desktop-only installs: run the app-bundled zcode.cjs on the app's
+  // OWN Electron runtime in ELECTRON_RUN_AS_NODE mode — exactly what the
+  // desktop does (its CLI needs Node ≥22.5 for node:sqlite; the node running
+  // agent-bridge may be older, and the CLI then dies at boot with "ZCode
+  // agent transport closed"). ELECTRON_RUN_AS_NODE is inert for the plain
+  // node server process; the CLI spawn inherits it and Electron runs as pure
+  // node (Electron 41 ≈ Node 24).
+  if (existsSync(appCjs)) {
+    const electronBin = findElectronBinary(appRoot);
+    if (electronBin) {
+      return {
+        ZCODE_AGENT_SERVER_COMMAND: electronBin,
+        ZCODE_AGENT_SERVER_ARGS_JSON: JSON.stringify([appCjs, 'app-server', '--stdio']),
+        ELECTRON_RUN_AS_NODE: '1',
+      };
+    }
+    // no Electron binary where expected — last resort, the bridge's own node
+    return {
+      ZCODE_AGENT_SERVER_COMMAND: process.execPath,
+      ZCODE_AGENT_SERVER_ARGS_JSON: JSON.stringify([appCjs, 'app-server', '--stdio']),
+    };
+  }
   return {};
+}
+
+/** The Electron binary inside an app bundle: Contents/MacOS/<app name>
+ * (case-insensitive), else the first file in Contents/MacOS. */
+function findElectronBinary(appRoot) {
+  try {
+    const macosDir = join(appRoot, 'MacOS');
+    const appName = basename(appRoot).replace(/\.app$/i, '');
+    const entries = readdirSync(macosDir).filter((name) => {
+      try { return statSync(join(macosDir, name)).isFile(); } catch (_) { return false; }
+    });
+    return entries.find((name) => name.toLowerCase() === appName.toLowerCase())
+      || entries[0]
+      ? join(macosDir, entries.find((name) => name.toLowerCase() === appName.toLowerCase()) || entries[0])
+      : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function parseDataUrl(dataUrl) {
