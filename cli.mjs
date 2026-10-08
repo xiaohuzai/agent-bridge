@@ -91,7 +91,9 @@ options:
                   by the acp front may omit it) · apiKey (empty/omitted = keyless,
                   loopback only; required for non-loopback --bind) · command
                   [...] (ACP-shim agents only — codex uses "codexBin", zcode
-                  auto-resolves) · cwd (~ expanded; default: the dir serve
+                  auto-resolves) · args [...] (ACP-spawned agents only — extra
+                  argv appended to the agent's command, e.g. dsh's --patch) ·
+                  cwd (~ expanded; default: the dir serve
                   started from) · env {} (extra vars for the spawned agent) ·
                   sandbox (read-only|workspace-write|danger-full-access) ·
                   approval (never|on-request|untrusted) · network (bool) —

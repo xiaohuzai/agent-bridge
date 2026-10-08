@@ -153,6 +153,32 @@ pi                                      # 首次运行：选 provider / 登录
 
 **已知取舍：无 token 级流式。** 官方 ACP 面按 committed 消息粒度投递更新（源码实锤：只对 `assistant/message` / `tool/call` / `tool/result` 事件反应）——工具调用实时到，但纯文本长回答会整段落下而不是逐 token 流。第三方 `dsh-acp-gateway` 有 token 流但仍锁 dsh 0.1.x——不建议压过官方 profile。
 
+### 用账号路由（免 API key）
+
+出厂自动化 profile 把 `provider` 钉在 `deepseek-official`（API key），但桌面版登录态存在共享的 `~/.dsh` 凭据存储里，CLI 走独立的 `deepseek-account` 路由就能用它——只是 profile 行默认没选它。写一个 patch 替换钉死的行，再用条目的 `args` 带上：
+
+```yaml
+# ~/browsa-bridge/account-route.yml
+- insert:
+    - id: agent-default-model
+      name: '@deepseek-ai/dsh-agent-default-model'
+      config:
+        provider: deepseek-account
+        model: deepseek-flash
+    - id: acp
+      name: '@deepseek-ai/dsh-acp'
+      config:
+        provider: deepseek-account
+        model: deepseek-flash
+```
+
+```json
+{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project",
+  "args": ["--patch", "/absolute/path/account-route.yml"] }
+```
+
+回合直接记到已登录账户的余额——哪里都不需要 `DEEPSEEK_API_KEY`。2026-10-09 macOS 实机验证（dsh 0.2.0-rc.2，桌面版已登录）：`dsh headless --patch …` 真回合完成；同一台机器不打 patch 则报 `MISSING_CREDENTIAL … deepseek-official`。注意 `args` 逐字使用——`~` 不展开，请传绝对路径。
+
 ## ACP 客户端（门）
 
 每个条目还可以额外直接服务 ACP 客户端：写上 `"acp": true`，桥就在 `ws://<host>:<port>/acp` 说 ACP v1（`initialize` → `session/new` → `session/prompt`；审批请求以 `session/request_permission` 原样送达客户端，带 agent 自己的选项）。同端口、与 v1 相同的 apiKey 与 Host 规则；客户端 `session/new` 里的 cwd 会被忽略——agent 跑在条目配置的 `cwd`。现成客户端（acp-sidepanel / chrome-acp 这类浏览器侧边栏、acpx、acp-ui……）直接接：指向 `ws://host:port/acp`，apiKey 当 bearer token 用。设计说明见 [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md)。

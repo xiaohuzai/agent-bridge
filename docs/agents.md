@@ -154,6 +154,32 @@ Live-verified 2026-10-09 (dsh 0.2.0-rc.2): the handshake answers protocolVersion
 
 **Known trade-off: no token streaming.** The official ACP surface delivers updates at committed-message granularity (source-verified: it reacts only to `assistant/message` / `tool/call` / `tool/result` events) — tool calls arrive live, but a long pure-text answer lands as one block instead of a token stream. The third-party `dsh-acp-gateway` streams tokens but still pins dsh 0.1.x — not recommended over the official profile.
 
+### Using the account route (no API key)
+
+The shipped automation profiles pin `provider: deepseek-official` (API key), but the desktop app's login lives in the shared `~/.dsh` credential store and the CLI can use it — through the separate `deepseek-account` route, which the profile rows do not select by default. Replace the pinned rows with a patch file and append it via the entry's `args`:
+
+```yaml
+# ~/browsa-bridge/account-route.yml
+- insert:
+    - id: agent-default-model
+      name: '@deepseek-ai/dsh-agent-default-model'
+      config:
+        provider: deepseek-account
+        model: deepseek-flash
+    - id: acp
+      name: '@deepseek-ai/dsh-acp'
+      config:
+        provider: deepseek-account
+        model: deepseek-flash
+```
+
+```json
+{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project",
+  "args": ["--patch", "/absolute/path/account-route.yml"] }
+```
+
+Turns then bill to the logged-in account's balance — no `DEEPSEEK_API_KEY` anywhere. Live-verified 2026-10-09 on macOS (dsh 0.2.0-rc.2, account signed in on the desktop app): `dsh headless --patch …` completes a real turn; without the patch the same machine fails with `MISSING_CREDENTIAL … deepseek-official`. Note `args` values are used verbatim — `~` is not expanded, pass an absolute path.
+
 ## ACP clients (the front)
 
 Every entry can additionally serve ACP clients directly: add `"acp": true` and the bridge exposes `ws://<host>:<port>/acp` speaking ACP v1 (`initialize` → `session/new` → `session/prompt`; permission requests arrive as `session/request_permission` with the agent's own options). Same port, same apiKey and Host rules as v1; the client's `session/new` cwd is ignored — the agent runs in the entry's `cwd`. Ready-made clients (browser sidepanels à la acp-sidepanel / chrome-acp, acpx, acp-ui, …) connect as-is: point them at `ws://host:port/acp` with the entry's apiKey as the bearer token. Design notes: [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md).

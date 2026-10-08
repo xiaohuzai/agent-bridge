@@ -134,6 +134,13 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
         errors.push(`${at}: "${name}" runs on the native adapter — the server bundle is auto-resolved (or use "serverCjs"), not "command"`);
       }
     }
+    if (b.args !== undefined) {
+      if (!Array.isArray(b.args) || !b.args.length || b.args.some((c) => typeof c !== 'string' || !c.trim())) {
+        errors.push(`${at}: "args" must be a non-empty array of strings (appended to the agent's spawn command)`);
+      } else if (spec && spec.kind !== 'acp') {
+        errors.push(`${at}: "${name}" runs on the native adapter — "args" only applies to ACP-spawned agents (use the kind's own override fields)`);
+      }
+    }
     if (b.cwd !== undefined && (typeof b.cwd !== 'string' || !b.cwd.trim())) errors.push(`${at}: "cwd" must be a non-empty string`);
     if (b.env !== undefined && (typeof b.env !== 'object' || b.env === null || Array.isArray(b.env) || Object.entries(b.env).some(([, v]) => typeof v !== 'string'))) {
       errors.push(`${at}: "env" must be an object of strings (extra environment variables for the spawned agent)`);
@@ -212,6 +219,7 @@ export function adapterFor(b, { log = () => {} } = {}) {
     agent: b.name,
     adapter: new AcpStdioAdapter({
       command: b.command || spec.command,
+      args: Array.isArray(b.args) ? b.args : undefined,
       cwd: b.cwd || process.cwd(),
       env: { ...spec.env, ...b.env }, // entry env overrides the registry default
       transcriptFix: b.transcriptFix || spec.transcriptFix,
