@@ -71,8 +71,8 @@
 
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { agentSpawnEnv } from './agent-env.mjs';
 
@@ -287,17 +287,19 @@ export function resolveAgentCommandEnv({ serverCjs, agentCommand, home = homedir
   // OWN Electron runtime in ELECTRON_RUN_AS_NODE mode — exactly what the
   // desktop does (its CLI needs Node ≥22.5 for node:sqlite; the node running
   // agent-bridge may be older, and the CLI then dies at boot with "ZCode
-  // agent transport closed"). ELECTRON_RUN_AS_NODE is inert for the plain
-  // node server process; the CLI spawn inherits it and Electron runs as pure
-  // node (Electron 41 ≈ Node 24).
+  // agent transport closed").
+  //
+  // The flag CANNOT ride the inherited env: the official server sanitizes
+  // ELECTRON_RUN_AS_NODE out of the CLI spawn env (runtimeEnv.ts
+  // SANITIZED_RUNTIME_ENV_KEYS — it must never leak into user Bash-tool
+  // environments), which launches the Electron binary as a GUI app whose
+  // Chromium stdout lines (`[pid:tid:…`) break the JSONL transport
+  // ("protocol_parse_error … position 5", observed live 2026-10-08). The
+  // flag goes INSIDE a wrapper script the sanitizer can't touch.
   if (existsSync(appCjs)) {
     const electronBin = findElectronBinary(appRoot);
     if (electronBin) {
-      return {
-        ZCODE_AGENT_SERVER_COMMAND: electronBin,
-        ZCODE_AGENT_SERVER_ARGS_JSON: JSON.stringify([appCjs, 'app-server', '--stdio']),
-        ELECTRON_RUN_AS_NODE: '1',
-      };
+      return { ZCODE_AGENT_SERVER_COMMAND: writeAgentWrapperScript(electronBin, appCjs) };
     }
     // no Electron binary where expected — last resort, the bridge's own node
     return {
@@ -306,6 +308,19 @@ export function resolveAgentCommandEnv({ serverCjs, agentCommand, home = homedir
     };
   }
   return {};
+}
+
+/** Write (once per adapter process) the sh wrapper that pins the app's
+ * Electron runtime to pure-node mode around the zcode CLI. */
+function writeAgentWrapperScript(electronBin, appCjs) {
+  const wrapper = join(tmpdir(), `agent-bridge-zcode-agent-${process.pid}.sh`);
+  writeFileSync(
+    wrapper,
+    '#!/bin/sh\n'
+    + `ELECTRON_RUN_AS_NODE=1 exec "${electronBin}" "${appCjs}" "$@"\n`,
+    { mode: 0o755 },
+  );
+  return wrapper;
 }
 
 /** The Electron binary inside an app bundle: Contents/MacOS/<app name>
