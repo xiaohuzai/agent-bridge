@@ -17,8 +17,9 @@ Verification status at a glance (honesty first — tell us what works or breaks,
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08 — real turns (streaming, full answer text), session continuity, usage, approval flow; disconnect-interrupt and bridge-restart resume are test-covered but not yet exercised live |
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11 — real turns (streaming, tool calls) through svkozak/pi-acp 0.0.33 + pi 0.85.1, driven by a mock OpenAI provider; bridge-restart resume (automatic `session/load` fallback) exercised live |
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01 — real turns (streaming, shell tool + approval request, cancel) through native `gemini --acp` 0.62.0, driven by a mock Google GenAI backend; bridge-restart resume (`session/load` fallback) exercised live; usage rides on `_meta.quota.token_count` (mapped) |
+| zcode | `{ "name": "zcode", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ✅ 2026-10-08 — real turns (streaming, thinking folds, images through the v4 attachment face, cancel/stop, title rename) against the official server 3.14.4 via the native stdio adapter; approvals fixture-verified (default yolo never asks live) |
 | opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
-| gemini / opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
+| opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
 
 ---
 
@@ -160,3 +161,22 @@ Spawn-style clients that launch agents as local commands (Zed, vscode-acp, …) 
 - No approval events in codex mode — the entry lacks `"approval": "on-request"`.
 - An old conversation errors after you swapped the agent behind the bridge — session ids are agent-private (a codex thread id is not a claude session id); clear the chat history and start fresh.
 - Everything else works but one agent behaves oddly — check the table above: agents marked "schema-level only" haven't been live-verified; their surprises are exactly what we want to hear about.
+
+## zcode
+
+Native adapter (`adapters/zcode-server.mjs`, `kind: 'zcode'`) against the server runtime the **ZCode desktop app** installs — there is no separately installable CLI (the command-line release has no public download channel; the desktop CLI itself has no `--web`). The adapter auto-resolves the newest content-addressed server bundle (macOS: newest under `~/Library/Application Support/ZCode/remote-assets-cache/components/server-bundle/*/zcode-server.cjs`; Linux desktop layout: `~/.zcode/server/zcode-server.cjs`) and runs it with the desktop's bundled node when present, else the node running agent-bridge. Config overrides: `"serverCjs"` / `"nodeBin"` on the entry; `"cwd"` is the zcode **workspace** every session lives in.
+
+Config entry:
+
+```json
+{ "name": "zcode", "port": 3952, "apiKey": "", "cwd": "/path/to/your/project" }
+```
+
+Model and login state live in the user's ZCode app — the adapter never touches credentials; sessions are the app's own (`sess_…` ids, visible and resumable in the desktop/TUI UI; browsa names them `browsa：<first line>` via the title channel). Live-verified 2026-10-08 against the official server 3.14.4 (Linux, real GLM-5.3 turns through the bridge): full binary-RPC protocol hand-rolled (VS Code-style 13-byte frames + VQL value tags, details in the adapter header); createSession/sendText/stop/renameSession as v4 commands; streamed deltas with reasoning folded into `<thinking>` blocks; tool calls as `tool` events; permission requests surface as `approval` (pendingInteractions → `resolveInteraction`); usage is a per-turn delta over the session-cumulative counter; **images** ride the v4 attachment face (begin/chunk/commit, sha256-verified, ≤20MiB) — the agent consumes them with its own tools (`Read` + GLM `analyze_image`), exactly like desktop-attached images.
+
+ZCode-specific facts worth keeping (all verified live — do not "simplify"):
+
+- A v4 DRAFT session (createSession without firstInput) is **not active and not persisted** — the attachment face AND the conversation subscribe reject it (`fault.subscribe.sessionNotFound`). An empty `persistence:'immediate'` legacy session never leaves that state either. Image turns therefore upload refs against a session that already has journal rows: this bridge's last session, else the workspace's most recent via legacy `listSessions`; with neither (fresh workspace, first-ever message carries images) the images degrade to an explicit note in the text.
+- The official build's legacy `createSession` takes `workspacePath` FLAT at the top level; the OSS schema's `workspace{path,key}` ref 400s. The official `resumeSession` conversely wants the OSS nested `workspace` ref. Divergence is real — trust the live probes, not the OSS schemas.
+- AskUserQuestion-style prompts are auto-resolved (the handshake declares `askUserQuestionAutoResolutionEnabled`), so they never block a turn; only `kind:'permission'` interactions surface as approvals. Approval cards are fixture-verified but not yet triggered in a live turn (default yolo mode never asks).
+- One server child per bridge, kept warm; first turn pays the CLI agent cold start (~5-15s).

@@ -56,6 +56,7 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in (the official `claude-agent-acp` shim ships bundled) | ✅ live-verified |
 | **pi** | pi itself via its own installer (≥0.98, or `npm i -g @earendil-works/pi-coding-agent`) → run `pi` once to pick a provider (the `pi-acp` shim ships bundled; pi itself can't come from npm — its installer collides with the npm package) | ✅ live-verified |
 | **gemini** | `npm i -g @google/gemini-cli` → run `gemini` once to log in (or env auth: `GEMINI_API_KEY`, or a custom gateway via `GOOGLE_GEMINI_BASE_URL`) | ✅ live-verified |
+| **zcode** | ZCode desktop app installed and opened once (its server runtime is cached under `~/Library/Application Support/ZCode/` on macOS or `~/.zcode/server/` on Linux — the adapter reuses it; model/login come from the ZCode app, no separate CLI exists) | ✅ live-verified |
 | any ACP agent (opencode, kimi, qwen, …) | that agent's own CLI + login | ❓ schema-level |
 
 The ACP **shims** (`claude-agent-acp`, `pi-acp`) ship as bundled optional dependencies — stateless glue, nothing to install for them; if you maintain your own shim install it wins, so the shim stays paired with the CLI version you actually run (the bundled copy is the zero-config fallback). The agent **CLIs** themselves stay YOUR installs, on purpose: they are versioned independently and stateful, and a pinned copy inside agent-bridge would fork the very CLI state (`~/.codex`, `~/.claude`) your terminal writes — the bridge spawns the same CLI you already use and log into. pi's runtime additionally cannot come from npm at all (installer collision, above). A bridge whose agent is missing still starts and answers `/health`; it fails on its first turn, with an install hint.
@@ -96,7 +97,7 @@ The starter runs as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 
 
 | Field | Meaning |
 |---|---|
-| `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`, `gemini`) |
+| `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`, `gemini`, `zcode`) |
 | `port` | required for serve, unique per bridge (may be omitted for entries used only via `acp`) |
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |

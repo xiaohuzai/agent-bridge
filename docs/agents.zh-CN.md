@@ -17,6 +17,7 @@ node cli.mjs serve            # 读 ./agents.json（或：serve --config FILE）
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08——真回合（流式完整）、会话连续、usage、审批流程；断连中断与桥重启续会话有测试覆盖，实机未跑 |
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11——经 svkozak/pi-acp 0.0.33 + pi 0.85.1 真回合（流式、工具调用），由 mock OpenAI provider 驱动；桥重启续会话（自动 `session/load` 回退）实机已跑 |
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01——原生 `gemini --acp` 0.62.0 真回合（流式、shell 工具+审批请求、cancel），由 mock Google GenAI 后端驱动；桥重启续会话（`session/load` 回退）实机已跑；usage 走响应的 `_meta.quota.token_count`（已映射） |
+| zcode | `{ "name": "zcode", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ✅ 2026-10-08——真实回合（流式、thinking 折叠、v4 附件面传图、中止、命名）走原生 stdio 适配器对接官方 server 3.14.4；审批卡为 fixture 级验证（默认 yolo 实机不问） |
 | opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
 
 ---
@@ -158,3 +159,22 @@ pi                                      # 首次运行：选 provider / 登录
 - codex 收不到审批事件 —— 条目里没写 `"approval": "on-request"`。
 - 换了桥后面的 agent 之后旧对话报错 —— sessionId 是 agent 私有的（codex 线程 id ≠ claude 会话 id），清掉对话历史重新开始即可。
 - 别的都正常但某个 agent 行为诡异 —— 先看是不是上表里"仅 schema 级"的：没实机验证过的 agent，坑就是我们下一步要填的，欢迎把现象带回来。
+
+## zcode
+
+原生适配器（`adapters/zcode-server.mjs`，`kind: 'zcode'`），对接 **ZCode 桌面应用**安装的 server 运行时——没有可单独安装的 CLI（命令行发行版无公开下载渠道；桌面版 CLI 也没有 `--web`）。适配器自动解析最新的内容寻址 server bundle（macOS：`~/Library/Application Support/ZCode/remote-assets-cache/components/server-bundle/*/zcode-server.cjs` 取最新；Linux 桌面布局：`~/.zcode/server/zcode-server.cjs`），优先用桌面自带的 node 运行，缺省回落到跑 agent-bridge 的 node。条目可用 `"serverCjs"` / `"nodeBin"` 覆盖；`"cwd"` 即 zcode 的 **workspace**（所有会话都活在里面）。
+
+配置条目：
+
+```json
+{ "name": "zcode", "port": 3952, "apiKey": "", "cwd": "/path/to/your/project" }
+```
+
+模型与登录态都在用户自己的 ZCode 应用里——适配器不碰凭据；会话就是应用自己的（`sess_…` id，桌面/TUI 里可见可续；browsa 会通过命名通道把它们起名为 `browsa：<首行>`）。2026-10-08 已实机验证（官方 server 3.14.4，Linux，真实 GLM-5.3 回合走桥）：二进制 RPC 协议全部手写（VS Code 同款 13 字节帧 + VQL 值编码，细节见适配器文件头）；createSession/sendText/stop/renameSession 走 v4 命令；流式增量中 reasoning 折成 `<thinking>` 块；工具调用出 `tool` 事件；权限请求以 `approval` 呈现（pendingInteractions → `resolveInteraction`）；用量是会话累计值的回合差；**图片**走 v4 附件面（begin/chunk/commit，sha256 校验，≤20MiB）——agent 用自己的工具消费（`Read` + GLM `analyze_image`），与桌面版附图行为一致。
+
+ZCode 专属事实（都已实测，勿"简化"）：
+
+- v4 草稿会话（createSession 不带 firstInput）**既不 active 也不 persisted**——附件面和会话订阅都会拒（`fault.subscribe.sessionNotFound`）；空的 `persistence:'immediate'` legacy 会话也出不了这个状态。所以带图回合的 refs 传给一个已有日志行的会话：本桥上一会话，否则 workspace 里最近的（legacy `listSessions`）；两者都没有（全新工作区 + 首条消息就带图）时图片降级为正文里的一条说明。
+- 官方版的 legacy `createSession` 要顶层平铺的 `workspacePath`；OSS schema 的 `workspace{path,key}` ref 会被 400。官方 `resumeSession` 反而要 OSS 的嵌套 `workspace` ref。分歧是真实存在的——信实测，别信 OSS schema。
+- AskUserQuestion 类提问被自动消解（握手声明 `askUserQuestionAutoResolutionEnabled`），不会阻塞回合；只有 `kind:'permission'` 交互会出审批卡。审批卡是 fixture 级验证，尚未在真实回合中触发过（默认 yolo 不问）。
+- 一桥一 server 子进程常驻；首回合付 CLI 冷启动（约 5-15 秒）。

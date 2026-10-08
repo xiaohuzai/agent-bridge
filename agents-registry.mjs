@@ -33,6 +33,15 @@ export const KNOWN_AGENTS = {
   // too, pi-acp's own error names it.
   pi: { kind: 'acp', command: ['pi-acp'], install: 'npm i -g pi-acp', summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
   gemini: { kind: 'acp', command: ['gemini', '--acp'], install: 'npm i -g @google/gemini-cli', summary: 'gemini CLI native ACP mode (needs gemini >= 0.62 on PATH, signed in or env-auth)' },
+  // zcode runs on its NATIVE adapter (adapters/zcode-server.mjs) against the
+  // runtime the ZCode desktop app installs — no separate CLI install exists
+  // (the CLI release has no public download channel). The adapter
+  // auto-resolves the newest server bundle from the desktop's content-
+  // addressed cache; "serverCjs"/"nodeBin" on the entry override. Model and
+  // login state live in the user's ZCode app — the adapter never touches
+  // credentials; the conversation sessions are the app's own (visible/resumable
+  // there, named "browsa：<first line>" when browsa titles them).
+  zcode: { kind: 'zcode', install: 'ZCode desktop app (open it once so its runtime is cached)', summary: 'ZCode via its local stdio server (native adapter; model/login from the ZCode app)' },
 };
 
 export function knownAgentNames() {
