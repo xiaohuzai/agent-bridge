@@ -85,6 +85,12 @@ test('adapterFor: entry env overrides the registry default (which presets none)'
   for (const name of ['claude', 'pi', 'gemini']) {
     assert.match(String(adapterFor({ name, cwd: '/tmp' }).adapter.opts.installHint), /^npm i -g /, `${name} must have an install hint`);
   }
+  // dsh spawns its own official ACP profile; the desktop-managed command is the
+  // preferred install (version-locked to the desktop app), so its hint does not
+  // start with "npm i -g" — it only has to name the path.
+  const dsh = adapterFor({ name: 'dsh', cwd: '/tmp' });
+  assert.deepEqual(dsh.adapter.opts.command, ['dsh', '--profile', 'acp']);
+  assert.match(String(dsh.adapter.opts.installHint), /Manage dsh Command/);
 });
 
 test('loadConfig: invalid JSON says so; valid file expands ~ and defaults nothing', () => {

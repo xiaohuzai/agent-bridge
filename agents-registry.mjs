@@ -33,6 +33,16 @@ export const KNOWN_AGENTS = {
   // too, pi-acp's own error names it.
   pi: { kind: 'acp', command: ['pi-acp'], install: 'npm i -g pi-acp', summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
   gemini: { kind: 'acp', command: ['gemini', '--acp'], install: 'npm i -g @google/gemini-cli', summary: 'gemini CLI native ACP mode (needs gemini >= 0.62 on PATH, signed in or env-auth)' },
+  // dsh (DeepSeek Harness) speaks ACP natively — `dsh --profile acp` IS the
+  // stdio agent (@deepseek-ai/dsh-acp, automation-only). No shim, and the
+  // desktop app's "Manage dsh Command…" installs a `dsh` whose version always
+  // matches the desktop release (a shared ~/.dsh means turns started here show
+  // up in the desktop UI). Updates arrive at committed-message granularity (no
+  // token streaming — tool calls ARE live) and thoughts ride
+  // agent_thought_chunk; approvals are one-shot allow/reject via
+  // session/request_permission. Verified live 2026-10-09 against dsh
+  // 0.2.0-rc.2 (handshake protocolVersion 1, session/resume first branch).
+  dsh: { kind: 'acp', command: ['dsh', '--profile', 'acp'], install: 'desktop app menu: Manage dsh Command… → Install (or: npm i -g @deepseek-ai/dsh)', summary: 'DeepSeek Harness via its official ACP automation profile (shares sessions with the dsh desktop app)' },
   // zcode runs on its NATIVE adapter (adapters/zcode-server.mjs) against the
   // runtime the ZCode desktop app installs — no separate CLI install exists
   // (the CLI release has no public download channel). The adapter

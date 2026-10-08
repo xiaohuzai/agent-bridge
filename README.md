@@ -56,6 +56,7 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in (the official `claude-agent-acp` shim ships bundled) | ✅ live-verified |
 | **pi** | pi itself via its own installer (≥0.98, or `npm i -g @earendil-works/pi-coding-agent`) → run `pi` once to pick a provider (the `pi-acp` shim ships bundled; pi itself can't come from npm — its installer collides with the npm package) | ✅ live-verified |
 | **gemini** | `npm i -g @google/gemini-cli` → run `gemini` once to log in (or env auth: `GEMINI_API_KEY`, or a custom gateway via `GOOGLE_GEMINI_BASE_URL`) | ✅ live-verified |
+| **dsh** (DeepSeek Harness) | dsh desktop app menu **Manage dsh Command… → Install** (version-locked to the desktop app), or `npm i -g @deepseek-ai/dsh`; provider key configured in the app/web UI (or `DEEPSEEK_API_KEY`) | ⚠️ wire chain live-verified (real turn needs a credentialed machine) |
 | **workbuddy** | WorkBuddy AI desktop app installed, logged in, and **running** (the adapter is a pure client of its local CodeBuddy worker gateway — port auto-discovered, `workbuddyPort` overrides) | ✅ live-verified |
 | any ACP agent (opencode, kimi, qwen, …) | that agent's own CLI + login | ❓ schema-level |
 
@@ -107,7 +108,7 @@ The starter runs as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 
 
 | Field | Meaning |
 |---|---|
-| `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`, `gemini`, `workbuddy`) |
+| `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`, `gemini`, `dsh`, `workbuddy`, `zcode`) |
 | `port` | required for serve, unique per bridge (may be omitted for entries used only via `acp`) |
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
@@ -315,7 +316,7 @@ The authoritative contract — edge rules like first-turn session assignment and
 
 - **Multi-agent by design.** One daemon, one config file, N agents — each on its own port with its own key. The first wave of "a web UI for one CLI" projects is gone (archived, sunset); what survived is multi-agent.
 - **Approvals are first-class.** Permission requests stream to the client with the agent's own options, and the client decides once / always / deny. The best-known multi-agent HTTP bridge answers "always allow" server-side on the client's behalf — we think that's a bug, not a feature.
-- **Live-verified adapters.** codex runs on its native app-server protocol; workbuddy on a native client of its desktop app's ACP-over-HTTP gateway; claude/pi/gemini through ACP against the official shims. Every protocol fact was captured from real agents, not from docs.
+- **Live-verified adapters.** codex runs on its native app-server protocol; workbuddy on a native client of its desktop app's ACP-over-HTTP gateway; claude/pi/gemini through ACP against the official shims; dsh through its own official ACP automation profile. Every protocol fact was captured from real agents, not from docs.
 - **Zero runtime dependencies.** One clone, one command. No installer, no container, no database — only the two stateless ACP shims ship as bundled optional dependencies; the agent CLIs stay yours.
 - **ACP on both ends.** The bridge speaks ACP toward agents (stdio adapters) and toward clients (WebSocket / stdio fronts) — which is also what qualifies it for the ACP Registry (submission record: [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md); editors spawn it directly via `npx @xiaohuzai/agent-bridge acp claude`).
 
