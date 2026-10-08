@@ -299,7 +299,16 @@ export function resolveAgentCommandEnv({ serverCjs, agentCommand, home = homedir
   if (existsSync(appCjs)) {
     const electronBin = findElectronBinary(appRoot);
     if (electronBin) {
-      return { ZCODE_AGENT_SERVER_COMMAND: writeAgentWrapperScript(electronBin, appCjs) };
+      return {
+        ZCODE_AGENT_SERVER_COMMAND: writeAgentWrapperScript(electronBin, appCjs),
+        // The app-bundle CLI can't find its built-in provider catalog on its
+        // own (it looks beside itself at glm/provider/, but the desktop ships
+        // the catalog under Resources/config/provider/ — packaging delta).
+        // Point it at the app's copy, else the newest materialized one.
+        ...(builtinProviderConfig(home)
+          ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: builtinProviderConfig(home) }
+          : {}),
+      };
     }
     // no Electron binary where expected — last resort, the bridge's own node
     return {
@@ -308,6 +317,47 @@ export function resolveAgentCommandEnv({ serverCjs, agentCommand, home = homedir
     };
   }
   return {};
+}
+
+/** The app's built-in provider catalog: the macOS app bundle's own copy, else
+ * the newest server-materialized one under the known data roots. */
+function builtinProviderConfig(home = homedir()) {
+  const candidates = [
+    '/Applications/ZCode.app/Contents/Resources/config/provider/zcode-builtin.json',
+    ...providerConfigGlobs(home),
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return null;
+}
+
+function providerConfigGlobs(home = homedir()) {
+  const roots = [
+    join(home, '.zcode'),
+    join(home, 'Library', 'Application Support', 'ZCode'),
+  ];
+  const found = [];
+  for (const root of roots) {
+    const providerRoot = join(root, 'v2', 'runtime', 'provider');
+    let versions = [];
+    try { versions = readdirSync(providerRoot); } catch (_) { continue; }
+    for (const v of versions) {
+      let endpoints = [];
+      try { endpoints = readdirSync(join(providerRoot, v)); } catch (_) { continue; }
+      for (const ep of endpoints) {
+        const p = join(providerRoot, v, ep, 'zcode-builtin.json');
+        try {
+          if (statSync(p).isFile()) found.push(p);
+        } catch (_) {}
+      }
+    }
+  }
+  // newest first (version dirs advance; mtime is the honest order)
+  return found
+    .map((p) => ({ p, m: (() => { try { return statSync(p).mtimeMs; } catch (_) { return 0; } })() }))
+    .sort((a, b) => b.m - a.m)
+    .map((x) => x.p);
 }
 
 /** Write (once per adapter process) the sh wrapper that pins the app's
