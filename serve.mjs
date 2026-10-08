@@ -42,6 +42,7 @@ import { fileURLToPath } from 'node:url';
 import { createBridgeServer } from './server.mjs';
 import { attachAcpFront } from './acp-front-ws.mjs';
 import { CodexAppServerAdapter } from './adapters/codex-app-server.mjs';
+import { ZcodeServerAdapter } from './adapters/zcode-server.mjs';
 import { AcpStdioAdapter } from './adapters/acp-stdio.mjs';
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 
@@ -128,6 +129,8 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
         errors.push(`${at}: "command" must be a non-empty array of strings`);
       } else if (spec?.kind === 'codex') {
         errors.push(`${at}: "${name}" runs on the native adapter — use "codexBin" to point at the binary, not "command"`);
+      } else if (spec?.kind === 'zcode') {
+        errors.push(`${at}: "${name}" runs on the native adapter — the server bundle is auto-resolved (or use "serverCjs"), not "command"`);
       }
     }
     if (b.cwd !== undefined && (typeof b.cwd !== 'string' || !b.cwd.trim())) errors.push(`${at}: "cwd" must be a non-empty string`);
@@ -136,6 +139,8 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
     }
     if (b.codexBin !== undefined && (typeof b.codexBin !== 'string' || !b.codexBin.trim())) errors.push(`${at}: "codexBin" must be a non-empty string`);
     if (b.codexHome !== undefined && (typeof b.codexHome !== 'string' || !b.codexHome.trim())) errors.push(`${at}: "codexHome" must be a non-empty string`);
+    if (b.serverCjs !== undefined && (typeof b.serverCjs !== 'string' || !b.serverCjs.trim())) errors.push(`${at}: "serverCjs" must be a non-empty string (path to the ZCode desktop's zcode-server.cjs)`);
+    if (b.nodeBin !== undefined && (typeof b.nodeBin !== 'string' || !b.nodeBin.trim())) errors.push(`${at}: "nodeBin" must be a non-empty string (node binary to run the zcode server bundle)`);
     if (b.network !== undefined && typeof b.network !== 'boolean') errors.push(`${at}: "network" must be a boolean (workspace-write network access)`);
     if (b.sandbox !== undefined && !SANDBOXES.includes(b.sandbox)) errors.push(`${at}: "sandbox" must be one of ${SANDBOXES.join(' | ')}`);
     if (b.approval !== undefined && !APPROVALS.includes(b.approval)) errors.push(`${at}: "approval" must be one of ${APPROVALS.join(' | ')}`);
@@ -173,6 +178,17 @@ export function adapterFor(b, { log = () => {} } = {}) {
         sandbox: b.sandbox || 'read-only',
         network: !!b.network,
         approval: b.approval || 'never',
+        log: wrappedLog,
+      }),
+    };
+  }
+  if (spec.kind === 'zcode') {
+    return {
+      agent: b.name,
+      adapter: new ZcodeServerAdapter({
+        serverCjs: b.serverCjs,
+        nodeBin: b.nodeBin,
+        cwd: b.cwd || process.cwd(),
         log: wrappedLog,
       }),
     };

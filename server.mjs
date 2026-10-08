@@ -148,7 +148,10 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
           return;
         }
         try {
-          adapter.respondApproval(requestId, choice);
+          // awaited so ASYNC relays (zcode's resolveInteraction is an rpc
+          // round-trip) surface failures as 409 instead of unhandled
+          // rejections behind a lying 200; sync adapters are unaffected.
+          await adapter.respondApproval(requestId, choice);
           res.writeHead(200, { 'Content-Type': 'application/json', ...cors });
           res.end(JSON.stringify({ ok: true }));
         } catch (e) {

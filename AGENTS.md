@@ -25,6 +25,7 @@ npm releases: GitHub Actions → **Publish npm** (manual `workflow_dispatch`, ta
 ```
 fronts (what clients speak)              core            adapters (what agents speak)
 ├── server.mjs  — wire protocol v1  ──►  sessions/  ◄── adapters/codex-app-server.mjs
+│   (native adapters: codex, zcode)
 │   HTTP+SSE: /health /sessions          turns/          (codex app-server JSON-RPC)
 │   /turns /approvals/:id                approvals       adapters/acp-stdio.mjs
 ├── acp-front-ws.mjs — ACP v1 over                       (ANY ACP v2 agent command)
