@@ -178,3 +178,5 @@ ZCode 专属事实（都已实测，勿"简化"）：
 - 官方版的 legacy `createSession` 要顶层平铺的 `workspacePath`；OSS schema 的 `workspace{path,key}` ref 会被 400。官方 `resumeSession` 反而要 OSS 的嵌套 `workspace` ref。分歧是真实存在的——信实测，别信 OSS schema。
 - AskUserQuestion 类提问被自动消解（握手声明 `askUserQuestionAutoResolutionEnabled`），不会阻塞回合；只有 `kind:'permission'` 交互会出审批卡。审批卡是 fixture 级验证，尚未在真实回合中触发过（默认 yolo 不问）。
 - 一桥一 server 子进程常驻；首回合付 CLI 冷启动（约 5-15 秒）。
+`agentCommand` (optional) points the server at a specific zcode agent CLI when auto-resolution comes up empty — a bare command name (PATH) or a path; paths ending in `.cjs` are run with the bridge's node. On desktop-only Mac installs this is normally unnecessary: the adapter hands the server the app bundle's `zcode.cjs` (`/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`) or the deployed wrapper next to the server bundle automatically, because the official server's own resolution chain refuses every turn with "ZCode agent server command is not configured" there (observed live via browsa 2026-10-08).
+

@@ -141,6 +141,8 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
     if (b.codexHome !== undefined && (typeof b.codexHome !== 'string' || !b.codexHome.trim())) errors.push(`${at}: "codexHome" must be a non-empty string`);
     if (b.serverCjs !== undefined && (typeof b.serverCjs !== 'string' || !b.serverCjs.trim())) errors.push(`${at}: "serverCjs" must be a non-empty string (path to the ZCode desktop's zcode-server.cjs)`);
     if (b.nodeBin !== undefined && (typeof b.nodeBin !== 'string' || !b.nodeBin.trim())) errors.push(`${at}: "nodeBin" must be a non-empty string (node binary to run the zcode server bundle)`);
+    if (b.agentCommand !== undefined && (typeof b.agentCommand !== 'string' || !b.agentCommand.trim())) errors.push(`${at}: "agentCommand" must be a non-empty string (zcode agent CLI the server spawns — auto-resolved from the desktop install when omitted)`);
+    if (b.serverCjs !== undefined && typeof b.serverCjs === 'string' && b.serverCjs.trim() && !existsSync(expandHome(b.serverCjs.trim()))) errors.push(`${at}: "serverCjs" does not exist: ${b.serverCjs}`);
     if (b.network !== undefined && typeof b.network !== 'boolean') errors.push(`${at}: "network" must be a boolean (workspace-write network access)`);
     if (b.sandbox !== undefined && !SANDBOXES.includes(b.sandbox)) errors.push(`${at}: "sandbox" must be one of ${SANDBOXES.join(' | ')}`);
     if (b.approval !== undefined && !APPROVALS.includes(b.approval)) errors.push(`${at}: "approval" must be one of ${APPROVALS.join(' | ')}`);
@@ -186,8 +188,9 @@ export function adapterFor(b, { log = () => {} } = {}) {
     return {
       agent: b.name,
       adapter: new ZcodeServerAdapter({
-        serverCjs: b.serverCjs,
-        nodeBin: b.nodeBin,
+        serverCjs: b.serverCjs ? resolve(expandHome(b.serverCjs)) : undefined,
+        nodeBin: b.nodeBin ? resolve(expandHome(b.nodeBin)) : undefined,
+        agentCommand: b.agentCommand ? (/[/\\]|\.cjs$/i.test(b.agentCommand) ? resolve(expandHome(b.agentCommand)) : b.agentCommand) : undefined,
         cwd: b.cwd || process.cwd(),
         log: wrappedLog,
       }),
