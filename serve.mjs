@@ -43,6 +43,7 @@ import { createBridgeServer } from './server.mjs';
 import { attachAcpFront } from './acp-front-ws.mjs';
 import { CodexAppServerAdapter } from './adapters/codex-app-server.mjs';
 import { ZcodeServerAdapter } from './adapters/zcode-server.mjs';
+import { WorkbuddyAdapter } from './adapters/workbuddy.mjs';
 import { AcpStdioAdapter } from './adapters/acp-stdio.mjs';
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 
@@ -142,6 +143,7 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
     if (b.serverCjs !== undefined && (typeof b.serverCjs !== 'string' || !b.serverCjs.trim())) errors.push(`${at}: "serverCjs" must be a non-empty string (path to the ZCode desktop's zcode-server.cjs)`);
     if (b.nodeBin !== undefined && (typeof b.nodeBin !== 'string' || !b.nodeBin.trim())) errors.push(`${at}: "nodeBin" must be a non-empty string (node binary to run the zcode server bundle)`);
     if (b.agentCommand !== undefined && (typeof b.agentCommand !== 'string' || !b.agentCommand.trim())) errors.push(`${at}: "agentCommand" must be a non-empty string (zcode agent CLI the server spawns — auto-resolved from the desktop install when omitted)`);
+    if (b.workbuddyPort !== undefined && (!Number.isInteger(b.workbuddyPort) || b.workbuddyPort < 1 || b.workbuddyPort > 65535)) errors.push(`${at}: "workbuddyPort" must be an integer 1–65535 (the running CodeBuddy worker's port; omitted = auto-discovered)`);
     if (b.serverCjs !== undefined && typeof b.serverCjs === 'string' && b.serverCjs.trim() && !existsSync(expandHome(b.serverCjs.trim()))) errors.push(`${at}: "serverCjs" does not exist: ${b.serverCjs}`);
     if (b.network !== undefined && typeof b.network !== 'boolean') errors.push(`${at}: "network" must be a boolean (workspace-write network access)`);
     if (b.sandbox !== undefined && !SANDBOXES.includes(b.sandbox)) errors.push(`${at}: "sandbox" must be one of ${SANDBOXES.join(' | ')}`);
@@ -191,6 +193,16 @@ export function adapterFor(b, { log = () => {} } = {}) {
         serverCjs: b.serverCjs ? resolve(expandHome(b.serverCjs)) : undefined,
         nodeBin: b.nodeBin ? resolve(expandHome(b.nodeBin)) : undefined,
         agentCommand: b.agentCommand ? (/[/\\]|\.cjs$/i.test(b.agentCommand) ? resolve(expandHome(b.agentCommand)) : b.agentCommand) : undefined,
+        cwd: b.cwd || process.cwd(),
+        log: wrappedLog,
+      }),
+    };
+  }
+  if (spec.kind === 'workbuddy') {
+    return {
+      agent: b.name,
+      adapter: new WorkbuddyAdapter({
+        workbuddyPort: b.workbuddyPort,
         cwd: b.cwd || process.cwd(),
         log: wrappedLog,
       }),

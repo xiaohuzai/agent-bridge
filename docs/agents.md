@@ -18,6 +18,7 @@ Verification status at a glance (honesty first — tell us what works or breaks,
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11 — real turns (streaming, tool calls) through svkozak/pi-acp 0.0.33 + pi 0.85.1, driven by a mock OpenAI provider; bridge-restart resume (automatic `session/load` fallback) exercised live |
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01 — real turns (streaming, shell tool + approval request, cancel) through native `gemini --acp` 0.62.0, driven by a mock Google GenAI backend; bridge-restart resume (`session/load` fallback) exercised live; usage rides on `_meta.quota.token_count` (mapped) |
 | zcode | `{ "name": "zcode", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ✅ 2026-10-08 — real turns (streaming, thinking folds, images through the v4 attachment face, cancel/stop, title rename) against the official server 3.14.4 via the native stdio adapter; approvals fixture-verified (default yolo never asks live) |
+| workbuddy | `{ "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/your/project" }` | ✅ 2026-10-08 — real turns (streaming, thinking folds, images as ACP content blocks, approval round trip, cancel) against the running WorkBuddy AI desktop 5.4.3 via the native loopback adapter |
 | opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
 | opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
 
@@ -161,6 +162,19 @@ Spawn-style clients that launch agents as local commands (Zed, vscode-acp, …) 
 - No approval events in codex mode — the entry lacks `"approval": "on-request"`.
 - An old conversation errors after you swapped the agent behind the bridge — session ids are agent-private (a codex thread id is not a claude session id); clear the chat history and start fresh.
 - Everything else works but one agent behaves oddly — check the table above: agents marked "schema-level only" haven't been live-verified; their surprises are exactly what we want to hear about.
+
+
+## workbuddy
+
+Native adapter (`adapters/workbuddy.mjs`, `kind: 'workbuddy'`) that is a pure **client of the running WorkBuddy AI desktop app**: the desktop spawns and keeps warm a local CodeBuddy Code worker gateway (ACP over Streamable HTTP on a loopback port), and the adapter discovers it automatically — newest-first probe of loopback listening ports for the `/health` signature, or `"workbuddyPort"` on the entry overrides. The desktop app must be installed, logged in, and **running** (no console registration, no OAuth — the adapter never touches credentials; model/login state lives in the WorkBuddy app).
+
+Config entry:
+
+```json
+{ "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/path/to/your/project" }
+```
+
+Live-verified 2026-10-08 (WorkBuddy AI 5.4.3 on macOS, real turns through the bridge): connect (no auth on loopback) → initialize → session/new / session/prompt over Streamable HTTP + SSE; streaming deltas with reasoning folded into `<thinking>` blocks; tool_call events; permission asks surface as approvals (`session/request_permission` answered with the mapped optionId); images ride as ACP image content blocks (`promptCapabilities.image: true`); `session/cancel` interrupts; `loadSession: true` keeps sessionIds alive across bridge restarts (resume via `session/load`). Usage is not exposed by this surface (omitted). Rename has no channel (the bridge answers 501). AskUserQuestion-style prompts are not wired — the session's permission mode (default `bypassPermissions`) auto-resolves them.
 
 ## zcode
 
