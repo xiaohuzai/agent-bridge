@@ -177,6 +177,7 @@ function streamTurn(sessionId, text) {
 
 // ── stdio: hello line, then binary frames ──
 err(`FAKE_AGENT_ENV:${process.env.ZCODE_AGENT_SERVER_COMMAND || 'unset'}`);
+err(`FAKE_AUTHORITY:${process.env.ZCODE_SERVICE_AUTHORITY_MODE || 'unset'}`);
 err('FAKE_HELLO');
 process.stdout.write(JSON.stringify({ type: 'zcode-hello', version: '9.9.9-fake', platform: process.platform, arch: process.arch, pid: process.pid }) + '\n');
 

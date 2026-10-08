@@ -578,7 +578,13 @@ export class ZcodeServerAdapter {
     this.#sweepStale('zcode server restarted');
     const child = spawn(nodeBin, [serverCjs], {
       cwd: this.opts.cwd,
-      env: agentSpawnEnv(agentEnv),
+      // ZCODE_SERVICE_AUTHORITY_MODE=desktop-attached-remote reproduces the
+      // desktop's own launch env: without it the server runs terminal-surface
+      // facts, never appends `--surface desktop` to the agent CLI, and the
+      // CLI then lacks the hosted method set the server calls during turn
+      // startup (workspace/updateProviderRegistry → "Method not found",
+      // observed live via browsa on a desktop-only Mac 2026-10-08).
+      env: agentSpawnEnv({ ...agentEnv, ZCODE_SERVICE_AUTHORITY_MODE: 'desktop-attached-remote' }),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
