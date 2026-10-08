@@ -134,7 +134,7 @@
             <tr class="grp"><td colspan="5">身份与端口</td></tr>
             <tr>
               <td>name</td><td>string</td><td>—</td>
-              <td><span class="chip chip-enum">codex</span> <span class="chip chip-enum">claude</span> <span class="chip chip-enum">pi</span> <span class="chip chip-enum">gemini</span></td>
+              <td><span class="chip chip-enum">codex</span> <span class="chip chip-enum">claude</span> <span class="chip chip-enum">pi</span> <span class="chip chip-enum">gemini</span> <span class="chip chip-enum">workbuddy</span></td>
               <td>必填。桥的身份，决定用哪个适配器；只能取注册表里的名字。</td>
             </tr>
             <tr>
@@ -198,6 +198,12 @@
               <td>approval</td><td>enum</td><td>never</td>
               <td><span class="chip chip-enum">never</span> <span class="chip chip-enum">on-request</span> <span class="chip chip-enum">untrusted</span></td>
               <td>审批策略——什么时候向你要确认。见下节。</td>
+            </tr>
+            <tr class="grp"><td colspan="5">workbuddy 调优 <span class="chip chip-codex">仅 workbuddy</span></td></tr>
+            <tr>
+              <td>workbuddyPort</td><td>integer</td><td>自动发现</td>
+              <td><span class="chip">1–65535</span></td>
+              <td>自动发现（扫描回环监听端口匹配 worker 的 <code>/health</code> 特征）落空时，钉住本地 CodeBuddy worker 的端口——例如 Windows 上没有发现辅助工具（<code>lsof</code>）时。</td>
             </tr>
           </tbody>
         </table>

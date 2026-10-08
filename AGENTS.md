@@ -83,6 +83,7 @@ Traps already paid for:
 
 - Commits: conventional-commit style, Chinese or English bodies both fine; squash-merge through PRs, never push to main.
 - READMEs are bilingual (`README.md` EN + `README.zh-CN.md`), section-aligned — update both together.
+- **zcode is deliberately ABSENT from all user-facing surfaces** (README en/zh, docs/agents en/zh, the website — user ruling 2026-10-08): the adapter and registry entry stay in CODE (paused — the official CLI registers providers only under its own desktop host, so a configured zcode bridge cannot complete a turn), but the docs must NOT list zcode as supported until an official external-driver surface ships. Do not "fix" the docs back. Workbuddy is the documented desktop-app agent.
 - The npm package is `@xiaohuzai/agent-bridge` (bin command: `agent-bridge`); publishing is the owner's call — do not publish without an explicit instruction. Scoped publishes need `npm publish --access public`.
 - The v1 wire protocol is **FROZEN** — browsa is the pinned reference client (owner decision 2026-09-08): additive-only changes (new optional config fields/endpoints are fine; renames, removals, or event-semantic changes need a v2, never a v1 edit). New protocol surfaces (the planned ACP fronts) are separate doors on separate paths with opt-in config — they must not disturb v1 routes, events, or defaults. The existing test suite is the browsa-compatibility regression net; any change that breaks it is a v1 break.
 - The `4MB` request-body cap is deliberate (bounds inline base64 images); `images` arrays are capped at 8.
