@@ -95,6 +95,16 @@ On Windows, PowerShell runs both lines as-is; in `cmd`, use the path the CLI pri
 
 The starter runs as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 3951, no key needed on your own machine. A single agent is the same thing with one entry. `chmod 600` starts to matter once a real `apiKey` goes in the file.
 
+**WorkBuddy AI desktop user?** Use its entry instead — the desktop app must be installed, logged in, and **running** (the adapter is a pure client of its local worker: the port is auto-discovered, `"workbuddyPort"` overrides, and `cwd` is the workspace the agent works in):
+
+```json
+{
+  "bridges": [
+    { "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/path/to/your/project" }
+  ]
+}
+```
+
 | Field | Meaning |
 |---|---|
 | `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`, `gemini`, `workbuddy`) |
