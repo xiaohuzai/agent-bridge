@@ -69,7 +69,7 @@
 // ~/Library/Application Support/ZCode, Linux desktop layout under
 // ~/.zcode/server); explicit config overrides win.
 
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -549,6 +549,22 @@ export class ZcodeServerAdapter {
     this.fragBuf = new Map();    // wire-frame fragment assembly
   }
 
+  /** The server bundle prints its own version for `--version` (used by the
+   * deploy checks) — cheap and deterministic. Null when it doesn't answer. */
+  resolveServerVersion(nodeBin, serverCjs) {
+    if (this.serverVersion !== undefined) return this.serverVersion;
+    try {
+      this.serverVersion = execFileSync(nodeBin, [serverCjs, '--version'], {
+        timeout: 10_000,
+        encoding: 'utf8',
+        windowsHide: true,
+      }).trim() || null;
+    } catch (_) {
+      this.serverVersion = null;
+    }
+    return this.serverVersion;
+  }
+
   async ensureChild() {
     if (this.child && this.child.exitCode === null && this.ready) return;
     if (this.closed) throw new Error('bridge adapter already stopped');
@@ -573,6 +589,26 @@ export class ZcodeServerAdapter {
     } else {
       this.opts.log('WARNING: no zcode agent CLI found next to the server bundle or in /Applications/ZCode.app — if the first turn fails with "ZCode agent server command is not configured", set "agentCommand" on the bridge entry');
     }
+    // Host env the desktop normally hands its server, needed for the provider
+    // registry: the account-entitlement check hits the business/oauth
+    // endpoints and carries the app version in its billing URLs — without
+    // these a fully-logged-in install reports "当前没有可用的模型供应商和模型"
+    // (providerCount 0, observed live via browsa 2026-10-08). The personal
+    // provider config rides along only when it actually exists.
+    const serverVersion = this.resolveServerVersion(nodeBin, serverCjs);
+    const hostEnv = {
+      ZCODE_BASE_URL: process.env.ZCODE_BASE_URL || 'https://zcode.z.ai',
+      ZAI_OAUTH_ORIGIN: process.env.ZAI_OAUTH_ORIGIN || 'https://chat.z.ai',
+      ZAI_BUSINESS_BASE_URL: process.env.ZAI_BUSINESS_BASE_URL || 'https://api.z.ai',
+      ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED: process.env.ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED || '1',
+      ZCODE_APP_VERSION: process.env.ZCODE_APP_VERSION || serverVersion || undefined,
+    };
+    const personalConfig = join(homedir(), '.zcode', 'v2', 'provider_config.json');
+    if (existsSync(personalConfig)) hostEnv.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE = personalConfig;
+    for (const [k, v] of Object.entries(hostEnv)) {
+      if (v === undefined) delete hostEnv[k];
+    }
+    this.opts.log(`host env: ${JSON.stringify(hostEnv)}`);
     this.opts.log(`spawning zcode server: ${nodeBin} ${serverCjs} (workspace ${this.opts.cwd})`);
     // A respawn only starts once the previous child is gone; settle its work first.
     this.#sweepStale('zcode server restarted');
@@ -584,7 +620,7 @@ export class ZcodeServerAdapter {
       // CLI then lacks the hosted method set the server calls during turn
       // startup (workspace/updateProviderRegistry → "Method not found",
       // observed live via browsa on a desktop-only Mac 2026-10-08).
-      env: agentSpawnEnv({ ...agentEnv, ZCODE_SERVICE_AUTHORITY_MODE: 'desktop-attached-remote' }),
+      env: agentSpawnEnv({ ...hostEnv, ...agentEnv, ZCODE_SERVICE_AUTHORITY_MODE: 'desktop-attached-remote' }),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });

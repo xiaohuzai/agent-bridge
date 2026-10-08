@@ -176,6 +176,8 @@ function streamTurn(sessionId, text) {
 }
 
 // ── stdio: hello line, then binary frames ──
+if (process.argv.includes('--version')) { console.log('9.9.9-fake'); process.exit(0); }
+err(`FAKE_APP_VERSION:${process.env.ZCODE_APP_VERSION || 'unset'}`);
 err(`FAKE_AGENT_ENV:${process.env.ZCODE_AGENT_SERVER_COMMAND || 'unset'}`);
 err(`FAKE_AUTHORITY:${process.env.ZCODE_SERVICE_AUTHORITY_MODE || 'unset'}`);
 err('FAKE_HELLO');
