@@ -131,6 +131,18 @@ function handle(j) {
         ]);
         return;
       }
+      if (text.includes('THINK')) {
+        // Reasoning streams via item/reasoning/summaryTextDelta, then the
+        // answer. One completed-only reasoning item (id 'r9', never streamed)
+        // must join the assembled <thinking> block at turn/completed.
+        send({ method: 'item/reasoning/summaryTextDelta', params: { threadId, turnId, itemId: 'r1', summaryIndex: 0, delta: 'THINK_delta' } });
+        complete(threadId, turnId, 'completed', [
+          { type: 'reasoning', id: 'r1', content: [], summary: ['THINK_delta'] },
+          { type: 'reasoning', id: 'r9', content: ['THINK_completed_only'], summary: [] },
+          { type: 'agentMessage', id: 'm1', text: 'FAKE_reply' },
+        ]);
+        return;
+      }
       if (text.includes('NARRATION')) {
         // Narration → command → answer, all framed with item/started like the
         // real app-server does, with the official phase classifier on the

@@ -117,6 +117,18 @@ test('happy path: start → streamed deltas → done with full text', async () =
   assert.ok(logs.some((l) => l.includes('FAKE_METHOD:initialize')), 'initialize ran');
 });
 
+test('agent_thought_chunk streams as <thinking> AND joins done.full (no vanish at DONE)', async () => {
+  const res = await post('/turns', { text: 'THINK then answer' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  const deltas = sse.frames.filter((f) => f.data.type === 'delta').map((f) => f.data.text).join('');
+  assert.ok(deltas.includes('<thinking>\nFAKE_thought\n</thinking>\n'), `thought should fold into <thinking>; deltas: ${deltas}`);
+  const done = sse.frames.find((f) => f.data.type === 'done');
+  // done.full is authoritative over the delta concat — it must carry the same
+  // thinking block, or browsa re-renders the bubble at DONE and thinking vanishes
+  assert.equal(done.data.full, '<thinking>\nFAKE_thought\n</thinking>\nFAKE_reply');
+});
+
 test('resume: a second turn with the same sessionId rides the loaded session', async () => {
   const r1 = await post('/turns', { text: 'first' });
   const s1 = sseReader(r1.body);

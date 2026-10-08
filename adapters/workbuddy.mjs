@@ -30,7 +30,11 @@
 //              → answer by POSTing {jsonrpc, id:<request id>, result:{outcome:
 //              {outcome:'selected', optionId}}|{outcome:{outcome:'cancelled'}}}.
 //   session/update variants: agent_message_chunk {content:{type:'text',text}},
-//              agent_thought_chunk, tool_call/tool_call_update {toolCallId,
+//              agent_thought_chunk {content:{type:'text',text}} (streams as an
+//              inline <thinking> block AND joins full, so done.full carries what
+//              streamed and browsa's collapsible thinking block survives DONE —
+//              2026-10-09: thinking used to stream but vanish at done.full),
+//              tool_call/tool_call_update {toolCallId,
 //              toolName, status: pending|in_progress|completed|failed},
 //              config_option_update / session_info_update (noise → heartbeat).
 //   loadSession: true — a sessionId survives across worker/bridge lifetimes;
@@ -320,16 +324,17 @@ export class WorkbuddyAdapter {
     const onUpdate = (u) => {
       switch (u.sessionUpdate) {
         case 'agent_message_chunk':
-          if (entry.thinking) { entry.thinking = false; emit({ type: 'delta', text: '\n</thinking>\n' }); }
+          if (entry.thinking) { entry.thinking = false; entry.full += '\n</thinking>\n'; emit({ type: 'delta', text: '\n</thinking>\n' }); }
           entry.full += u.content?.text || '';
           emit({ type: 'delta', text: u.content?.text || '' });
           break;
         case 'agent_thought_chunk':
-          if (!entry.thinking) { entry.thinking = true; emit({ type: 'delta', text: '<thinking>\n' }); }
+          if (!entry.thinking) { entry.thinking = true; entry.full += '<thinking>\n'; emit({ type: 'delta', text: '<thinking>\n' }); }
+          entry.full += u.content?.text || '';
           emit({ type: 'delta', text: u.content?.text || '' });
           break;
         case 'tool_call': {
-          if (entry.thinking) { entry.thinking = false; emit({ type: 'delta', text: '\n</thinking>\n' }); }
+          if (entry.thinking) { entry.thinking = false; entry.full += '\n</thinking>\n'; emit({ type: 'delta', text: '\n</thinking>\n' }); }
           const prev = entry.toolStates.get(u.toolCallId);
           entry.toolStates.set(u.toolCallId, u.status || 'in_progress');
           if (!prev || prev === 'pending') {
@@ -412,10 +417,12 @@ export class WorkbuddyAdapter {
         return { sessionId: entry.sessionId, turnId: '' };
       }
       // Stream ended without an explicit final response — treat as done with
-      // what we have (the daemon sometimes closes early on end_turn).
+      // what we have (the daemon sometimes closes early on end_turn). These
+      // are terminal emissions: entry.events directly, NOT the `emit` closure
+      // (its !entry.finished guard would suppress both after the flag above).
       entry.finished = true;
-      if (entry.thinking) emit({ type: 'delta', text: '\n</thinking>\n' });
-      emit({ type: 'done', full: entry.full });
+      if (entry.thinking) { entry.full += '\n</thinking>\n'; entry.events?.({ type: 'delta', text: '\n</thinking>\n' }); entry.thinking = false; }
+      entry.events?.({ type: 'done', full: entry.full });
       return { sessionId: entry.sessionId, turnId: '' };
     } catch (e) {
       if (!entry.finished) {
@@ -429,8 +436,7 @@ export class WorkbuddyAdapter {
   #finishTurn(entry, { aborted = false, failed = false, message = null, stopReason = null } = {}) {
     if (entry.finished) return;
     entry.finished = true;
-    if (entry.thinking) entry.events?.({ type: 'delta', text: '\n</thinking>\n' });
-    entry.thinking = false;
+    if (entry.thinking) { entry.full += '\n</thinking>\n'; entry.events?.({ type: 'delta', text: '\n</thinking>\n' }); entry.thinking = false; }
     if (aborted || stopReason === 'cancelled') { entry.events?.({ type: 'aborted' }); return; }
     if (failed) { entry.events?.({ type: 'error', message: message || 'workbuddy turn failed' }); return; }
     if (stopReason && stopReason !== 'end_turn') {

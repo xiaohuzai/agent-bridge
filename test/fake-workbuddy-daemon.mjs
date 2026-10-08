@@ -158,6 +158,9 @@ const server = createServer((req, res) => {
             ? `FAKE_saw ${images.length} image(s) (${images.map((i) => i.mimeType).join(',')})`
             : 'FAKE_reply';
           if (images.length) err(`FAKE_IMAGE_MIMES:${images.map((i) => i.mimeType).join('|')}`);
+          // 'THINK' in the prompt triggers an agent_thought_chunk before the
+          // reply — exercises the adapter's <thinking> surfacing (see test).
+          if (/THINK/.test(text)) updNow(sid, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'FAKE_thought' } });
           updNow(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: replyText } });
           reply(body.id, { stopReason: 'end_turn' });
           res.end();

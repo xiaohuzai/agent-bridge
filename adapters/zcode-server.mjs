@@ -411,7 +411,7 @@ export function splitBase64ForChunks(b64, chunkBytes = CHUNK_BYTES) {
 function createTurnProjector({ onDelta, onTool, onApproval, onTurnEnd }) {
   const rowKinds = new Map();     // rowId → kind
   const rowTexts = new Map();     // rowId → text (assistantText / reasoning)
-  const textRowOrder = [];
+  const fullRowOrder = [];        // text+reasoning rows in first-seen order
   const toolStates = new Map();   // rowId → last status
   let emittingKind = null;
   let ended = false;
@@ -437,7 +437,7 @@ function createTurnProjector({ onDelta, onTool, onApproval, onTurnEnd }) {
     if (row.kind === 'assistantText' || row.kind === 'reasoning') {
       const isNew = !rowKinds.has(row.rowId);
       rowKinds.set(row.rowId, row.kind);
-      if (isNew && row.kind === 'assistantText') textRowOrder.push(row.rowId);
+      if (isNew && (row.kind === 'assistantText' || row.kind === 'reasoning')) fullRowOrder.push(row.rowId);
       const prev = rowTexts.get(row.rowId) || '';
       const text = typeof row.text === 'string' ? row.text : prev;
       if (text.length > prev.length) {
@@ -512,7 +512,24 @@ function createTurnProjector({ onDelta, onTool, onApproval, onTurnEnd }) {
       handlePatch({ pendingInteractions: snapshot.pendingInteractions, usage: snapshot.usage });
     },
     finish() { closeEmit(); },
-    fullText() { return textRowOrder.map((id) => rowTexts.get(id) || '').filter(Boolean).join('\n\n'); },
+    // done.full replays text+reasoning rows in first-seen order, consecutive
+    // reasoning rows wrapped in ONE <thinking> block — mirrors the live
+    // <thinking> delta stream, so browsa's collapsible thinking block survives
+    // DONE (before 2026-10-09 done.full carried assistantText rows only and
+    // streamed thinking vanished). No reasoning rows ⇒ byte-identical to the
+    // old '\n\n' join of assistantText rows.
+    fullText() {
+      const runs = [];
+      for (const id of fullRowOrder) {
+        const text = rowTexts.get(id) || '';
+        if (!text) continue;
+        const kind = rowKinds.get(id) === 'reasoning' ? 'reasoning' : 'text';
+        const last = runs[runs.length - 1];
+        if (last && last.kind === kind) last.text += '\n\n' + text;
+        else runs.push({ kind, text });
+      }
+      return runs.map((r) => (r.kind === 'reasoning' ? `<thinking>\n${r.text}\n</thinking>` : r.text)).join('\n\n');
+    },
     get ended() { return ended; },
     get failed() { return failed; },
     get usage() { return usage; },

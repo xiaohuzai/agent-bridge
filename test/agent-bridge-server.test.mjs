@@ -429,6 +429,19 @@ test("single-message turns keep the legacy shape byte-for-byte (no notes)", asyn
   sse.cancel();
 });
 
+test('item/reasoning/* deltas surface as <thinking> AND join done.full', async () => {
+  const res = await post('/turns', { text: 'THINK please' });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  const deltas = sse.frames.filter((f) => f.data?.type === 'delta').map((f) => f.data.text).join('');
+  assert.ok(deltas.includes('<thinking>\nTHINK_delta'), `reasoning deltas should fold into <thinking>; deltas: ${deltas}`);
+  // done.full is authoritative over the delta concat — it must carry the
+  // assembled thinking block (streamed deltas + the completed-only reasoning
+  // item), or browsa re-renders the bubble at DONE and thinking vanishes
+  assert.equal(done.data.full, '<thinking>\nTHINK_delta\n\nTHINK_completed_only\n</thinking>\n\nFAKE_reply');
+  sse.cancel();
+});
+
 test('fileChange and mcpToolCall items complete too (not just start)', async () => {
   const res = await post('/turns', { text: 'EDIT please' });
   const sse = sseReader(res.body);

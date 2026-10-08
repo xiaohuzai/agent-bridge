@@ -156,6 +156,11 @@ function handle(j) {
       }
       let reply = 'ACP_reply';
       if (images.length) reply += ` IMG:${images.length} MIME:${images[0]?.mimeType || '-'}`;
+      // 'THINK' triggers an agent_thought_chunk before the reply — exercises
+      // the adapter's <thinking> surfacing (see the agent-bridge-acp test).
+      if (text.includes('THINK')) {
+        send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'ACP_thought' } } } });
+      }
       send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: reply } } } });
       if (!V1) send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'usage_update', used: 33, size: 1000 } } });
       finish(sessionId, 'end_turn');

@@ -124,8 +124,9 @@ test('zcode happy path: handshake → start → streamed deltas (thinking folded
   assert.ok(deltas.includes('</thinking>'));
   assert.ok(deltas.includes('FAKE_reply'));
   const done = sse.frames.find((f) => f.data.type === 'done');
-  // done.full is the answer alone (thinking excluded)
-  assert.equal(done.data.full, 'FAKE_reply');
+  // done.full carries the same <thinking> block the deltas streamed (2026-10-09:
+  // reasoning joins the assembled text — before, it streamed but vanished)
+  assert.equal(done.data.full, '<thinking>\n思考中…\n</thinking>\n\nFAKE_reply');
   assert.deepEqual(done.data.usage, { prompt_tokens: 120, completion_tokens: 45 });
   // the v4 handshake + runtime-preferences auto-answer ran against the child
   assert.ok(logs.some((l) => l.includes('FAKE_PREFS')), 'expected the preferences host-request to be answered');
@@ -152,7 +153,7 @@ test('resume: a second turn with the same sessionId rides sendText (no new sessi
   const start2 = await s2.readUntil((f) => f.data.type === 'start');
   assert.equal(start2.data.sessionId, sid);
   const done2 = await s2.readUntil((f) => f.data.type === 'done');
-  assert.equal(done2.data.full, 'FAKE_reply');
+  assert.equal(done2.data.full, '<thinking>\n思考中…\n</thinking>\n\nFAKE_reply');
   // usage is a DELTA over the session's cumulative counter — the fixture
   // reports the same cumulative on every turn, so the honest delta is zero.
   assert.deepEqual(done2.data.usage, { prompt_tokens: 0, completion_tokens: 0 });
@@ -165,7 +166,7 @@ test('image turn: upload against a persisted carrier → refs ride firstInput �
   const start = await sse.readUntil((f) => f.data.type === 'start');
   assert.match(start.data.sessionId, /^sess_fake\d+$/);
   const done = await sse.readUntil((f) => f.data.type === 'done');
-  assert.equal(done.data.full, 'FAKE_saw 1 image(s)');
+  assert.equal(done.data.full, '<thinking>\n思考中…\n</thinking>\n\nFAKE_saw 1 image(s)');
   // the fixture verified the reassembled bytes against the declared sha256
   assert.ok(logs.some((l) => l.includes('FAKE_CHECKSUM:OK')), `checksum must verify; logs: ${logs.join(' | ')}`);
   // the carrier came from the legacy listSessions (no prior turn in this bridge)
@@ -186,7 +187,7 @@ test('image on a RESUME turn rides sendText attachments against the same session
   const start2 = await s2.readUntil((f) => f.data.type === 'start');
   assert.equal(start2.data.sessionId, sid);
   const done2 = await s2.readUntil((f) => f.data.type === 'done');
-  assert.equal(done2.data.full, 'FAKE_saw 1 image(s)');
+  assert.equal(done2.data.full, '<thinking>\n思考中…\n</thinking>\n\nFAKE_saw 1 image(s)');
   assert.ok(logs.some((l) => l.includes('FAKE_CHECKSUM:OK')));
 });
 
