@@ -15,6 +15,17 @@
 // bundled: users run their own versions, and a
 // pinned copy would fork the CLI state their terminal writes.
 
+import { fileURLToPath } from 'node:url';
+
+// Shipped patch (patches/dsh-account-route.yml): swaps the deepseek-official
+// rows dsh's automation profiles pin to the ACCOUNT route. The desktop app's
+// login lives in the shared ~/.dsh credential store, so a signed-in dsh user
+// needs no API key — `{ "name": "dsh" }` alone works (live 2026-10-09,
+// macOS, dsh 0.2.0-rc.2). A serve entry's "args" replaces this default
+// wholesale; "args": [] opts back out (API-key users — the account route
+// never falls back to a key).
+const DSH_ACCOUNT_PATCH = fileURLToPath(new URL('./patches/dsh-account-route.yml', import.meta.url));
+
 export const KNOWN_AGENTS = {
   // install: surfaced verbatim in the ENOENT error when the agent's command
   // is missing (the moment of need) — keep it one copy-pasteable line.
@@ -42,7 +53,7 @@ export const KNOWN_AGENTS = {
   // agent_thought_chunk; approvals are one-shot allow/reject via
   // session/request_permission. Verified live 2026-10-09 against dsh
   // 0.2.0-rc.2 (handshake protocolVersion 1, session/resume first branch).
-  dsh: { kind: 'acp', command: ['dsh', '--profile', 'acp'], install: 'desktop app menu: Manage dsh Command… → Install (or: npm i -g @deepseek-ai/dsh)', summary: 'DeepSeek Harness via its official ACP automation profile (shares sessions with the dsh desktop app)' },
+  dsh: { kind: 'acp', command: ['dsh', '--profile', 'acp'], args: ['--patch', DSH_ACCOUNT_PATCH], install: 'desktop app menu: Manage dsh Command… → Install (or: npm i -g @deepseek-ai/dsh)', summary: 'DeepSeek Harness via its official ACP automation profile (account route — signs in via the desktop app; shares sessions with it)' },
   // zcode runs on its NATIVE adapter (adapters/zcode-server.mjs) against the
   // runtime the ZCode desktop app installs — no separate CLI install exists
   // (the CLI release has no public download channel). The adapter

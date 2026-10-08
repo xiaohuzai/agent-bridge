@@ -19,6 +19,7 @@
     "agents-registry.mjs",
     "agents.example.json",
     "docs/",
+    "patches/",
     "adapters/",
     "README.md"
   ],

@@ -150,16 +150,18 @@ Live-verified 2026-10-01 (gemini-cli 0.62.0, mock Google GenAI backend, real tur
 
 Native ACP, no shim — `dsh --profile acp` IS a stdio ACP v1 agent (`@deepseek-ai/dsh-acp`, the official "automation-only" profile; registered as `"dsh": { "kind": "acp", "command": ["dsh", "--profile", "acp"] }`). The preferred install is the desktop app's **Manage dsh Command… → Install** menu entry: it puts a `dsh` on PATH whose version always matches the running desktop release. CLI and desktop share `~/.dsh` product data (sessions, credentials, settings) while never sharing executable packages, so a turn started through the bridge shows up in the desktop app's session list (the ACP surface has no title channel — those sessions carry dsh's deterministic fallback titles).
 
-Live-verified 2026-10-09 (dsh 0.2.0-rc.2): the handshake answers protocolVersion 1 (the bridge requests 2 and accepts); `sessionCapabilities` = list/resume/close, so bridge-restart restore takes the adapter's `session/resume` first branch; approvals arrive as standard `session/request_permission` (one-shot allow/reject); thoughts ride `agent_thought_chunk`; models (`deepseek-v4-flash` / `-v4-pro`, …) and `reasoning_effort` (`off`/`low`/`high`/`max`) are standard `session/set_config_option` selects. Images advertise `false` on a bare install (the profile enables them only with a durable attachment store plus an image-capable exact route). The wire chain (spawn → handshake → session/new → prompt → clean auth-error SSE) was exercised through the bridge with the real binary; the model call itself needs provider credentials that machine did not have.
+The registry entry ships a **default `--patch`** (`patches/dsh-account-route.yml`) that switches the pinned profile rows to the `deepseek-account` route — the desktop app's login lives in the shared `~/.dsh` credential store, so a signed-in user configures exactly `{ "name": "dsh", "port": …, "apiKey": "" }` and every turn bills to the account balance, with no `DEEPSEEK_API_KEY` anywhere. Live-verified 2026-10-09 on macOS (dsh 0.2.0-rc.2, account signed in on the desktop app): a real turn completes with the patch; without any patch the same machine fails with `MISSING_CREDENTIAL … deepseek-official`.
+
+Live-verified 2026-10-09 (dsh 0.2.0-rc.2): the handshake answers protocolVersion 1 (the bridge requests 2 and accepts); `sessionCapabilities` = list/resume/close, so bridge-restart restore takes the adapter's `session/resume` first branch; approvals arrive as standard `session/request_permission` (one-shot allow/reject); thoughts ride `agent_thought_chunk`; models (`deepseek-v4-flash` / `-v4-pro`, …) and `reasoning_effort` (`off`/`low`/`high`/`max`) are standard `session/set_config_option` selects. Images advertise `false` on a bare install (the profile enables them only with a durable attachment store plus an image-capable exact route). The wire chain (spawn → handshake → session/new → prompt → clean auth-error SSE) was exercised through the bridge with the real binary.
 
 **Known trade-off: no token streaming.** The official ACP surface delivers updates at committed-message granularity (source-verified: it reacts only to `assistant/message` / `tool/call` / `tool/result` events) — tool calls arrive live, but a long pure-text answer lands as one block instead of a token stream. The third-party `dsh-acp-gateway` streams tokens but still pins dsh 0.1.x — not recommended over the official profile.
 
-### Using the account route (no API key)
+### Route control: opt out or customize
 
-The shipped automation profiles pin `provider: deepseek-official` (API key), but the desktop app's login lives in the shared `~/.dsh` credential store and the CLI can use it — through the separate `deepseek-account` route, which the profile rows do not select by default. Replace the pinned rows with a patch file and append it via the entry's `args`:
+- **API-key users** (no desktop sign-in): the account route never falls back to a key, so clear the default with `"args": []` and set `DEEPSEEK_API_KEY` (or a key in the web Models page). Sign-in state surfaces as `ACCOUNT_SIGN_IN_REQUIRED` on the first turn.
+- **Custom route/model**: point `"args"` at your own patch — an entry's `args` replaces the default wholesale. The shipped file is the template:
 
 ```yaml
-# ~/browsa-bridge/account-route.yml
 - insert:
     - id: agent-default-model
       name: '@deepseek-ai/dsh-agent-default-model'
@@ -173,12 +175,7 @@ The shipped automation profiles pin `provider: deepseek-official` (API key), but
         model: deepseek-flash
 ```
 
-```json
-{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project",
-  "args": ["--patch", "/absolute/path/account-route.yml"] }
-```
-
-Turns then bill to the logged-in account's balance — no `DEEPSEEK_API_KEY` anywhere. Live-verified 2026-10-09 on macOS (dsh 0.2.0-rc.2, account signed in on the desktop app): `dsh headless --patch …` completes a real turn; without the patch the same machine fails with `MISSING_CREDENTIAL … deepseek-official`. Note `args` values are used verbatim — `~` is not expanded, pass an absolute path.
+`args` values are used verbatim — `~` is not expanded, pass absolute paths.
 
 ## ACP clients (the front)
 
