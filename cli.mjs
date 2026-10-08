@@ -82,14 +82,29 @@ if (args.help) {
           report (for agent-driven setup flows).
 
 options:
-  --config FILE   JSON config: {"bridges":[…]} — name must be a known agent
-                  (agents-registry.mjs); every serve entry needs a port;
-                  apiKey is optional on loopback and required for non-loopback
-                  binds; "acp": true on a serve entry also serves ACP clients
-                  at ws://…/acp
+  --config FILE   JSON config: {"bridges":[…]} — one entry per agent.
+                  Known agents: ${knownAgentNames().join(', ')}
+                  example entry:
+                    { "name": "claude", "port": 3949, "apiKey": "",
+                      "cwd": "~/proj", "env": {"KEY": "val"}, "acp": true }
+                  fields: name · port (serve mode, 1–65535; entries used only
+                  by the acp front may omit it) · apiKey (empty/omitted = keyless,
+                  loopback only; required for non-loopback --bind) · command
+                  [...] (ACP-shim agents only — codex uses "codexBin", zcode
+                  auto-resolves) · cwd (~ expanded; default: the dir serve
+                  started from) · env {} (extra vars for the spawned agent) ·
+                  sandbox (read-only|workspace-write|danger-full-access) ·
+                  approval (never|on-request|untrusted) · network (bool) —
+                  these three are codex knobs · corsOrigin "*" · "acp": true
+                  (a serve entry also serves ACP clients at ws://…/acp).
+                  Adapter overrides (codexBin, codexHome, serverCjs,
+                  workbuddyPort, …): README → Configure.
   --bind ADDR     serve/doctor only: bind address (default 127.0.0.1; 0.0.0.0
                   for LAN/VPN)
-  --json          doctor only: print the report as JSON`);
+  --json          doctor only: print the report as JSON
+
+  Full format reference: agents.example.json (shipped starter) and
+  https://github.com/xiaohuzai/agent-bridge#configure`);
   process.exit(0);
 }
 

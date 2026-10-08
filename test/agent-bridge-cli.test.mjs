@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { knownAgentNames } from '../agents-registry.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, '..', 'cli.mjs');
@@ -25,8 +26,10 @@ function runCli(args, cwd) {
   return new Promise((resolve) => {
     const proc = spawn(process.execPath, [CLI, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
+    let stdout = '';
     proc.stderr.on('data', (d) => { stderr += String(d); });
-    proc.on('exit', (code) => resolve({ code, stderr }));
+    proc.stdout.on('data', (d) => { stdout += String(d); });
+    proc.on('exit', (code) => resolve({ code, stderr, stdout }));
   });
 }
 
@@ -67,4 +70,22 @@ test('--config with no value errors loudly instead of silently defaulting', asyn
   assert.equal(code, 1);
   assert.match(stderr, /--config needs a value/);
   assert.doesNotMatch(stderr, /No agents\.json here/, 'it must not fall through to the default agents.json');
+});
+
+test('--help explains the config format: agent list, fields, full-reference pointer', async () => {
+  const { code, stdout } = await runCli(['--help'], tmp);
+  assert.equal(code, 0);
+  assert.match(stdout, /"bridges"/);
+  // The rendered list must equal the registry's CURRENT list — a hand-copied
+  // list in the help text would silently drift when the registry grows.
+  // Whitespace-tolerant: long lists may wrap across help-text lines.
+  assert.match(
+    stdout,
+    new RegExp(`Known\\s+agents:\\s+${knownAgentNames().join('\\s*,\\s*')}`)
+  );
+  assert.match(stdout, /"name": "claude", "port": 3949/);
+  assert.match(stdout, /read-only\|workspace-write\|danger-full-access/);
+  assert.match(stdout, /never\|on-request\|untrusted/);
+  assert.match(stdout, /codexBin/);
+  assert.match(stdout, /#configure/, 'must point at the full reference');
 });
