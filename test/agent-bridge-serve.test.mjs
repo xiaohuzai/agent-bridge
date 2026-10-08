@@ -91,13 +91,18 @@ test('adapterFor: entry env overrides the registry default (which presets none)'
   const dsh = adapterFor({ name: 'dsh', cwd: '/tmp' });
   assert.deepEqual(dsh.adapter.opts.command, ['dsh', '--profile', 'acp']);
   assert.match(String(dsh.adapter.opts.installHint), /Manage dsh Command/);
+  // dsh ships a DEFAULT args (the bundled account-route patch): a signed-in
+  // desktop user configures just { name, port, apiKey } and it works.
+  assert.equal(dsh.adapter.opts.args?.length, 2);
+  assert.match(String(dsh.adapter.opts.args?.[1]), /dsh-account-route\.yml$/);
   // "args" appends to the (default or overridden) command without rewriting it —
   // e.g. dsh's account route rides --patch while the registry keeps owning the
-  // command line.
+  // command line. An entry's args REPLACES the registry default; [] opts out.
   const withArgs = adapterFor({ name: 'dsh', cwd: '/tmp', args: ['--patch', '/tmp/route.yml'] });
   assert.deepEqual(withArgs.adapter.opts.command, ['dsh', '--profile', 'acp']);
   assert.deepEqual(withArgs.adapter.opts.args, ['--patch', '/tmp/route.yml']);
-  assert.equal(adapterFor({ name: 'dsh', cwd: '/tmp' }).adapter.opts.args, undefined);
+  const optOut = adapterFor({ name: 'dsh', cwd: '/tmp', args: [] });
+  assert.deepEqual(optOut.adapter.opts.args, []);
 });
 
 test('validateConfig: "args" is acp-spawned-agents only and must be a string array', () => {
@@ -107,10 +112,11 @@ test('validateConfig: "args" is acp-spawned-agents only and must be a string arr
   );
   assert.throws(
     () => validateConfig({ bridges: [{ name: 'dsh', port: 2, apiKey: 'k', args: ['--patch', 3] }] }),
-    (e) => /"args" must be a non-empty array of strings/.test(e.message)
+    (e) => /"args" must be an array of strings/.test(e.message)
   );
-  const ok = validateConfig({ bridges: [{ name: 'dsh', port: 3, apiKey: 'k', args: ['--patch', '~/route.yml'] }] });
-  assert.deepEqual(ok.bridges[0].args, ['--patch', '~/route.yml']);
+  // [] is meaningful: it clears the registry default (dsh's account patch)
+  const ok = validateConfig({ bridges: [{ name: 'dsh', port: 3, apiKey: 'k', args: [] }] });
+  assert.deepEqual(ok.bridges[0].args, []);
 });
 
 test('loadConfig: invalid JSON says so; valid file expands ~ and defaults nothing', () => {

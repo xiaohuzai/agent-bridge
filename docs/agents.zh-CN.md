@@ -149,16 +149,18 @@ pi                                      # 首次运行：选 provider / 登录
 
 原生 ACP，无需壳——`dsh --profile acp` 本身就是一个 stdio ACP v1 agent（`@deepseek-ai/dsh-acp`，官方「automation-only」profile；注册行 `"dsh": { "kind": "acp", "command": ["dsh", "--profile", "acp"] }`）。首选安装是桌面版菜单 **Manage dsh Command… → Install**：装出的 `dsh` 版本永远跟运行中的桌面发行版一致。CLI 与桌面共享 `~/.dsh` 的产品数据（会话、凭据、设置），但不共享可执行包——从桥发起的回合会出现在桌面应用的会话列表里（ACP 面没有标题通道，这些会话用 dsh 的确定性兜底标题）。
 
-实机验证 2026-10-09（dsh 0.2.0-rc.2）：握手答 protocolVersion 1（桥请求 2 并接受）；`sessionCapabilities` = list/resume/close——桥重启恢复走适配器 `session/resume` 第一分支；审批走标准 `session/request_permission`（one-shot allow/reject）；思考块走 `agent_thought_chunk`；模型（`deepseek-v4-flash` / `-v4-pro` 等）与 `reasoning_effort`（`off`/`low`/`high`/`max`）都是标准 `session/set_config_option` 选项。裸安装时图片声明为 `false`（该 profile 只在「有持久附件存储 + 声明图片能力的 exact route」时开启）。协议链（spawn → 握手 → session/new → prompt → 干净的鉴权错误 SSE）已用真实二进制过桥跑通；模型调用本身需要那台机器没有的 provider 凭据。
+注册表条目自带**默认 `--patch`**（`patches/dsh-account-route.yml`），把钉死的 profile 行切到 `deepseek-account` 路由——桌面版登录态存在共享的 `~/.dsh` 凭据存储里，已登录用户只写 `{ "name": "dsh", "port": …, "apiKey": "" }` 就能用，每个回合直接记到账户余额，哪里都不需要 `DEEPSEEK_API_KEY`。2026-10-09 macOS 实机验证（dsh 0.2.0-rc.2，桌面版已登录）：带 patch 真回合完成；不打 patch 的同一台机器报 `MISSING_CREDENTIAL … deepseek-official`。
+
+实机验证 2026-10-09（dsh 0.2.0-rc.2）：握手答 protocolVersion 1（桥请求 2 并接受）；`sessionCapabilities` = list/resume/close——桥重启恢复走适配器 `session/resume` 第一分支；审批走标准 `session/request_permission`（one-shot allow/reject）；思考块走 `agent_thought_chunk`；模型（`deepseek-v4-flash` / `-v4-pro` 等）与 `reasoning_effort`（`off`/`low`/`high`/`max`）都是标准 `session/set_config_option` 选项。裸安装时图片声明为 `false`（该 profile 只在「有持久附件存储 + 声明图片能力的 exact route」时开启）。协议链（spawn → 握手 → session/new → prompt → 干净的鉴权错误 SSE）已用真实二进制过桥跑通。
 
 **已知取舍：无 token 级流式。** 官方 ACP 面按 committed 消息粒度投递更新（源码实锤：只对 `assistant/message` / `tool/call` / `tool/result` 事件反应）——工具调用实时到，但纯文本长回答会整段落下而不是逐 token 流。第三方 `dsh-acp-gateway` 有 token 流但仍锁 dsh 0.1.x——不建议压过官方 profile。
 
-### 用账号路由（免 API key）
+### 路由控制：退出或自定义
 
-出厂自动化 profile 把 `provider` 钉在 `deepseek-official`（API key），但桌面版登录态存在共享的 `~/.dsh` 凭据存储里，CLI 走独立的 `deepseek-account` 路由就能用它——只是 profile 行默认没选它。写一个 patch 替换钉死的行，再用条目的 `args` 带上：
+- **API-key 用户**（没登录桌面版）：账号路由不回退到 key，用 `"args": []` 清掉默认，再配 `DEEPSEEK_API_KEY`（或在 Web 模型页存 key）。未登录态在首回合表现为 `ACCOUNT_SIGN_IN_REQUIRED`。
+- **自定义路由/模型**：把 `"args"` 指到你自己的 patch——条目的 `args` 整体替换默认。随包文件就是模板：
 
 ```yaml
-# ~/browsa-bridge/account-route.yml
 - insert:
     - id: agent-default-model
       name: '@deepseek-ai/dsh-agent-default-model'
@@ -172,12 +174,7 @@ pi                                      # 首次运行：选 provider / 登录
         model: deepseek-flash
 ```
 
-```json
-{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project",
-  "args": ["--patch", "/absolute/path/account-route.yml"] }
-```
-
-回合直接记到已登录账户的余额——哪里都不需要 `DEEPSEEK_API_KEY`。2026-10-09 macOS 实机验证（dsh 0.2.0-rc.2，桌面版已登录）：`dsh headless --patch …` 真回合完成；同一台机器不打 patch 则报 `MISSING_CREDENTIAL … deepseek-official`。注意 `args` 逐字使用——`~` 不展开，请传绝对路径。
+`args` 逐字使用——`~` 不展开，请传绝对路径。
 
 ## ACP 客户端（门）
 

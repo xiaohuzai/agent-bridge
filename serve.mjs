@@ -135,8 +135,8 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
       }
     }
     if (b.args !== undefined) {
-      if (!Array.isArray(b.args) || !b.args.length || b.args.some((c) => typeof c !== 'string' || !c.trim())) {
-        errors.push(`${at}: "args" must be a non-empty array of strings (appended to the agent's spawn command)`);
+      if (!Array.isArray(b.args) || b.args.some((c) => typeof c !== 'string' || !c.trim())) {
+        errors.push(`${at}: "args" must be an array of strings (appended to the agent's spawn command; [] clears the registry default)`);
       } else if (spec && spec.kind !== 'acp') {
         errors.push(`${at}: "${name}" runs on the native adapter — "args" only applies to ACP-spawned agents (use the kind's own override fields)`);
       }
@@ -219,7 +219,8 @@ export function adapterFor(b, { log = () => {} } = {}) {
     agent: b.name,
     adapter: new AcpStdioAdapter({
       command: b.command || spec.command,
-      args: Array.isArray(b.args) ? b.args : undefined,
+      // entry "args" replaces the registry default wholesale ([] = explicit opt-out)
+      args: Array.isArray(b.args) ? b.args : spec.args,
       cwd: b.cwd || process.cwd(),
       env: { ...spec.env, ...b.env }, // entry env overrides the registry default
       transcriptFix: b.transcriptFix || spec.transcriptFix,

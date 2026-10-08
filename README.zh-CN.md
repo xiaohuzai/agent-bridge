@@ -56,7 +56,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录（官方 `claude-agent-acp` 壳已随包内置） | ✅ 实机验证 |
 | **pi** | pi 本体走官方自安装（≥0.98，或 `npm i -g @earendil-works/pi-coding-agent`）→ 跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置；pi 本体走不了 npm——安装器和 npm 包冲突） | ✅ 实机验证 |
 | **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
-| **dsh**（DeepSeek Harness） | dsh 桌面版菜单 **Manage dsh Command… → Install**（版本跟桌面发行版锁死），或 `npm i -g @deepseek-ai/dsh`；模型 key 在应用/Web UI 里配（或 `DEEPSEEK_API_KEY`） | ⚠️ 协议链实机验证（真回合需有凭据的机器） |
+| **dsh**（DeepSeek Harness） | dsh 桌面版菜单 **Manage dsh Command… → Install**（版本跟桌面发行版锁死），或 `npm i -g @deepseek-ai/dsh`；已登录桌面版的用户**不需要任何 key**（条目自带账号路由 patch）——API-key 用户用 `"args": []` 退出 | ✅ 实机验证（macOS 0.2.0-rc.2：账号路由真回合 + 过桥协议链） |
 | **workbuddy** | WorkBuddy AI 桌面版已安装、已登录且**正在运行**（适配器是其本地 CodeBuddy worker 网关的纯客户端——端口自动发现，`workbuddyPort` 可覆盖） | ✅ 实机验证 |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 

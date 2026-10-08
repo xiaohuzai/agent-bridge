@@ -56,7 +56,7 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in (the official `claude-agent-acp` shim ships bundled) | ✅ live-verified |
 | **pi** | pi itself via its own installer (≥0.98, or `npm i -g @earendil-works/pi-coding-agent`) → run `pi` once to pick a provider (the `pi-acp` shim ships bundled; pi itself can't come from npm — its installer collides with the npm package) | ✅ live-verified |
 | **gemini** | `npm i -g @google/gemini-cli` → run `gemini` once to log in (or env auth: `GEMINI_API_KEY`, or a custom gateway via `GOOGLE_GEMINI_BASE_URL`) | ✅ live-verified |
-| **dsh** (DeepSeek Harness) | dsh desktop app menu **Manage dsh Command… → Install** (version-locked to the desktop app), or `npm i -g @deepseek-ai/dsh`; provider key configured in the app/web UI (or `DEEPSEEK_API_KEY`) | ⚠️ wire chain live-verified (real turn needs a credentialed machine) |
+| **dsh** (DeepSeek Harness) | dsh desktop app menu **Manage dsh Command… → Install** (version-locked to the desktop app), or `npm i -g @deepseek-ai/dsh`; signed-in desktop users need NO key (the entry ships the account-route patch) — API-key users opt out with `"args": []` | ✅ live-verified (macOS 0.2.0-rc.2: account-route turn + bridge wire chain) |
 | **workbuddy** | WorkBuddy AI desktop app installed, logged in, and **running** (the adapter is a pure client of its local CodeBuddy worker gateway — port auto-discovered, `workbuddyPort` overrides) | ✅ live-verified |
 | any ACP agent (opencode, kimi, qwen, …) | that agent's own CLI + login | ❓ schema-level |
 
