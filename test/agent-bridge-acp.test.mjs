@@ -22,10 +22,11 @@ let adapter;
 let port;
 let logs;
 
-async function startServer({ command, env, transcriptFix, claudeProjectsDir, installHint } = {}) {
+async function startServer({ command, args, env, transcriptFix, claudeProjectsDir, installHint } = {}) {
   logs = [];
   adapter = new AcpStdioAdapter({
     command: command || [FAKE_ACP],
+    args,
     cwd: '/tmp',
     env,
     transcriptFix,
@@ -298,6 +299,19 @@ test('entry env rides over the inherited environment into the spawned agent', as
   const probe = logs.join(' | ').match(/FAKE_ENV:PROBE=(\S+) ENTRYPOINT=(\S+)/);
   assert.ok(probe, `env probe line must reach the adapter logs; logs: ${logs.join(' | ').slice(0, 300)}`);
   assert.equal(probe[1], 'env-rides-ok', 'entry env must reach the agent');
+});
+
+test('entry "args" are appended to the spawn argv (the dsh --patch shape)', async () => {
+  // serve entries may append argv (e.g. dsh's --patch for its account route)
+  // without rewriting the registry-owned command.
+  await stopServer();
+  await startServer({ args: ['v1', '--patch', '/tmp/account-route.yml'] });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'done');
+  sse.cancel();
+  assert.match(logs.join(' | '), /FAKE_ARGV:v1 --patch \/tmp\/account-route\.yml/,
+    'spawn argv must carry the appended args');
 });
 
 test('transcriptFix claude: sdk-* entrypoint rewritten to cli after the turn settles', async () => {

@@ -137,6 +137,7 @@ function closeThinking(entry) {
 export class AcpStdioAdapter {
   constructor({
     command,                 // array: ['claude-agent-acp'] or ['gemini','--acp']
+    args,                    // optional extra argv appended to `command` (serve entry "args" — e.g. dsh's --patch); ~ is NOT expanded
     cwd = process.cwd(),
     env,                     // optional {VAR: value} merged over process.env for the child
     transcriptFix,           // 'claude' → rewrite the transcript entrypoint after each turn (see claude-transcript-fix.mjs)
@@ -145,7 +146,10 @@ export class AcpStdioAdapter {
     log = () => {},
   } = {}) {
     if (!Array.isArray(command) || !command.length) throw new Error('acp adapter: command required');
-    this.opts = { command, cwd, env, transcriptFix, claudeProjectsDir, installHint, log };
+    if (args !== undefined && (!Array.isArray(args) || args.some((a) => typeof a !== 'string'))) {
+      throw new Error('acp adapter: args must be an array of strings');
+    }
+    this.opts = { command, args, cwd, env, transcriptFix, claudeProjectsDir, installHint, log };
     this.child = null;
     this.ready = false;
     this.starting = null;         // in-flight spawn+initialize (serialization lock)
@@ -176,7 +180,7 @@ export class AcpStdioAdapter {
     // fresh child so nothing can hang on a dead process, and kill the
     // half-dead one (e.g. an initialize that timed out) instead of leaking it.
     this.#sweepStale('acp agent process restarted');
-    const child = spawn(command[0], command.slice(1), {
+    const child = spawn(command[0], [...command.slice(1), ...(this.opts.args || [])], {
       stdio: ['pipe', 'pipe', 'pipe'],
       // Entry/registry env rides over the daemon's inherited environment —
       // e.g. the claude entry's CLAUDE_CODE_ENTRYPOINT (see agents-registry) —

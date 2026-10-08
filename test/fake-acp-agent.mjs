@@ -26,6 +26,9 @@ const err = (s) => process.stderr.write(s + '\n');
 // env probe: proves what environment the adapter spawned us with (env merge
 // tests assert on this line)
 err(`FAKE_ENV:PROBE=${process.env.AGENT_BRIDGE_ENV_PROBE ?? '-'} ENTRYPOINT=${process.env.CLAUDE_CODE_ENTRYPOINT ?? '-'}`);
+// argv probe: proves what arguments the adapter spawned us with (the serve
+// entry "args" append tests assert on this line)
+err(`FAKE_ARGV:${process.argv.slice(2).join(' ')}`);
 
 const sessions = new Set();
 
