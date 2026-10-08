@@ -19,7 +19,12 @@
 //   turn/interrupt {threadId, turnId} → {}      (turn/completed status:'interrupted')
 //
 //   notifications: turn/started; item/agentMessage/delta {itemId, delta};
-//     item/started|item/completed {item:{type:'agentMessage'|'commandExecution'
+//     item/reasoning/summaryTextDelta {threadId,turnId,itemId,summaryIndex,
+//     delta} · item/reasoning/textDelta {…,contentIndex,delta} (schema dump of
+//     codex-cli 0.149.1, 2026-10-09 — surfaced as an inline <thinking> block
+//     that joins done.full; a completed-only reasoning item {content[]+
+//     summary[], arrays of strings} joins it too); item/started|item/completed
+//     {item:{type:'agentMessage'|'reasoning'|'commandExecution'
 //     |'fileChange'|…}}; thread/tokenUsage/updated {turnId, tokenUsage:{last:
 //     {inputTokens, outputTokens}}}; thread/status/changed (activeFlags may
 //     carry 'waitingOnApproval'); error {error:{message}, willRetry};
@@ -96,6 +101,14 @@ function closeCurMsg(t) {
     if (t.curMsg.id != null) t.itemIds.add(t.curMsg.id);
   }
   t.curMsg = null;
+}
+
+/** Close an open <thinking> delta run (stream tags only — the assembled
+ * done.full re-wraps t.thinkingText itself at turn end). */
+function closeThinking(t) {
+  if (!t.thinking) return;
+  t.thinking = false;
+  t.events?.({ type: 'delta', text: '\n</thinking>\n' });
 }
 
 export class CodexAppServerAdapter {
@@ -287,6 +300,7 @@ export class CodexAppServerAdapter {
       }
       case 'item/agentMessage/delta': {
         if (!matches(params.turnId)) break;
+        closeThinking(t);
         // A delta for a DIFFERENT item than the one streaming = the previous
         // message just got superseded (multi-message turn): close it as a
         // future note before appending to the new one. Delta frames carry no
@@ -297,6 +311,22 @@ export class CodexAppServerAdapter {
         t.deltaItems.add(params.itemId);
         t.curMsg.text += params.delta || '';
         t.events?.({ type: 'delta', text: params.delta || '' });
+        break;
+      }
+      case 'item/reasoning/summaryTextDelta':
+      case 'item/reasoning/textDelta': {
+        // codex streams reasoning as it thinks (schema-verified 0.149.1:
+        // item/reasoning/summaryTextDelta {threadId,turnId,itemId,summaryIndex,
+        // delta} · item/reasoning/textDelta {…,contentIndex,delta}). Surfaced
+        // as an inline <thinking> delta run; t.thinkingText re-joins it into
+        // done.full at turn end (2026-10-09: reasoning used to be dropped).
+        if (!matches(params.turnId) || t.finished) break;
+        const delta = typeof params.delta === 'string' ? params.delta : '';
+        if (!delta) break;
+        if (params.itemId != null) t.itemIds.add(params.itemId);
+        if (!t.thinking) { t.thinking = true; t.thinkingText += (t.thinkingText ? '\n\n' : ''); t.events?.({ type: 'delta', text: '<thinking>\n' }); }
+        t.thinkingText += delta;
+        t.events?.({ type: 'delta', text: delta });
         break;
       }
       case 'item/started': {
@@ -377,7 +407,24 @@ export class CodexAppServerAdapter {
           // other item rides out as a `note` event (additive) just before
           // done, instead of leaking into the reply body.
           closeCurMsg(t);
+          closeThinking(t);
           for (const it of params.turn?.items || []) {
+            if (it?.type === 'reasoning') {
+              // Reasoning rides the item/reasoning/* deltas; a completed-only
+              // reasoning item (short/non-streaming turns) joins the assembled
+              // thinking block here. Never a note, never the reply body
+              // (ReasoningThreadItem: content[] + summary[] arrays of strings,
+              // schema-verified 0.149.1).
+              if (it.id == null || !t.itemIds.has(it.id)) {
+                const text = [
+                  ...(Array.isArray(it.content) ? it.content : []),
+                  ...(Array.isArray(it.summary) ? it.summary : []),
+                ].filter((s) => typeof s === 'string' && s).join('\n\n');
+                if (text) t.thinkingText += (t.thinkingText ? '\n\n' : '') + text;
+                if (it.id != null) t.itemIds.add(it.id);
+              }
+              continue;
+            }
             if (unseen(t, it)) {
               t.items.push({ id: it.id, text: it.text, phase: it.phase ?? null });
               if (it.id != null) t.itemIds.add(it.id);
@@ -394,7 +441,8 @@ export class CodexAppServerAdapter {
               t.events?.({ type: 'note', text: item.text, ...(item.phase ? { phase: item.phase } : {}) });
             }
           }
-          const full = answer >= 0 ? (t.items[answer].text || '') : '';
+          const answerText = answer >= 0 ? (t.items[answer].text || '') : '';
+          const full = t.thinkingText ? `<thinking>\n${t.thinkingText}\n</thinking>\n\n${answerText}` : answerText;
           t.events?.({ type: 'done', full, usage: t.usage });
         }
         break;
@@ -465,6 +513,7 @@ export class CodexAppServerAdapter {
     const entry = {
       turnId: null, awaitingTurnStart: true, sawDelta: false,
       deltaItems: new Set(), itemIds: new Set(), items: [], curMsg: null,
+      thinking: false, thinkingText: '',
       usage: null, finished: false, events: onEvent, child: this.child,
     };
     this.threads.set(threadId, entry);

@@ -91,6 +91,13 @@
 //   session/update NOTIFICATION {sessionId, update:{sessionUpdate:…}} (same
 //       shapes in v1 and v2):
 //       agent_message_chunk {content:{type:'text',text}} → delta
+//       agent_thought_chunk {content:{type:'text',text}} → inline <thinking>
+//         delta block that ALSO joins full, so done.full carries what streamed
+//         and browsa's collapsible thinking block survives DONE (2026-10-09;
+//         both bundled shims emit exactly this shape — pi-acp thinking_delta,
+//         claude-agent-acp 0.86.0 streams "thinking"/"thinking_delta" events
+//         with type:'text'; ACP 'thinking'-typed blocks are accepted too).
+//         Previously dropped unsurfaced ("not surfaced in v1").
 //       tool_call_update {toolCallId,title?,status:pending|in_progress|
 //         completed|failed|cancelled} → tool events
 //       usage_update {used,size?,cost?} → usage (v2; context tokens — there
@@ -117,6 +124,15 @@ import { agentSpawnEnv } from './agent-env.mjs';
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
 const REQUESTED_ACP_VERSION = 2; // we speak 1–2; the agent picks ≤ requested
+
+/** Close an open <thinking> run: closer joins full AND streams, so done.full
+ * (assembled from full) always carries well-formed thinking blocks. */
+function closeThinking(entry) {
+  if (!entry.thinking) return;
+  entry.thinking = false;
+  entry.full += '\n</thinking>\n';
+  entry.events?.({ type: 'delta', text: '\n</thinking>\n' });
+}
 
 export class AcpStdioAdapter {
   constructor({
@@ -323,9 +339,21 @@ export class AcpStdioAdapter {
     const u = params.update || {};
     switch (u.sessionUpdate) {
       case 'agent_message_chunk': {
+        closeThinking(t);
         const blocks = Array.isArray(u.content) ? u.content : [u.content].filter(Boolean);
         for (const b of blocks) {
           if (b?.type === 'text' && b.text) {
+            t.full += b.text;
+            t.events?.({ type: 'delta', text: b.text });
+          }
+        }
+        break;
+      }
+      case 'agent_thought_chunk': {
+        const blocks = Array.isArray(u.content) ? u.content : [u.content].filter(Boolean);
+        for (const b of blocks) {
+          if ((b?.type === 'text' || b?.type === 'thinking') && b.text) {
+            if (!t.thinking) { t.thinking = true; t.full += '<thinking>\n'; t.events?.({ type: 'delta', text: '<thinking>\n' }); }
             t.full += b.text;
             t.events?.({ type: 'delta', text: b.text });
           }
@@ -355,6 +383,7 @@ export class AcpStdioAdapter {
         this.opts.log(`[acp] ← turn idle: stopReason=${u.stopReason || '(none)'}`);
         if (t.finished) break;
         t.finished = true;
+        closeThinking(t);
         const stop = u.stopReason;
         if (stop === 'cancelled') t.events?.({ type: 'aborted' });
         else if (stop === 'refusal') t.events?.({ type: 'done', full: t.full, usage: t.usage, finishReason: '', stopReason: 'refusal' });
@@ -445,7 +474,7 @@ export class AcpStdioAdapter {
     }
     if (dropped) blocks.push({ type: 'text', text: `\n[agent-bridge: ${dropped} image(s) omitted — this agent does not advertise image input]` });
     const entry = {
-      sessionId: sid, full: '', usage: null, finished: false,
+      sessionId: sid, full: '', thinking: false, usage: null, finished: false,
       promptInFlight: true, events: onEvent, child: this.child,
     };
     // transcriptFix: on any terminal event, flip claude's sdk-* entrypoint
@@ -492,6 +521,7 @@ export class AcpStdioAdapter {
       this.opts.log(`[acp] ← prompt response: stopReason=${r.stopReason}${entry.usage ? `, usage ${entry.usage.prompt_tokens}/${entry.usage.completion_tokens}` : ', no usage'}`);
       if (!entry.finished) {
         entry.finished = true;
+        closeThinking(entry);
         if (r.stopReason === 'cancelled') emit({ type: 'aborted' });
         else emit({ type: 'done', full: entry.full, usage: entry.usage, finishReason: r.stopReason === 'max_tokens' ? 'length' : '', stopReason: r.stopReason });
       }

@@ -103,6 +103,18 @@ test('turn streams start → delta → done, with usage mapped from usage_update
   sse.cancel();
 });
 
+test('agent_thought_chunk surfaces as <thinking> deltas AND joins done.full', async () => {
+  const res = await post('/turns', { text: 'THINK then answer' });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  const deltas = sse.frames.filter((f) => f.data?.type === 'delta').map((f) => f.data.text).join('');
+  assert.ok(deltas.includes('<thinking>\nACP_thought\n</thinking>\n'), `thought should fold into <thinking>; deltas: ${deltas}`);
+  // done.full is authoritative over the delta concat — it must carry the same
+  // thinking block, or browsa re-renders the bubble at DONE and thinking vanishes
+  assert.equal(done.data.full, '<thinking>\nACP_thought\n</thinking>\nACP_reply');
+  sse.cancel();
+});
+
 test('images ride through as ACP image content blocks (mimeType preserved)', async () => {
   const res = await post('/turns', {
     text: 'IMG describe',
