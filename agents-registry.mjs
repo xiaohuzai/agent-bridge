@@ -54,7 +54,7 @@ export const KNOWN_AGENTS = {
   // workspaceRegister 'dsh': sessions created here are auto-registered into
   // the matching dsh workspace (the desktop/Web session list renders workspace
   // members — without this they'd work but stay invisible there).
-  dsh: { kind: 'acp', command: ['dsh-acp'], workspaceRegister: 'dsh', install: 'ships bundled with agent-bridge (npm i -g @openma/deepseek-harness-acp only if the optional dependency failed to install)', summary: 'DeepSeek Harness via the openma ACP adapter (token streaming; shares sessions and credentials with the dsh desktop/Web UI)' },
+  dsh: { kind: 'acp', command: ['dsh-acp'], workspaceRegister: 'dsh', install: 'ships bundled with agent-bridge — run "npm i" in the agent-bridge checkout (a fresh clone installs nothing), or npm i -g @openma/deepseek-harness-acp (needs node >= 22.15; a failed optional dep is skipped silently)', summary: 'DeepSeek Harness via the openma ACP adapter (token streaming; shares sessions and credentials with the dsh desktop/Web UI)' },
   // zcode runs on its NATIVE adapter (adapters/zcode-server.mjs) against the
   // runtime the ZCode desktop app installs — no separate CLI install exists
   // (the CLI release has no public download channel). The adapter
