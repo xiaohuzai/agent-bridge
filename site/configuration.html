@@ -118,7 +118,7 @@
     { <span class="tok-key">"name"</span>: <span class="tok-str">"gemini"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3951</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
   ]
 }</code></pre>
-        <p>这是官方起步配置（<code>agents.example.json</code>，两种安装方式都自带）。<code>name</code> 只能取注册表里的名字：<code>codex</code>、<code>claude</code>、<code>pi</code>、<code>gemini</code>——长尾智能体在 <code>agents-registry.mjs</code> 加一行即可，不用放宽配置校验。</p>
+        <p>这是官方起步配置（<code>agents.example.json</code>，两种安装方式都自带）。<code>name</code> 只能取注册表里的名字：<code>codex</code>、<code>claude</code>、<code>pi</code>、<code>gemini</code>、<code>dsh</code>、<code>workbuddy</code>、<code>zcode</code>——长尾智能体在 <code>agents-registry.mjs</code> 加一行即可，不用放宽配置校验。</p>
       </section>
 
       <!-- ============ fields ============ -->
@@ -134,7 +134,7 @@
             <tr class="grp"><td colspan="5">身份与端口</td></tr>
             <tr>
               <td>name</td><td>string</td><td>—</td>
-              <td><span class="chip chip-enum">codex</span> <span class="chip chip-enum">claude</span> <span class="chip chip-enum">pi</span> <span class="chip chip-enum">gemini</span> <span class="chip chip-enum">workbuddy</span></td>
+              <td><span class="chip chip-enum">codex</span> <span class="chip chip-enum">claude</span> <span class="chip chip-enum">pi</span> <span class="chip chip-enum">gemini</span> <span class="chip chip-enum">dsh</span> <span class="chip chip-enum">workbuddy</span> <span class="chip chip-enum">zcode</span></td>
               <td>必填。桥的身份，决定用哪个适配器；只能取注册表里的名字。</td>
             </tr>
             <tr>
@@ -172,6 +172,11 @@
               <td>command</td><td>string[]</td><td>注册表默认</td>
               <td><span class="chip">非空字符串数组</span></td>
               <td>覆盖 ACP 壳的启动命令（如 <code>["npx","-y","@agentclientprotocol/claude-agent-acp"]</code>）。codex 不适用——它走原生适配器，请用 <code>codexBin</code>。</td>
+            </tr>
+            <tr>
+              <td>args</td><td>string[]</td><td>[]</td>
+              <td><span class="chip">字符串数组</span></td>
+              <td>追加到 ACP 拉起的智能体启动命令之后的额外参数——如 dsh 的路由旗标 <code>["--provider","deepseek-account"]</code>。<code>[]</code> 显式清空注册表默认参数；<code>~</code> 不展开，请用绝对路径。</td>
             </tr>
             <tr class="grp"><td colspan="5">codex 调优 <span class="chip chip-codex">仅 codex</span></td></tr>
             <tr>
