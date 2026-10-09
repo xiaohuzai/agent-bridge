@@ -106,13 +106,25 @@ The starter runs as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 
 }
 ```
 
+**dsh (DeepSeek Harness) user?** Add its entry — the adapter ships bundled, no separate install (default command `dsh-acp`), and a DeepSeek key saved once is all it takes (dsh Web UI or `dsh-acp login`; the same credential store the desktop/Web UI uses); `cwd` is where sessions and file tools live, and sessions auto-register into the matching dsh workspace so the desktop/Web session list shows them:
+
+```json
+{
+  "bridges": [
+    { "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/path/to/your/project" }
+  ]
+}
+```
+
+Route/model flags (`--model`, `--reasoning-effort`, `--permission-mode`) ride `args`; the verified key route needs no `args` at all — values and trade-offs in the dsh section of [docs/agents.md](./docs/agents.md).
+
 | Field | Meaning |
 |---|---|
 | `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`, `gemini`, `dsh`, `workbuddy`, `zcode`) |
 | `port` | required for serve, unique per bridge (may be omitted for entries used only via `acp`) |
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
-| `args` | optional; extra argv **appended** to the agent's spawn command (ACP-spawned agents only) — e.g. dsh's route/model flags `["--provider", "deepseek-account"]`; `~` is not expanded, use absolute paths |
+| `args` | optional; extra argv **appended** to the agent's spawn command (ACP-spawned agents only) — e.g. dsh's model flag `["--model", "deepseek-v4-pro"]`; `~` is not expanded, use absolute paths |
 | `cwd` | optional; omit it and the agent runs in the directory you start `serve` from (writing `"."` is the same thing); `~` and relative paths are resolved |
 | `env` | optional `{VAR: value}` object merged over the daemon's environment for the spawned agent; entry env overrides any registry default |
 | `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket door (see Three ways to connect) |
