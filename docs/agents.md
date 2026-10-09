@@ -164,6 +164,8 @@ Live-verified 2026-10-09 (adapter 0.4.37 against dsh 0.2.0-rc.2): handshake answ
 { "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }
 ```
 
+**Desktop visibility** — sessions created here are auto-registered into the dsh workspace whose path matches the entry's `cwd`, so they render in the desktop/Web session list (the registration edits the workspace registry the same way the desktop itself would; best-effort and re-applied every turn). Create a workspace for the entry's `cwd` directory once in dsh if none exists — sessions in a workspace-less directory stay working but unlisted.
+
 ### Route selection: account balance or API key
 
 - **Account route (no key — the desktop login's balance)**: add `"args": ["--provider", "deepseek-account"]` to the entry. The desktop app's login lives in the shared `~/.dsh` credential store and this route spends it.

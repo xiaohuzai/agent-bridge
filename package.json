@@ -52,6 +52,7 @@
   "homepage": "https://github.com/xiaohuzai/agent-bridge#readme",
   "optionalDependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.86.0",
-    "pi-acp": "^0.0.34"
+    "pi-acp": "^0.0.34",
+    "@openma/deepseek-harness-acp": "^0.4.37"
   }
 }
