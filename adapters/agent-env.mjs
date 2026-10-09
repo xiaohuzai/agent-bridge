@@ -25,19 +25,27 @@ const pkgRoot = path.resolve(here, '..');
 
 const PATH_KEY = process.platform === 'win32' ? 'Path' : 'PATH';
 
-/** Bin dirs holding this package's bundled ACP shims, filtered to those that
- * exist. Two layouts to cover:
- *   npm install (global or local):  <…>/node_modules/@xiaohuzai/agent-bridge
- *     → the deps' .bin is the package tree's own node_modules/.bin;
- *   repo checkout: deps install into the repo root's node_modules/.bin.
- * Nonexistent candidates drop out — a PATH entry that isn't there is inert,
- * but there is no reason to hand children dead directories. */
-export function bundledBinDirs() {
-  const candidates = [
+/** Bin dirs holding this package's bundled ACP shims, per install layout.
+ *   repo checkout:              <repo>/node_modules/.bin (deps install there);
+ *   npm install into a project: hoisted deps sit NEXT to this package, so
+ *     their bins land in the HOST project's node_modules/.bin — resolve two
+ *     levels up, not one ('..' only reaches the @xiaohuzai scope dir, which
+ *     npm never puts a .bin in; found 2026-10-09 while diagnosing a dsh
+ *     ENOENT on a from-source bridge);
+ *   npm install -g:             neither candidate exists — npm links every
+ *     top-level bin into <prefix>/bin, which is already on PATH.
+ * Pure so tests can pin the per-layout shape; bundledBinDirs filters to dirs
+ * that exist (a PATH entry that isn't there is inert, but there is no reason
+ * to hand children dead directories). */
+export function bundledBinDirCandidates(pkgRoot) {
+  return [
     path.join(pkgRoot, 'node_modules', '.bin'),
-    path.resolve(pkgRoot, '..', '.bin'),
+    path.resolve(pkgRoot, '..', '..', '.bin'),
   ];
-  return candidates.filter((d) => {
+}
+
+export function bundledBinDirs() {
+  return bundledBinDirCandidates(pkgRoot).filter((d) => {
     try { return statSync(d).isDirectory(); } catch (_) { return false; }
   });
 }

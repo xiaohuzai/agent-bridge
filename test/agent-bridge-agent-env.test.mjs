@@ -7,10 +7,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { statSync } from 'node:fs';
 
-const { bundledBinDirs, agentPath, agentSpawnEnv } = await import('../adapters/agent-env.mjs');
+const { bundledBinDirs, bundledBinDirCandidates, agentPath, agentSpawnEnv } = await import('../adapters/agent-env.mjs');
 
 const PATH_KEY = process.platform === 'win32' ? 'Path' : 'PATH';
 const SEP = process.platform === 'win32' ? ';' : ':';
+const { join, resolve: resolvePath } = await import('node:path');
+
+test('bundledBinDirCandidates pins the per-layout bin dirs (repo checkout + npm non-global)', () => {
+  const repoRoot = '/srv/proj/agent-bridge';
+  const npmLayout = '/srv/proj/node_modules/@xiaohuzai/agent-bridge';
+  assert.deepEqual(bundledBinDirCandidates(repoRoot), [
+    join(repoRoot, 'node_modules', '.bin'),
+    resolvePath(repoRoot, '..', '..', '.bin'),
+  ]);
+  // The npm layout is the reason the second candidate exists: hoisted deps'
+  // bins live in the HOST project's node_modules/.bin — one '..' short of it
+  // lands in the @xiaohuzai scope dir, which npm never puts a .bin in.
+  assert.equal(bundledBinDirCandidates(npmLayout)[1], '/srv/proj/node_modules/.bin');
+});
 
 test('bundledBinDirs only returns existing directories (no dead PATH entries)', () => {
   for (const d of bundledBinDirs()) {
