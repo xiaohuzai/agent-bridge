@@ -118,7 +118,7 @@
     { <span class="tok-key">"name"</span>: <span class="tok-str">"gemini"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3951</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
   ]
 }</code></pre>
-        <p>This is the shipped starter (<code>agents.example.json</code>, included with both install paths). <code>name</code> must come from the registry: <code>codex</code>, <code>claude</code>, <code>pi</code>, <code>gemini</code> — long-tail agents join by adding a line to <code>agents-registry.mjs</code>, not by loosening validation.</p>
+        <p>This is the shipped starter (<code>agents.example.json</code>, included with both install paths). <code>name</code> must come from the registry: <code>codex</code>, <code>claude</code>, <code>pi</code>, <code>gemini</code>, <code>dsh</code>, <code>workbuddy</code>, <code>zcode</code> — long-tail agents join by adding a line to <code>agents-registry.mjs</code>, not by loosening validation.</p>
       </section>
 
       <!-- ============ fields ============ -->
@@ -134,7 +134,7 @@
             <tr class="grp"><td colspan="5">Identity &amp; ports</td></tr>
             <tr>
               <td>name</td><td>string</td><td>—</td>
-              <td><span class="chip chip-enum">codex</span> <span class="chip chip-enum">claude</span> <span class="chip chip-enum">pi</span> <span class="chip chip-enum">gemini</span> <span class="chip chip-enum">workbuddy</span></td>
+              <td><span class="chip chip-enum">codex</span> <span class="chip chip-enum">claude</span> <span class="chip chip-enum">pi</span> <span class="chip chip-enum">gemini</span> <span class="chip chip-enum">dsh</span> <span class="chip chip-enum">workbuddy</span> <span class="chip chip-enum">zcode</span></td>
               <td>Required. The bridge's identity — it picks the adapter. Registry names only.</td>
             </tr>
             <tr>
@@ -172,6 +172,11 @@
               <td>command</td><td>string[]</td><td>registry default</td>
               <td><span class="chip">non-empty string array</span></td>
               <td>Overrides the ACP shim's spawn command (e.g. <code>["npx","-y","@agentclientprotocol/claude-agent-acp"]</code>). Not for codex — it runs the native adapter; use <code>codexBin</code>.</td>
+            </tr>
+            <tr>
+              <td>args</td><td>string[]</td><td>[]</td>
+              <td><span class="chip">string array</span></td>
+              <td>Extra argv appended to the spawn command of ACP-launched agents — e.g. dsh's route flag <code>["--provider","deepseek-account"]</code>. <code>[]</code> explicitly clears registry-default args; <code>~</code> is not expanded, use absolute paths.</td>
             </tr>
             <tr class="grp"><td colspan="5">codex tuning <span class="chip chip-codex">codex only</span></td></tr>
             <tr>
