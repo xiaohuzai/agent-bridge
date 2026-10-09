@@ -96,9 +96,9 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 }
 ```
 
-前四个开箱即跑——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951，自己机器上不需要密码。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**workbuddy** 需要 WorkBuddy AI 桌面版已安装、已登录且**正在运行**——适配器是其本地 worker 的纯客户端（端口自动发现，`"workbuddyPort"` 可覆盖）。两者都跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——对 dsh 来说，这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
+自带起步配置列全六个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、workbuddy 在 3953。前四个开箱即跑，自己机器上不需要密码。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**workbuddy** 需要 WorkBuddy AI 桌面版已安装、已登录且**正在运行**——适配器是其本地 worker 的纯客户端（端口自动发现，`"workbuddyPort"` 可覆盖）。两者都跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——对 dsh 来说，这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
 
-单个智能体就是同一份文件删到只剩一条；自带的 `agents.example.json` 正是前四行。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
+单个智能体就是同一份文件删到只剩一条，用不到的行删掉即可。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
 
 | 字段 | 说明 |
 |---|---|
