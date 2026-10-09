@@ -1,6 +1,6 @@
 {
   "name": "@xiaohuzai/agent-bridge",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Local daemon that turns CLI coding agents (codex, claude code, gemini, pi, … any ACP agent) into an HTTP+SSE chat backend any client can drive — plus opt-in ACP doors: a WebSocket endpoint for ACP clients and a spawnable stdio agent mode. Bundles the ACP shims; the agent CLIs stay the user's own installs.",
   "license": "MIT",
   "type": "module",
