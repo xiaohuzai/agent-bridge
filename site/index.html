@@ -208,15 +208,16 @@ npm i -g @google/gemini-cli                                  <span class="tok-co
     <p class="prose">全部旋钮都在 <code>agents.json</code> 里：端口、apiKey、运行目录、codex 的沙箱与审批策略、ACP 门的开关…… CLI 只有两组旗标，其余全是配置字段。</p>
     <pre><code>{
   <span class="tok-key">"bridges"</span>: [
-    { <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>,  <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span>,
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>,     <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span>,
       <span class="tok-key">"sandbox"</span>: <span class="tok-str">"workspace-write"</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"on-request"</span> },
-    { <span class="tok-key">"name"</span>: <span class="tok-str">"claude"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3949</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
-    { <span class="tok-key">"name"</span>: <span class="tok-str">"pi"</span>,     <span class="tok-key">"port"</span>: <span class="tok-num">3950</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
-    { <span class="tok-key">"name"</span>: <span class="tok-str">"gemini"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3951</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"claude"</span>,    <span class="tok-key">"port"</span>: <span class="tok-num">3949</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"pi"</span>,        <span class="tok-key">"port"</span>: <span class="tok-num">3950</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"gemini"</span>,    <span class="tok-key">"port"</span>: <span class="tok-num">3951</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"dsh"</span>,        <span class="tok-key">"port"</span>: <span class="tok-num">3952</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"workbuddy"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3953</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
   ]
 }</code></pre>
-    <p class="prose">用 dsh、workbuddy 等？同样是 <code>bridges</code> 里的一条条目——<a href="configuration.html#file">配置参考</a>里有现成用例（dsh：适配器随包内置，DeepSeek key 存一次即可）。</p>
-    <p class="prose"><a href="configuration.html">完整配置参考</a>列出每个字段的类型、默认值、可选取值，以及 codex 沙箱/审批的取舍指南（包括「想让 codex 少问多做」该配哪一行）。</p>
+    <p class="prose">前四行开箱即跑；<strong>dsh</strong> 存一次 DeepSeek key 即可（适配器随包内置），<strong>workbuddy</strong> 装好桌面版并保持运行——用不到的行删掉。<a href="configuration.html">完整配置参考</a>列出每个字段的类型、默认值、可选取值，以及 codex 沙箱/审批的取舍指南（包括「想让 codex 少问多做」该配哪一行）。</p>
   </section>
 </main>
 

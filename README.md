@@ -80,43 +80,25 @@ cp agents.example.json agents.json && chmod 600 agents.json
 
 On Windows, PowerShell runs both lines as-is; in `cmd`, use the path the CLI prints with `copy`.
 
-**Or write it by hand** — this is the whole file:
+**Or write it by hand** — this is the whole file, every known agent in one place; delete the lines you don't use:
 
 ```json
 {
   "bridges": [
-    { "name": "codex",  "port": 3948, "apiKey": "",
+    { "name": "codex",     "port": 3948, "apiKey": "",
       "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "" },
-    { "name": "pi",     "port": 3950, "apiKey": "" },
-    { "name": "gemini", "port": 3951, "apiKey": "" }
+    { "name": "claude",    "port": 3949, "apiKey": "" },
+    { "name": "pi",        "port": 3950, "apiKey": "" },
+    { "name": "gemini",    "port": 3951, "apiKey": "" },
+    { "name": "dsh",       "port": 3952, "apiKey": "" },
+    { "name": "workbuddy", "port": 3953, "apiKey": "" }
   ]
 }
 ```
 
-The starter runs as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 3951, no key needed on your own machine. A single agent is the same thing with one entry. `chmod 600` starts to matter once a real `apiKey` goes in the file.
+The four starter agents run as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 3951, no key needed on your own machine. **dsh** needs a DeepSeek key saved once (dsh Web UI or `dsh-acp login` — the same credential store the desktop/Web UI use); the adapter ships bundled, no separate install. **workbuddy** needs the WorkBuddy AI desktop app installed, logged in, and **running** — the adapter is a pure client of its local worker (port auto-discovered, `"workbuddyPort"` overrides). Both work in the directory you start `serve` from; add `"cwd"` to point them at a project — for dsh, that directory also decides which dsh workspace the sessions register into (and whether the desktop/Web session list shows them). Route/model flags (`--model`, `--reasoning-effort`, `--permission-mode`) ride `args` (e.g. `["--model", "deepseek-flash"]`); dsh's verified key route needs no `args` at all — values and trade-offs in the dsh section of [docs/agents.md](./docs/agents.md).
 
-**WorkBuddy AI desktop user?** Use its entry instead — the desktop app must be installed, logged in, and **running** (the adapter is a pure client of its local worker: the port is auto-discovered, `"workbuddyPort"` overrides, and `cwd` is the workspace the agent works in):
-
-```json
-{
-  "bridges": [
-    { "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/path/to/your/project" }
-  ]
-}
-```
-
-**dsh (DeepSeek Harness) user?** Add its entry — the adapter ships bundled, no separate install (default command `dsh-acp`), and a DeepSeek key saved once is all it takes (dsh Web UI or `dsh-acp login`; the same credential store the desktop/Web UI uses); `cwd` is where sessions and file tools live, and sessions auto-register into the matching dsh workspace so the desktop/Web session list shows them:
-
-```json
-{
-  "bridges": [
-    { "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/path/to/your/project" }
-  ]
-}
-```
-
-Route/model flags (`--model`, `--reasoning-effort`, `--permission-mode`) ride `args`; the verified key route needs no `args` at all — values and trade-offs in the dsh section of [docs/agents.md](./docs/agents.md).
+A single agent is the same file with one entry left; the shipped `agents.example.json` is exactly the first four lines. `chmod 600` starts to matter once a real `apiKey` goes in the file.
 
 | Field | Meaning |
 |---|---|

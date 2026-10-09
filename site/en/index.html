@@ -208,15 +208,16 @@ npm i -g @google/gemini-cli                                  <span class="tok-co
     <p class="prose">Ports, apiKey, working directory, codex sandbox and approval policy, the ACP door switch — all in <code>agents.json</code>. The CLI takes only two flags; everything else is a config field.</p>
     <pre><code>{
   <span class="tok-key">"bridges"</span>: [
-    { <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>,  <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span>,
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"codex"</span>,     <span class="tok-key">"port"</span>: <span class="tok-num">3948</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span>,
       <span class="tok-key">"sandbox"</span>: <span class="tok-str">"workspace-write"</span>, <span class="tok-key">"approval"</span>: <span class="tok-str">"on-request"</span> },
-    { <span class="tok-key">"name"</span>: <span class="tok-str">"claude"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3949</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
-    { <span class="tok-key">"name"</span>: <span class="tok-str">"pi"</span>,     <span class="tok-key">"port"</span>: <span class="tok-num">3950</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
-    { <span class="tok-key">"name"</span>: <span class="tok-str">"gemini"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3951</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"claude"</span>,    <span class="tok-key">"port"</span>: <span class="tok-num">3949</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"pi"</span>,        <span class="tok-key">"port"</span>: <span class="tok-num">3950</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"gemini"</span>,    <span class="tok-key">"port"</span>: <span class="tok-num">3951</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"dsh"</span>,        <span class="tok-key">"port"</span>: <span class="tok-num">3952</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> },
+    { <span class="tok-key">"name"</span>: <span class="tok-str">"workbuddy"</span>, <span class="tok-key">"port"</span>: <span class="tok-num">3953</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span> }
   ]
 }</code></pre>
-    <p class="prose">On dsh, workbuddy and the rest? Same thing — one entry in <code>bridges</code>. Ready-made examples live in the <a href="configuration.html#file">configuration reference</a> (dsh: the adapter ships bundled, a DeepSeek key saved once is all it takes).</p>
-    <p class="prose">The <a href="configuration.html">full configuration reference</a> lists every field with type, default and allowed values — plus the codex sandbox/approval trade-offs (including how to make codex stop asking).</p>
+    <p class="prose">The first four lines run as-is; <strong>dsh</strong> needs a DeepSeek key saved once (the adapter ships bundled), <strong>workbuddy</strong> needs the desktop app installed and running — delete the lines you don't use. The <a href="configuration.html">full configuration reference</a> lists every field with type, default and allowed values — plus the codex sandbox/approval trade-offs (including how to make codex stop asking).</p>
   </section>
 </main>
 

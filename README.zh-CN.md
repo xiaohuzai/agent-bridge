@@ -80,43 +80,25 @@ cp agents.example.json agents.json && chmod 600 agents.json
 
 Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路径配合 `copy`。
 
-**或者手写**——整个文件就这么多：
+**或者手写**——整个文件就这么多，已知 agent 全在这一处，用不到的行删掉即可：
 
 ```json
 {
   "bridges": [
-    { "name": "codex",  "port": 3948, "apiKey": "",
+    { "name": "codex",     "port": 3948, "apiKey": "",
       "sandbox": "workspace-write", "approval": "on-request" },
-    { "name": "claude", "port": 3949, "apiKey": "" },
-    { "name": "pi",     "port": 3950, "apiKey": "" },
-    { "name": "gemini", "port": 3951, "apiKey": "" }
+    { "name": "claude",    "port": 3949, "apiKey": "" },
+    { "name": "pi",        "port": 3950, "apiKey": "" },
+    { "name": "gemini",    "port": 3951, "apiKey": "" },
+    { "name": "dsh",       "port": 3952, "apiKey": "" },
+    { "name": "workbuddy", "port": 3953, "apiKey": "" }
   ]
 }
 ```
 
-起步配置开箱即跑——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951，自己机器上不需要密码。单个智能体也一样，只是 `bridges` 里只有一条。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
+前四个开箱即跑——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951，自己机器上不需要密码。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**workbuddy** 需要 WorkBuddy AI 桌面版已安装、已登录且**正在运行**——适配器是其本地 worker 的纯客户端（端口自动发现，`"workbuddyPort"` 可覆盖）。两者都跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——对 dsh 来说，这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
 
-**用 WorkBuddy AI 桌面版？** 换成它的条目——桌面应用需已安装、已登录且**正在运行**（适配器是其本地 worker 的纯客户端：端口自动发现，`"workbuddyPort"` 可覆盖，`cwd` 即 agent 工作的 workspace）：
-
-```json
-{
-  "bridges": [
-    { "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/path/to/your/project" }
-  ]
-}
-```
-
-**用 dsh（DeepSeek Harness）？** 加一条它的条目——适配器随包内置、无需单独安装（默认命令 `dsh-acp`），DeepSeek key 用 dsh Web UI 或 `dsh-acp login` 存一次即可（与桌面版/Web 共享同一凭据存储）；`cwd` 是会话和文件工具的落点，会话会自动登记进对应 dsh 工作区、桌面/Web 会话列表直接可见：
-
-```json
-{
-  "bridges": [
-    { "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/path/to/your/project" }
-  ]
-}
-```
-
-路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`；已验证的 key 路由不带 `args` 即可——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
+单个智能体就是同一份文件删到只剩一条；自带的 `agents.example.json` 正是前四行。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
 
 | 字段 | 说明 |
 |---|---|
