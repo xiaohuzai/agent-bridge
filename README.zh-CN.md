@@ -124,7 +124,7 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 | `port` | serve 必填，每桥唯一（仅用于 `acp` 的条目可省略） |
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
-| `args` | 可选；**追加**到 agent 启动命令后的额外参数（仅 ACP 拉起的 agent）——如 dsh 的模型旗标 `["--model", "deepseek-v4-pro"]`；`~` 不展开，请用绝对路径 |
+| `args` | 可选；**追加**到 agent 启动命令后的额外参数（仅 ACP 拉起的 agent）——如 dsh 的模型旗标 `["--model", "deepseek-flash"]`；`~` 不展开，请用绝对路径 |
 | `cwd` | 可选；不写就跑在你启动 `serve` 的目录（写 `"."` 等价）；`~` 与相对路径会自动解析 |
 | `env` | 可选 `{VAR: value}` 对象，合并进 daemon 环境后传给被 spawn 的 agent；条目 env 覆盖注册表默认 |
 | `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见「三扇门」） |
