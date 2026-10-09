@@ -56,7 +56,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录（官方 `claude-agent-acp` 壳已随包内置） | ✅ 实机验证 |
 | **pi** | pi 本体走官方自安装（≥0.98，或 `npm i -g @earendil-works/pi-coding-agent`）→ 跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置；pi 本体走不了 npm——安装器和 npm 包冲突） | ✅ 实机验证 |
 | **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
-| **dsh**（DeepSeek Harness） | dsh 桌面版菜单 **Manage dsh Command… → Install**（版本跟桌面发行版锁死），或 `npm i -g @deepseek-ai/dsh`；已登录桌面版的用户**不需要任何 key**（条目自带账号路由 patch）——API-key 用户用 `"args": []` 退出 | ✅ 实机验证（macOS 0.2.0-rc.2：账号路由真回合 + 过桥协议链） |
+| **dsh**（DeepSeek Harness） | `npm i -g @openma/deepseek-harness-acp`（openma ACP 适配器——进程内组装你安装的 dsh，token 级流式，会话/凭据与 dsh 桌面版/Web 共享）；key 走 dsh Web UI 或 `dsh-acp login` | ✅ 实机验证（适配器 0.4.37 对 dsh 0.2.0-rc.2） |
 | **workbuddy** | WorkBuddy AI 桌面版已安装、已登录且**正在运行**（适配器是其本地 CodeBuddy worker 网关的纯客户端——端口自动发现，`workbuddyPort` 可覆盖） | ✅ 实机验证 |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 
@@ -112,7 +112,7 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 | `port` | serve 必填，每桥唯一（仅用于 `acp` 的条目可省略） |
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
-| `args` | 可选；**追加**到 agent 启动命令后的额外参数（仅 ACP 拉起的 agent）——如 dsh 的 `["--patch", "/path/account-route.yml"]`；`~` 不展开，请用绝对路径 |
+| `args` | 可选；**追加**到 agent 启动命令后的额外参数（仅 ACP 拉起的 agent）——如 dsh 的路由/模型旗标 `["--provider", "deepseek-account"]`；`~` 不展开，请用绝对路径 |
 | `cwd` | 可选；不写就跑在你启动 `serve` 的目录（写 `"."` 等价）；`~` 与相对路径会自动解析 |
 | `env` | 可选 `{VAR: value}` 对象，合并进 daemon 环境后传给被 spawn 的 agent；条目 env 覆盖注册表默认 |
 | `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见「三扇门」） |

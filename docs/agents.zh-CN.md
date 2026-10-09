@@ -147,36 +147,29 @@ pi                                      # 首次运行：选 provider / 登录
 
 ## dsh（DeepSeek Harness）
 
-原生 ACP，无需壳——`dsh --profile acp` 本身就是一个 stdio ACP v1 agent（`@deepseek-ai/dsh-acp`，官方「automation-only」profile；注册行 `"dsh": { "kind": "acp", "command": ["dsh", "--profile", "acp"] }`）。首选安装是桌面版菜单 **Manage dsh Command… → Install**：装出的 `dsh` 版本永远跟运行中的桌面发行版一致。CLI 与桌面共享 `~/.dsh` 的产品数据（会话、凭据、设置），但不共享可执行包——从桥发起的回合会出现在桌面应用的会话列表里（ACP 面没有标题通道，这些会话用 dsh 的确定性兜底标题）。
+原生 ACP——browsa/agent-bridge 拉起的是 **openma ACP 适配器**（`@openma/deepseek-harness-acp`，`command: ["dsh-acp"]`）：第三方 ACP v1 stdio agent，**进程内组装 dsh harness**（Apache-2.0、带 CI、第三方 dsh-ACP 适配器里装机量第一）。它与 dsh 桌面版/Web 共享 `~/.dsh`——同一凭据存储、设置、预设与会话日志，在这里开的会话会出现在桌面应用的会话列表里。
 
-注册表条目自带**默认 `--patch`**（`patches/dsh-account-route.yml`），把钉死的 profile 行切到 `deepseek-account` 路由——桌面版登录态存在共享的 `~/.dsh` 凭据存储里，已登录用户只写 `{ "name": "dsh", "port": …, "apiKey": "" }` 就能用，每个回合直接记到账户余额，哪里都不需要 `DEEPSEEK_API_KEY`。2026-10-09 macOS 实机验证（dsh 0.2.0-rc.2，桌面版已登录）：带 patch 真回合完成；不打 patch 的同一台机器报 `MISSING_CREDENTIAL … deepseek-official`。
+**安装**：
 
-实机验证 2026-10-09（dsh 0.2.0-rc.2）：握手答 protocolVersion 1（桥请求 2 并接受）；`sessionCapabilities` = list/resume/close——桥重启恢复走适配器 `session/resume` 第一分支；审批走标准 `session/request_permission`（one-shot allow/reject）；思考块走 `agent_thought_chunk`；模型（`deepseek-v4-flash` / `-v4-pro` 等）与 `reasoning_effort`（`off`/`low`/`high`/`max`）都是标准 `session/set_config_option` 选项。裸安装时图片声明为 `false`（该 profile 只在「有持久附件存储 + 声明图片能力的 exact route」时开启）。协议链（spawn → 握手 → session/new → prompt → 干净的鉴权错误 SSE）已用真实二进制过桥跑通。
-
-**已知取舍：无 token 级流式。** 官方 ACP 面按 committed 消息粒度投递更新（源码实锤：只对 `assistant/message` / `tool/call` / `tool/result` 事件反应）——工具调用实时到，但纯文本长回答会整段落下而不是逐 token 流。第三方 `dsh-acp-gateway` 有 token 流但仍锁 dsh 0.1.x——不建议压过官方 profile。
-
-### 路由控制：退出或自定义
-
-- **API-key 用户**（没登录桌面版）：账号路由不回退到 key，用 `"args": []` 清掉默认，再配 `DEEPSEEK_API_KEY`（或在 Web 模型页存 key）。未登录态在首回合表现为 `ACCOUNT_SIGN_IN_REQUIRED`。
-- **自定义路由/模型**：把 `"args"` 指到你自己的 patch——条目的 `args` 整体替换默认。随包文件就是模板：
-
-```yaml
-- insert:
-    - id: agent-default-model
-      name: '@deepseek-ai/dsh-agent-default-model'
-      config:
-        provider: deepseek-account
-        model: deepseek-flash
-    - id: acp
-      name: '@deepseek-ai/dsh-acp'
-      config:
-        provider: deepseek-account
-        model: deepseek-flash
+```bash
+npm i -g @openma/deepseek-harness-acp
 ```
 
-`args` 逐字使用——`~` 不展开，请传绝对路径。
+凭据来自共享的 `~/.dsh` 存储——dsh Web UI（设置 → 模型）里存过的 key 直接生效，或跑 `dsh-acp login`。路由/模型选择走被拉起进程自己的旗标，经条目的 `args` 传入；不带 args 用 dsh 产品默认。
 
-## ACP 客户端（门）
+实机验证 2026-10-09（适配器 0.4.37 对 dsh 0.2.0-rc.2）：握手答 protocolVersion 1；`loadSession`/`fork`/图片/`embeddedContext` 能力全开；**token 级流式**——dsh 0.2 把 token 增量发布在进程内事件 `agent/assistant-stream` 上，本适配器正是订阅者（官方 `@deepseek-ai/dsh-acp-app` profile 投递的是整条已提交消息）；权限走标准 ACP `session/request_permission`，默认预设 `workspace-write`；审批「本次总是」会把该会话策略翻成 never；steering（`_session/steering`）有通告；`session/cancel` 真中断运行中的回合。
+
+```json
+{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }
+```
+
+### 路由选择：账户余额或 API key
+
+- **账户路由（免 key——桌面登录的余额）**：条目加 `"args": ["--provider", "deepseek-account"]`。桌面登录态存在共享的 `~/.dsh` 凭据存储里，这条路由花的就是它。
+- **API key 路由**：`"args": []`（强制产品默认 `deepseek-official`）+ `DEEPSEEK_API_KEY`（起桥的环境变量或 dsh Web UI 里存的 key）。`args: []` 很重要：不带时条目跑产品默认，在没 key 的机器上会报凭据错误。
+- `--model` / `--reasoning-effort` / `--permission-mode` 走同一 `args`（适配器的 CLI 旗标）。
+
+## ACP 客户端（门）## ACP 客户端（门）
 
 每个条目还可以额外直接服务 ACP 客户端：写上 `"acp": true`，桥就在 `ws://<host>:<port>/acp` 说 ACP v1（`initialize` → `session/new` → `session/prompt`；审批请求以 `session/request_permission` 原样送达客户端，带 agent 自己的选项）。同端口、与 v1 相同的 apiKey 与 Host 规则；客户端 `session/new` 里的 cwd 会被忽略——agent 跑在条目配置的 `cwd`。现成客户端（acp-sidepanel / chrome-acp 这类浏览器侧边栏、acpx、acp-ui……）直接接：指向 `ws://host:port/acp`，apiKey 当 bearer token 用。设计说明见 [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md)。
 

@@ -15,16 +15,6 @@
 // bundled: users run their own versions, and a
 // pinned copy would fork the CLI state their terminal writes.
 
-import { fileURLToPath } from 'node:url';
-
-// Shipped patch (patches/dsh-account-route.yml): swaps the deepseek-official
-// rows dsh's automation profiles pin to the ACCOUNT route. The desktop app's
-// login lives in the shared ~/.dsh credential store, so a signed-in dsh user
-// needs no API key — `{ "name": "dsh" }` alone works (live 2026-10-09,
-// macOS, dsh 0.2.0-rc.2). A serve entry's "args" replaces this default
-// wholesale; "args": [] opts back out (API-key users — the account route
-// never falls back to a key).
-const DSH_ACCOUNT_PATCH = fileURLToPath(new URL('./patches/dsh-account-route.yml', import.meta.url));
 
 export const KNOWN_AGENTS = {
   // install: surfaced verbatim in the ENOENT error when the agent's command
@@ -44,16 +34,24 @@ export const KNOWN_AGENTS = {
   // too, pi-acp's own error names it.
   pi: { kind: 'acp', command: ['pi-acp'], install: 'npm i -g pi-acp', summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
   gemini: { kind: 'acp', command: ['gemini', '--acp'], install: 'npm i -g @google/gemini-cli', summary: 'gemini CLI native ACP mode (needs gemini >= 0.62 on PATH, signed in or env-auth)' },
-  // dsh (DeepSeek Harness) speaks ACP natively — `dsh --profile acp` IS the
-  // stdio agent (@deepseek-ai/dsh-acp, automation-only). No shim, and the
-  // desktop app's "Manage dsh Command…" installs a `dsh` whose version always
-  // matches the desktop release (a shared ~/.dsh means turns started here show
-  // up in the desktop UI). Updates arrive at committed-message granularity (no
-  // token streaming — tool calls ARE live) and thoughts ride
-  // agent_thought_chunk; approvals are one-shot allow/reject via
-  // session/request_permission. Verified live 2026-10-09 against dsh
-  // 0.2.0-rc.2 (handshake protocolVersion 1, session/resume first branch).
-  dsh: { kind: 'acp', command: ['dsh', '--profile', 'acp'], args: ['--patch', DSH_ACCOUNT_PATCH], install: 'desktop app menu: Manage dsh Command… → Install (or: npm i -g @deepseek-ai/dsh)', summary: 'DeepSeek Harness via its official ACP automation profile (account route — signs in via the desktop app; shares sessions with it)' },
+  // dsh (DeepSeek Harness) via the openma ACP adapter (@openma/
+  // deepseek-harness-acp — a third-party, actively-maintained ACP v1 stdio
+  // agent that composes the dsh harness in-process). Why THIS over dsh's own
+  // `--profile acp` (the official @deepseek-ai/dsh-acp-app): the official
+  // surface is "automation-only" and delivers updates at committed-message
+  // granularity, while dsh 0.2 publishes token deltas on a process-local
+  // `agent/assistant-stream` event that only the openma adapter subscribes to
+  // — so THIS entry streams token-level text and reasoning where the official
+  // profile ships whole messages. Full ACP vocabulary on top: session
+  // load/resume/fork, images, embedded context, model catalog. It shares
+  // ~/.dsh with the dsh desktop/Web UI — sessions and credentials are the same
+  // store (desktop-saved keys just work; `dsh-acp login` adds one). Route
+  // selection belongs to the spawned process: default = the dsh product
+  // default (deepseek-official + key); account route (desktop login balance)
+  // = entry `args: ["--provider", "deepseek-account"]`; `args: []` forces the
+  // official route. Verified live 2026-10-09 against dsh 0.2.0-rc.2
+  // (standalone handshake, capabilities, both auth methods).
+  dsh: { kind: 'acp', command: ['dsh-acp'], install: 'npm i -g @openma/deepseek-harness-acp', summary: 'DeepSeek Harness via the openma ACP adapter (token streaming; shares sessions and credentials with the dsh desktop/Web UI)' },
   // zcode runs on its NATIVE adapter (adapters/zcode-server.mjs) against the
   // runtime the ZCode desktop app installs — no separate CLI install exists
   // (the CLI release has no public download channel). The adapter

@@ -92,9 +92,8 @@ options:
                   loopback only; required for non-loopback --bind) · command
                   [...] (ACP-shim agents only — codex uses "codexBin", zcode
                   auto-resolves) · args [...] (ACP-spawned agents only — extra
-                  argv appended to the agent's command; dsh ships a default
-                  [account-route patch], an entry's args replaces it and
-                  "args": [] clears it) ·
+                  argv appended to the agent's command, e.g. dsh's
+                  --provider deepseek-account) ·
                   cwd (~ expanded; default: the dir serve
                   started from) · env {} (extra vars for the spawned agent) ·
                   sandbox (read-only|workspace-write|danger-full-access) ·
