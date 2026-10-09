@@ -118,6 +118,7 @@
 // otherwise). Undeclared-image turns degrade to text with a note.
 
 import { spawn } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { registerSessionInWorkspace } from './dsh-workspace.mjs';
 import { rewriteClaudeEntrypoint } from './claude-transcript-fix.mjs';
 import { agentSpawnEnv } from './agent-env.mjs';
@@ -151,6 +152,13 @@ export class AcpStdioAdapter {
     if (args !== undefined && (!Array.isArray(args) || args.some((a) => typeof a !== 'string'))) {
       throw new Error('acp adapter: args must be an array of strings');
     }
+    // Canonicalize the session cwd (fs.realpath): the dsh workspace registry
+    // compares canonical paths AND filters a workspace's sessionIds by the
+    // session-header cwd — a symlinked or unnormalized cwd would register
+    // into a workspace whose path can never equal the stored header, leaving
+    // the session invisible. A missing dir keeps the raw value; spawn/session-new
+    // surfaces that error with its own message.
+    try { cwd = realpathSync(cwd); } catch { /* nonexistent — report via the normal error paths */ }
     // workspaceRegister: 'dsh' → register newly created sessions into the dsh
     // workspace registry so the desktop/Web UI lists them (see dsh-workspace.mjs)
     this.opts = { command, args, cwd, env, transcriptFix, workspaceRegister, claudeProjectsDir, installHint, log };

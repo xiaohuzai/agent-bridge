@@ -45,15 +45,20 @@ export const KNOWN_AGENTS = {
   // profile ships whole messages. Full ACP vocabulary on top: session
   // load/resume/fork, images, embedded context, model catalog. It shares
   // ~/.dsh with the dsh desktop/Web UI — sessions and credentials are the same
-  // store (desktop-saved keys just work; `dsh-acp login` adds one). Route
-  // selection belongs to the spawned process: default = the dsh product
-  // default (deepseek-official + key); account route (desktop login balance)
-  // = entry `args: ["--provider", "deepseek-account"]`; `args: []` forces the
-  // official route. Verified live 2026-10-09 against dsh 0.2.0-rc.2
-  // (standalone handshake, capabilities, both auth methods).
+  // store. Standalone credentials are API KEYS through every path the adapter
+  // exposes (`dsh-acp login`, the Web UI Settings → Models, the local browser
+  // sign-in page — all land in ~/.dsh/.credentials.yaml, mode 600); the
+  // desktop login's grants are in the store too but no adapter path consumes
+  // them — the `deepseek-account` route has only ever failed with the
+  // credential error, so the key route (product default `deepseek-official`
+  // reading refs.DEEPSEEK_API_KEY) is the supported path. Real end-to-end
+  // turn through browsa verified 2026-10-10 (dsh 0.2.0-rc.2, default route +
+  // saved key; handshake/capabilities/streaming verified 2026-10-09).
   // workspaceRegister 'dsh': sessions created here are auto-registered into
-  // the matching dsh workspace (the desktop/Web session list renders workspace
-  // members — without this they'd work but stay invisible there).
+  // the matching dsh workspace — and the workspace record itself is created
+  // when none owns the entry cwd (workspace domain v2 shape, realpath-
+  // canonical paths, version-gated) — so the desktop/Web session list renders
+  // them (without this they'd work but stay invisible there).
   dsh: { kind: 'acp', command: ['dsh-acp'], workspaceRegister: 'dsh', install: 'ships bundled with agent-bridge — run "npm i" in the agent-bridge checkout (a fresh clone installs nothing), or npm i -g @openma/deepseek-harness-acp (needs node >= 22.15; a failed optional dep is skipped silently)', summary: 'DeepSeek Harness via the openma ACP adapter (token streaming; shares sessions and credentials with the dsh desktop/Web UI)' },
   // zcode runs on its NATIVE adapter (adapters/zcode-server.mjs) against the
   // runtime the ZCode desktop app installs — no separate CLI install exists

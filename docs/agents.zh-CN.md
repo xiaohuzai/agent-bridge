@@ -155,23 +155,23 @@ pi                                      # 首次运行：选 provider / 登录
 npm i -g @openma/deepseek-harness-acp
 ```
 
-凭据来自共享的 `~/.dsh` 存储——dsh Web UI（设置 → 模型）里存过的 key 直接生效，或跑 `dsh-acp login`。路由/模型选择走被拉起进程自己的旗标，经条目的 `args` 传入；不带 args 用 dsh 产品默认。
+standalone 适配器的凭据是共享 `~/.dsh` 存储里的 **API key**：`dsh-acp login`（贴 key，隐藏输入）、dsh Web UI（设置 → 模型）、适配器的本地浏览器登录页，三者写的都是同一个 `~/.dsh/.credentials.yaml`（mode 600）。路由/模型选择走被拉起进程自己的旗标，经条目的 `args` 传入；不带 args 用 dsh 产品默认 `deepseek-official`，读的就是该存储里的 `refs.DEEPSEEK_API_KEY`。
 
-实机验证 2026-10-09（适配器 0.4.37 对 dsh 0.2.0-rc.2）：握手答 protocolVersion 1；`loadSession`/`fork`/图片/`embeddedContext` 能力全开；**token 级流式**——dsh 0.2 把 token 增量发布在进程内事件 `agent/assistant-stream` 上，本适配器正是订阅者（官方 `@deepseek-ai/dsh-acp-app` profile 投递的是整条已提交消息）；权限走标准 ACP `session/request_permission`，默认预设 `workspace-write`；审批「本次总是」会把该会话策略翻成 never；steering（`_session/steering`）有通告；`session/cancel` 真中断运行中的回合。
+实机验证 2026-10-09/10（适配器 0.4.37 对 dsh 0.2.0-rc.2）：握手答 protocolVersion 1；`loadSession`/`fork`/图片/`embeddedContext` 能力全开；**token 级流式**——dsh 0.2 把 token 增量发布在进程内事件 `agent/assistant-stream` 上，本适配器正是订阅者（官方 `@deepseek-ai/dsh-acp-app` profile 投递的是整条已提交消息）；权限走标准 ACP `session/request_permission`，默认预设 `workspace-write`；审批「本次总是」会把该会话策略翻成 never；steering（`_session/steering`）有通告；`session/cancel` 真中断运行中的回合。2026-10-10 经 browsa 跑通真实端到端回合（默认路由 + 已存 key）。
 
 ```json
 { "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }
 ```
 
-**桌面可见性**——这里创建的会话会自动登记进「路径与条目 `cwd` 匹配」的那个 dsh 工作区，从而出现在桌面/Web 的会话列表里（登记就是照桌面自己的写法改工作区注册表；尽力而为，且每个回合都会重新补登）。若该 cwd 目录还没有工作区，先在 dsh 里建一次——没有工作区的目录里会话照常能用，只是列表不显示。
+**桌面可见性**——这里创建的会话会自动登记进「realpath 规范化路径与条目 `cwd` 匹配」的那个 dsh 工作区，从而出现在桌面/Web 的会话列表里（尽力而为，每个回合重新补登）。若没有任何工作区拥有该目录，桥会**自行补建工作区记录**——与 dsh 自家注册表同形（workspace domain v2：表记录 + id 头插进渲染顺序）；未来 dsh 若改了这个格式，桥会保持不写并只打日志。`cwd` 默认取 serve 进程的启动目录——建议显式指到一个你真想让会话（以及 agent 的文件/bash 工具）落着的目录。
 
-### 路由选择：账户余额或 API key
+### 路由选择：API key（已验证）vs 账户余额（dsh 侧、未验证）
 
-- **账户路由（免 key——桌面登录的余额）**：条目加 `"args": ["--provider", "deepseek-account"]`。桌面登录态存在共享的 `~/.dsh` 凭据存储里，这条路由花的就是它。
-- **API key 路由**：`"args": []`（强制产品默认 `deepseek-official`）+ `DEEPSEEK_API_KEY`（起桥的环境变量或 dsh Web UI 里存的 key）。`args: []` 很重要：不带时条目跑产品默认，在没 key 的机器上会报凭据错误。
+- **API key 路由（端到端已验证）**：产品默认 `deepseek-official`。存一次 key——`dsh-acp login`、dsh Web UI（设置 → 模型）、或起桥环境里的 `DEEPSEEK_API_KEY`——条目不带 `args` 即可。
+- **账户路由**：dsh 本体也认 `--provider deepseek-account`，桌面登录的 grant 也确实在共享 `~/.dsh` 存储里——但 standalone 适配器自己暴露的每一条凭据通路都是 key，且经桥的账户路由回合至今只见凭据报错。按未验证对待；key 路由是受支持通路。
 - `--model` / `--reasoning-effort` / `--permission-mode` 走同一 `args`（适配器的 CLI 旗标）。
 
-## ACP 客户端（门）## ACP 客户端（门）
+## ACP 客户端（门）
 
 每个条目还可以额外直接服务 ACP 客户端：写上 `"acp": true`，桥就在 `ws://<host>:<port>/acp` 说 ACP v1（`initialize` → `session/new` → `session/prompt`；审批请求以 `session/request_permission` 原样送达客户端，带 agent 自己的选项）。同端口、与 v1 相同的 apiKey 与 Host 规则；客户端 `session/new` 里的 cwd 会被忽略——agent 跑在条目配置的 `cwd`。现成客户端（acp-sidepanel / chrome-acp 这类浏览器侧边栏、acpx、acp-ui……）直接接：指向 `ws://host:port/acp`，apiKey 当 bearer token 用。设计说明见 [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md)。
 

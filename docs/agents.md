@@ -156,23 +156,23 @@ Native ACP — browsa/agent-bridge spawns the **openma ACP adapter** (`@openma/d
 npm i -g @openma/deepseek-harness-acp
 ```
 
-Credentials come from the shared `~/.dsh` store — a key saved in the dsh Web UI (Settings → Models) just works, or run `dsh-acp login`. Route/model selection rides the spawned process's own flags via the entry's `args` (see below); without args it uses the dsh product default.
+Credentials for the standalone adapter are API keys in the shared `~/.dsh` store: `dsh-acp login` (paste the key, hidden input), the dsh Web UI (Settings → Models), and the adapter's local browser sign-in page all write the same `~/.dsh/.credentials.yaml` (mode 600). Route/model selection rides the spawned process's own flags via the entry's `args` (see below); without args it uses the dsh product default, `deepseek-official`, which reads `refs.DEEPSEEK_API_KEY` from that store.
 
-Live-verified 2026-10-09 (adapter 0.4.37 against dsh 0.2.0-rc.2): handshake answers protocolVersion 1; `loadSession`/`fork`/image/`embeddedContext` capabilities all advertised; **token-level streaming** — dsh 0.2 publishes token deltas on a process-local `agent/assistant-stream` event and this adapter is the one that subscribes to it (the official `@deepseek-ai/dsh-acp-app` profile ships whole committed messages instead); permissions ride standard ACP `session/request_permission` with `workspace-write` as the default preset; approval "always" flips the session policy; steering (`_session/steering`) is advertised; `session/cancel` really interrupts the running turn.
+Live-verified 2026-10-09/10 (adapter 0.4.37 against dsh 0.2.0-rc.2): handshake answers protocolVersion 1; `loadSession`/`fork`/image/`embeddedContext` capabilities all advertised; **token-level streaming** — dsh 0.2 publishes token deltas on a process-local `agent/assistant-stream` event and this adapter is the one that subscribes to it (the official `@deepseek-ai/dsh-acp-app` profile ships whole committed messages instead); permissions ride standard ACP `session/request_permission` with `workspace-write` as the default preset; approval "always" flips the session policy; steering (`_session/steering`) is advertised; `session/cancel` really interrupts the running turn. A real end-to-end turn through browsa ran 2026-10-10 on the default route with a saved key.
 
 ```json
 { "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }
 ```
 
-**Desktop visibility** — sessions created here are auto-registered into the dsh workspace whose path matches the entry's `cwd`, so they render in the desktop/Web session list (the registration edits the workspace registry the same way the desktop itself would; best-effort and re-applied every turn). Create a workspace for the entry's `cwd` directory once in dsh if none exists — sessions in a workspace-less directory stay working but unlisted.
+**Desktop visibility** — sessions created here are auto-registered into the dsh workspace whose (realpath-canonicalized) path matches the entry's `cwd`, so they render in the desktop/Web session list (best-effort, re-applied every turn). When no workspace owns the directory, the bridge creates the workspace record itself, in exactly the on-disk shape dsh's own registry writes (workspace domain v2: the table record plus the id prepended to the render order); a future dsh that changes that format is left untouched with a log line. `cwd` defaults to the serve process's directory — set it to a directory you actually want sessions (and the agent's file/bash tools) to live in.
 
-### Route selection: account balance or API key
+### Route selection: API key (verified) vs account balance (dsh-side, unverified)
 
-- **Account route (no key — the desktop login's balance)**: add `"args": ["--provider", "deepseek-account"]` to the entry. The desktop app's login lives in the shared `~/.dsh` credential store and this route spends it.
-- **API key route**: `"args": []` (forces the product default `deepseek-official`) plus `DEEPSEEK_API_KEY` in the bridge's launching environment or a key saved in the dsh Web UI. `args: []` matters: without it the entry runs the product default, which on a keyless machine fails with a credential error.
+- **API key route (verified end-to-end)**: the product default `deepseek-official`. Save a key once — `dsh-acp login`, the dsh Web UI (Settings → Models), or `DEEPSEEK_API_KEY` in the bridge's launching environment — and run the entry without `args`.
+- **Account route**: dsh also knows `--provider deepseek-account`, and the desktop login's grants do live in the shared `~/.dsh` store — but every credential path the standalone adapter itself exposes is a key, and a bridge turn on this route has only ever been seen failing with the credential error. Treat it as unverified; the key route is the supported path.
 - `--model` / `--reasoning-effort` / `--permission-mode` ride the same `args` (the adapter's CLI flags).
 
-## ACP clients (the front)## ACP clients (the front)
+## ACP clients (the front)
 
 Every entry can additionally serve ACP clients directly: add `"acp": true` and the bridge exposes `ws://<host>:<port>/acp` speaking ACP v1 (`initialize` → `session/new` → `session/prompt`; permission requests arrive as `session/request_permission` with the agent's own options). Same port, same apiKey and Host rules as v1; the client's `session/new` cwd is ignored — the agent runs in the entry's `cwd`. Ready-made clients (browser sidepanels à la acp-sidepanel / chrome-acp, acpx, acp-ui, …) connect as-is: point them at `ws://host:port/acp` with the entry's apiKey as the bearer token. Design notes: [design-acp-front.zh-CN.md](./design-acp-front.zh-CN.md).
 
