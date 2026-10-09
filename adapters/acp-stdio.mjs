@@ -118,6 +118,7 @@
 // otherwise). Undeclared-image turns degrade to text with a note.
 
 import { spawn } from 'node:child_process';
+import { registerSessionInWorkspace } from './dsh-workspace.mjs';
 import { rewriteClaudeEntrypoint } from './claude-transcript-fix.mjs';
 import { agentSpawnEnv } from './agent-env.mjs';
 
@@ -141,6 +142,7 @@ export class AcpStdioAdapter {
     cwd = process.cwd(),
     env,                     // optional {VAR: value} merged over process.env for the child
     transcriptFix,           // 'claude' → rewrite the transcript entrypoint after each turn (see claude-transcript-fix.mjs)
+    workspaceRegister,       // 'dsh' → register new sessions into the dsh workspace registry (desktop session-list visibility)
     claudeProjectsDir,       // test override for the fixer's ~/.claude/projects
     installHint,             // registry `install` line, surfaced verbatim when the command is missing
     log = () => {},
@@ -149,7 +151,9 @@ export class AcpStdioAdapter {
     if (args !== undefined && (!Array.isArray(args) || args.some((a) => typeof a !== 'string'))) {
       throw new Error('acp adapter: args must be an array of strings');
     }
-    this.opts = { command, args, cwd, env, transcriptFix, claudeProjectsDir, installHint, log };
+    // workspaceRegister: 'dsh' → register newly created sessions into the dsh
+    // workspace registry so the desktop/Web UI lists them (see dsh-workspace.mjs)
+    this.opts = { command, args, cwd, env, transcriptFix, workspaceRegister, claudeProjectsDir, installHint, log };
     this.child = null;
     this.ready = false;
     this.starting = null;         // in-flight spawn+initialize (serialization lock)
@@ -439,12 +443,14 @@ export class AcpStdioAdapter {
         this.opts.log(`[acp] session/resume refused (${String(resumeErr.message).slice(0, 80)}), restored via session/load`);
       }
       this.opts.log(`[acp] session resumed ${String(sessionId).slice(0, 8)}…`);
+      if (this.opts.workspaceRegister === 'dsh') registerSessionInWorkspace(this.opts.cwd, sessionId, this.opts.log);
       return sessionId;
     }
     const r = await this.rpc('session/new', { cwd: this.opts.cwd, mcpServers: [] });
     const sid = r?.sessionId;
     if (!sid) throw new Error('acp session/new: no sessionId');
     this.opts.log(`[acp] session created ${String(sid).slice(0, 8)}…`);
+    if (this.opts.workspaceRegister === 'dsh') registerSessionInWorkspace(this.opts.cwd, String(sid), this.opts.log);
     return sid;
   }
 

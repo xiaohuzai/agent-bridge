@@ -224,6 +224,7 @@ export function adapterFor(b, { log = () => {} } = {}) {
       cwd: b.cwd || process.cwd(),
       env: { ...spec.env, ...b.env }, // entry env overrides the registry default
       transcriptFix: b.transcriptFix || spec.transcriptFix,
+      workspaceRegister: b.workspaceRegister || spec.workspaceRegister,
       claudeProjectsDir: b.claudeProjectsDir,
       installHint: spec.install,
       log: wrappedLog,
