@@ -17,7 +17,7 @@ node cli.mjs serve            # 读 ./agents.json（或：serve --config FILE）
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08——真回合（流式完整）、会话连续、usage、审批流程；断连中断与桥重启续会话有测试覆盖，实机未跑 |
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11——经 svkozak/pi-acp 0.0.33 + pi 0.85.1 真回合（流式、工具调用），由 mock OpenAI provider 驱动；桥重启续会话（自动 `session/load` 回退）实机已跑 |
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01——原生 `gemini --acp` 0.62.0 真回合（流式、shell 工具+审批请求、cancel），由 mock Google GenAI 后端驱动；桥重启续会话（`session/load` 回退）实机已跑；usage 走响应的 `_meta.quota.token_count`（已映射） |
-| dsh（DeepSeek Harness） | `{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ⚠️ 2026-10-09——协议链对 dsh 0.2.0-rc.2 实机验证（spawn → ACP v1 握手 → session/new → prompt → 干净的鉴权错误 SSE；模型调用本身需有凭据的机器） |
+| dsh（DeepSeek Harness） | `{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ⚠️ 2026-10-09——协议链对 dsh 0.2.0-rc.2 实机验证（spawn → ACP v1 握手 → session/new → prompt → 干净的鉴权错误 SSE；模型调用本身需有凭据的机器）；图片通路 2026-10-10 验到 provider 边界（占位 key，出图回答待有凭据机器） |
 | workbuddy | `{ "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/your/project" }` | ✅ 2026-10-08——真实回合（流式、thinking 折叠、ACP 内容块传图、审批往返、中止）走原生回环适配器对接运行中的 WorkBuddy AI 桌面 5.4.3 |
 | opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
 
@@ -158,6 +158,8 @@ npm i -g @openma/deepseek-harness-acp
 standalone 适配器的凭据是共享 `~/.dsh` 存储里的 **API key**：`dsh-acp login`（贴 key，隐藏输入）、dsh Web UI（设置 → 模型）、适配器的本地浏览器登录页，三者写的都是同一个 `~/.dsh/.credentials.yaml`（mode 600）。路由/模型选择走被拉起进程自己的旗标，经条目的 `args` 传入；不带 args 用 dsh 产品默认 `deepseek-official`，读的就是该存储里的 `refs.DEEPSEEK_API_KEY`。
 
 实机验证 2026-10-09/10（适配器 0.4.37 对 dsh 0.2.0-rc.2）：握手答 protocolVersion 1；`loadSession`/`fork`/图片/`embeddedContext` 能力全开；**token 级流式**——dsh 0.2 把 token 增量发布在进程内事件 `agent/assistant-stream` 上，本适配器正是订阅者（官方 `@deepseek-ai/dsh-acp-app` profile 投递的是整条已提交消息）；权限走标准 ACP `session/request_permission`，默认预设 `workspace-write`；审批「本次总是」会把该会话策略翻成 never；steering（`_session/steering`）有通告；`session/cancel` 真中断运行中的回合。2026-10-10 经 browsa 跑通真实端到端回合（默认路由 + 已存 key）。
+
+**图片**：能传。适配器握手即通告 `promptCapabilities.image`，桥把 `images` 数组里的 data:/https URL 转成 ACP image 内容块随 prompt 透传（v1 限制不变：单请求 ≤8 张、请求体 ≤4MB）。harness 侧的图片准入管线真实执行（png/jpeg/webp/gif；张数/聚合字节/单图字节/像素预算超限是结构化报错、不静默吞图——上限值源自码读面）。模型侧分两路（源码读面）：模型目录里 `deepseek-flash`（DeepSeek-V41-Flash）声明 `inputModalities: ["text","image"]`、图真实进请求；`deepseek-v4-pro` 无 image 模态，带图回合不报错、图在更上游被投影成文本占位符。实机 2026-10-10（VPS，占位 key）：默认路由带 1 图的 `session/prompt` 通过准入、请求真实发出后被 DeepSeek 401 挡下（provider request_id 在案）——图片通路验到 provider 边界；真实出图的完整回合仍待有凭据的机器跑一次。回程不传图：v1 的 delta 只有文本。
 
 ```json
 { "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }
