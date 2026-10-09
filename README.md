@@ -56,7 +56,7 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in (the official `claude-agent-acp` shim ships bundled) | ✅ live-verified |
 | **pi** | pi itself via its own installer (≥0.98, or `npm i -g @earendil-works/pi-coding-agent`) → run `pi` once to pick a provider (the `pi-acp` shim ships bundled; pi itself can't come from npm — its installer collides with the npm package) | ✅ live-verified |
 | **gemini** | `npm i -g @google/gemini-cli` → run `gemini` once to log in (or env auth: `GEMINI_API_KEY`, or a custom gateway via `GOOGLE_GEMINI_BASE_URL`) | ✅ live-verified |
-| **dsh** (DeepSeek Harness) | dsh desktop app menu **Manage dsh Command… → Install** (version-locked to the desktop app), or `npm i -g @deepseek-ai/dsh`; signed-in desktop users need NO key (the entry ships the account-route patch) — API-key users opt out with `"args": []` | ✅ live-verified (macOS 0.2.0-rc.2: account-route turn + bridge wire chain) |
+| **dsh** (DeepSeek Harness) | `npm i -g @openma/deepseek-harness-acp` (the openma ACP adapter — composes your installed dsh in-process, token-level streaming, sessions/credentials shared with the dsh desktop/Web UI); key via the dsh Web UI or `dsh-acp login` | ✅ live-verified (adapter 0.4.37 on dsh 0.2.0-rc.2) |
 | **workbuddy** | WorkBuddy AI desktop app installed, logged in, and **running** (the adapter is a pure client of its local CodeBuddy worker gateway — port auto-discovered, `workbuddyPort` overrides) | ✅ live-verified |
 | any ACP agent (opencode, kimi, qwen, …) | that agent's own CLI + login | ❓ schema-level |
 
@@ -112,7 +112,7 @@ The starter runs as-is — codex on 3948, claude on 3949, pi on 3950, gemini on 
 | `port` | required for serve, unique per bridge (may be omitted for entries used only via `acp`) |
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
-| `args` | optional; extra argv **appended** to the agent's spawn command (ACP-spawned agents only) — e.g. dsh's `["--patch", "/path/account-route.yml"]`; `~` is not expanded, use absolute paths |
+| `args` | optional; extra argv **appended** to the agent's spawn command (ACP-spawned agents only) — e.g. dsh's route/model flags `["--provider", "deepseek-account"]`; `~` is not expanded, use absolute paths |
 | `cwd` | optional; omit it and the agent runs in the directory you start `serve` from (writing `"."` is the same thing); `~` and relative paths are resolved |
 | `env` | optional `{VAR: value}` object merged over the daemon's environment for the spawned agent; entry env overrides any registry default |
 | `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket door (see Three ways to connect) |

@@ -85,22 +85,19 @@ test('adapterFor: entry env overrides the registry default (which presets none)'
   for (const name of ['claude', 'pi', 'gemini']) {
     assert.match(String(adapterFor({ name, cwd: '/tmp' }).adapter.opts.installHint), /^npm i -g /, `${name} must have an install hint`);
   }
-  // dsh spawns its own official ACP profile; the desktop-managed command is the
-  // preferred install (version-locked to the desktop app), so its hint does not
-  // start with "npm i -g" — it only has to name the path.
+  // dsh spawns the openma standalone binary (composes the dsh harness
+  // in-process, token-level streaming). Registry default command + install
+  // hint; no default args — route selection belongs to the spawned process.
   const dsh = adapterFor({ name: 'dsh', cwd: '/tmp' });
-  assert.deepEqual(dsh.adapter.opts.command, ['dsh', '--profile', 'acp']);
-  assert.match(String(dsh.adapter.opts.installHint), /Manage dsh Command/);
-  // dsh ships a DEFAULT args (the bundled account-route patch): a signed-in
-  // desktop user configures just { name, port, apiKey } and it works.
-  assert.equal(dsh.adapter.opts.args?.length, 2);
-  assert.match(String(dsh.adapter.opts.args?.[1]), /dsh-account-route\.yml$/);
+  assert.deepEqual(dsh.adapter.opts.command, ['dsh-acp']);
+  assert.equal(dsh.adapter.opts.args, undefined);
+  assert.match(String(dsh.adapter.opts.installHint), /@openma\/deepseek-harness-acp/);
   // "args" appends to the (default or overridden) command without rewriting it —
-  // e.g. dsh's account route rides --patch while the registry keeps owning the
-  // command line. An entry's args REPLACES the registry default; [] opts out.
-  const withArgs = adapterFor({ name: 'dsh', cwd: '/tmp', args: ['--patch', '/tmp/route.yml'] });
-  assert.deepEqual(withArgs.adapter.opts.command, ['dsh', '--profile', 'acp']);
-  assert.deepEqual(withArgs.adapter.opts.args, ['--patch', '/tmp/route.yml']);
+  // e.g. dsh's account route rides --provider while the registry keeps owning
+  // the command line. An entry's args REPLACES any registry default; [] opts out.
+  const withArgs = adapterFor({ name: 'dsh', cwd: '/tmp', args: ['--provider', 'deepseek-account'] });
+  assert.deepEqual(withArgs.adapter.opts.command, ['dsh-acp']);
+  assert.deepEqual(withArgs.adapter.opts.args, ['--provider', 'deepseek-account']);
   const optOut = adapterFor({ name: 'dsh', cwd: '/tmp', args: [] });
   assert.deepEqual(optOut.adapter.opts.args, []);
 });
@@ -111,7 +108,7 @@ test('validateConfig: "args" is acp-spawned-agents only and must be a string arr
     (e) => /"args" only applies to ACP-spawned agents/.test(e.message)
   );
   assert.throws(
-    () => validateConfig({ bridges: [{ name: 'dsh', port: 2, apiKey: 'k', args: ['--patch', 3] }] }),
+    () => validateConfig({ bridges: [{ name: 'dsh', port: 2, apiKey: 'k', args: ['--provider', 3] }] }),
     (e) => /"args" must be an array of strings/.test(e.message)
   );
   // [] is meaningful: it clears the registry default (dsh's account patch)
