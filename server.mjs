@@ -66,7 +66,7 @@
 import http from 'node:http';
 
 const HEARTBEAT_MS = 15000;
-const MAX_BODY_BYTES = 4 * 1024 * 1024;
+const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 /** CORS for one request: reflect loopback origins (any port), honor the
  * '*' override, everyone else gets no ACAO header (the browser blocks them). */
@@ -132,9 +132,9 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
           return;
         }
         if (body.images !== undefined) {
-          if (!Array.isArray(body.images) || body.images.some((u) => typeof u !== 'string' || !u.trim()) || body.images.length > 8) {
+          if (!Array.isArray(body.images) || body.images.some((u) => typeof u !== 'string' || !u.trim()) || body.images.length > 18) {
             res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
-            res.end(JSON.stringify({ ok: false, error: 'images must be an array of ≤8 URL strings' }));
+            res.end(JSON.stringify({ ok: false, error: 'images must be an array of ≤18 URL strings' }));
             return;
           }
           body.images = body.images.map((u) => u.trim());

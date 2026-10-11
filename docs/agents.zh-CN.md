@@ -159,7 +159,7 @@ standalone 适配器的凭据是共享 `~/.dsh` 存储里的 **API key**：`dsh-
 
 实机验证 2026-10-09/10（适配器 0.4.37 对 dsh 0.2.0-rc.2）：握手答 protocolVersion 1；`loadSession`/`fork`/图片/`embeddedContext` 能力全开；**token 级流式**——dsh 0.2 把 token 增量发布在进程内事件 `agent/assistant-stream` 上，本适配器正是订阅者（官方 `@deepseek-ai/dsh-acp-app` profile 投递的是整条已提交消息）；权限走标准 ACP `session/request_permission`，默认预设 `workspace-write`；审批「本次总是」会把该会话策略翻成 never；steering（`_session/steering`）有通告；`session/cancel` 真中断运行中的回合。2026-10-10 经 browsa 跑通真实端到端回合（默认路由 + 已存 key）。
 
-**图片**：能传。适配器握手即通告 `promptCapabilities.image`，桥把 `images` 数组里的 data:/https URL 转成 ACP image 内容块随 prompt 透传（v1 限制不变：单请求 ≤8 张、请求体 ≤4MB）。harness 侧的图片准入管线真实执行（png/jpeg/webp/gif；张数/聚合字节/单图字节/像素预算超限是结构化报错、不静默吞图——上限值源自码读面）。模型侧分两路（源码读面）：模型目录里 `deepseek-flash`（DeepSeek-V41-Flash）声明 `inputModalities: ["text","image"]`、图真实进请求；`deepseek-v4-pro` 无 image 模态，带图回合不报错、图在更上游被投影成文本占位符。实机 2026-10-10（VPS，占位 key）：默认路由带 1 图的 `session/prompt` 通过准入、请求真实发出后被 DeepSeek 401 挡下（provider request_id 在案）——图片通路验到 provider 边界；真实出图的完整回合仍待有凭据的机器跑一次。回程不传图：v1 的 delta 只有文本。
+**图片**：能传。适配器握手即通告 `promptCapabilities.image`，桥把 `images` 数组里的 data:/https URL 转成 ACP image 内容块随 prompt 透传（v1 限制 2026-10 放宽为单请求 ≤18 张、请求体 ≤16MB——纯松弛，旧客户端不变）。harness 侧的图片准入管线真实执行（png/jpeg/webp/gif；张数/聚合字节/单图字节/像素预算超限是结构化报错、不静默吞图——上限值源自码读面）。模型侧分两路（源码读面）：模型目录里 `deepseek-flash`（DeepSeek-V41-Flash）声明 `inputModalities: ["text","image"]`、图真实进请求；`deepseek-v4-pro` 无 image 模态，带图回合不报错、图在更上游被投影成文本占位符。实机 2026-10-10（VPS，占位 key）：默认路由带 1 图的 `session/prompt` 通过准入、请求真实发出后被 DeepSeek 401 挡下（provider request_id 在案）——图片通路验到 provider 边界；真实出图的完整回合仍待有凭据的机器跑一次。回程不传图：v1 的 delta 只有文本。
 
 ```json
 { "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }

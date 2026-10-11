@@ -348,7 +348,7 @@
             <tr><th>Constant</th><th>Value</th><th>Why</th></tr>
           </thead>
           <tbody>
-            <tr><td>Request body cap</td><td><code>4 MB</code></td><td>Bounds inline base64 images.</td></tr>
+            <tr><td>Request body cap</td><td><code>16 MB</code></td><td>Bounds inline base64 images; ≤18 images per turn.</td></tr>
             <tr><td>Images per turn</td><td><code>8</code></td><td>Same reason.</td></tr>
             <tr><td>SSE heartbeat</td><td><code>15 s</code></td><td><code>: ka</code> comment frames keep silent stretches alive.</td></tr>
             <tr><td>Disconnect</td><td>disconnect = abort</td><td>A dropped client interrupts the running turn — no unattended long jobs.</td></tr>

@@ -45,7 +45,7 @@
 //   session/load {sessionId} → {} (no history replay; the id is adopted so
 //                 the next prompt resumes the underlying agent session).
 // ContentBlocks: text passes through; image {data,mimeType} becomes a data:
-// URL for the core `images` array (≤8, same bound as v1); resource blocks
+// URL for the core `images` array (≤18, same bound as v1); resource blocks
 // degrade to a text note. Unknown rpc methods get -32601.
 
 import crypto from 'node:crypto';
@@ -184,7 +184,7 @@ class AcpFrontSession {
     if (s.busy) return this.#respondError(id, 'acp: a turn is already in flight for this session');
     const { text, images } = this.#parseBlocks(p.prompt);
     if (!text.trim() && !images.length) return this.#respondError(id, 'prompt required');
-    if (images.length > 8) return this.#respondError(id, 'images must be ≤8 (same bound as the v1 wire)');
+    if (images.length > 18) return this.#respondError(id, 'images must be ≤18 (same bound as the v1 wire)');
     s.busy = true;
     s.responded = false;
     s.promptRpcId = id;

@@ -341,14 +341,14 @@ test('prompt on an unknown id adopts it, but a genuinely dead agent surfaces as 
   ws.close();
 });
 
-test('>8 images rejected (same bound as the v1 wire)', async () => {
+test('>18 images rejected (same bound as the v1 wire)', async () => {
   await startBridge({});
   const { ws } = await openAcpClient();
   const sid = await newSession(ws);
-  const images = Array.from({ length: 9 }, () => ({ type: 'image', data: 'aGk=', mimeType: 'image/png' }));
+  const images = Array.from({ length: 19 }, () => ({ type: 'image', data: 'aGk=', mimeType: 'image/png' }));
   await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'too many' }, ...images] } });
   const err = await ws.recv((f) => text(f)?.id === 3 && text(f)?.error);
-  assert.match(err.msg.error.message, /≤8/);
+  assert.match(err.msg.error.message, /≤18/);
   ws.close();
 });
 

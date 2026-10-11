@@ -348,7 +348,7 @@
             <tr><th>常量</th><th>值</th><th>为什么</th></tr>
           </thead>
           <tbody>
-            <tr><td>请求体上限</td><td><code>4 MB</code></td><td>约束内联 base64 图片的体量。</td></tr>
+            <tr><td>请求体上限</td><td><code>16 MB</code></td><td>约束内联 base64 图片的体量；每回合 ≤18 张图。</td></tr>
             <tr><td>图片数组上限</td><td><code>8</code> 张</td><td>同上。</td></tr>
             <tr><td>SSE 心跳</td><td><code>15 s</code></td><td>静默期发 <code>: ka</code> 注释帧保活。</td></tr>
             <tr><td>断连语义</td><td>断连 = 中断</td><td>客户端掉线即中断当前回合，不留无人看的长任务。</td></tr>

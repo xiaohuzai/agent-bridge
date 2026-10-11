@@ -262,7 +262,7 @@ curl -X POST http://127.0.0.1:3948/approvals/42 -H 'Content-Type: application/js
 # recover the session list (e.g. after a client restart)
 curl http://127.0.0.1:3948/sessions
 
-# images are optional — https: or data: URLs, ≤8 per turn, 4MB body cap
+# images are optional — https: or data: URLs, ≤18 per turn, 16MB body cap
 curl -N -X POST http://127.0.0.1:3948/turns -H 'Content-Type: application/json' \
   -d '{"text":"What is in this image?","images":["https://example.com/pic.png"]}'
 ```
@@ -363,7 +363,7 @@ Everywhere:
 Turns are live-only (all doors):
 
 - A client that disconnects cannot rejoin the same turn; event streams are not resumable (the official ACP remote-transport RFD defers resumability too).
-- Request bodies cap at 4MB; ≤8 images per turn.
+- Request bodies cap at 16MB; ≤18 images per turn (relaxed from 4MB/8 in 2026-10 to feed multi-image page attaches, e.g. a full 18-image 小红书 note; a pure relaxation — old clients behave identically, so the v1 freeze holds).
 
 Protocol notes:
 

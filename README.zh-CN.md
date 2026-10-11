@@ -262,7 +262,7 @@ curl -X POST http://127.0.0.1:3948/approvals/42 -H 'Content-Type: application/js
 # 找回会话列表（比如客户端重启之后）
 curl http://127.0.0.1:3948/sessions
 
-# 图片可选——https: 或 data: URL，每回合 ≤8 张，请求体上限 4MB
+# 图片可选——https: 或 data: URL，每回合 ≤18 张，请求体上限 16MB
 curl -N -X POST http://127.0.0.1:3948/turns -H 'Content-Type: application/json' \
   -d '{"text":"这张图里是什么？","images":["https://example.com/pic.png"]}'
 ```
@@ -363,7 +363,7 @@ bridge.example.com {
 回合只在线（所有门）：
 
 - 断开的客户端无法重新接入同一个回合；事件流暂不支持续播（官方 ACP 远程传输 RFD 同样推迟了这一点）。
-- 请求体上限 4MB；每回合 ≤8 张图。
+- 请求体上限 16MB；每回合 ≤18 张图（2026-10 从 4MB/8 放宽，为多图页附件如小红书整篇 18 图笔记；纯放宽——旧客户端行为不变，v1 冻结不破）。
 
 协议说明：
 
