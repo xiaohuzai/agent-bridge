@@ -228,8 +228,8 @@ test('images ride through to the agent input (data: URLs, no temp files)', async
   sse.cancel();
 });
 
-test('images: invalid shapes are rejected with 400 (non-array, non-string, >8)', async () => {
-  for (const images of ['nope', [42], new Array(9).fill('data:image/png;base64,AA==')]) {
+test('images: invalid shapes are rejected with 400 (non-array, non-string, >18)', async () => {
+  for (const images of ['nope', [42], new Array(19).fill('data:image/png;base64,AA==')]) {
     const res = await post('/turns', { text: 'x', images });
     assert.equal(res.status, 400, `images=${JSON.stringify(images).slice(0, 30)} must be a 400`);
   }
@@ -454,9 +454,10 @@ test('fileChange and mcpToolCall items complete too (not just start)', async () 
 });
 
 test('oversized bodies are refused with 413 (the cap counts bytes, not chars)', async () => {
-  // 1.5M CJK chars = 4.5MB of UTF-8 — a char-counting cap would wave this
-  // through as a "valid" turn.
-  const res = await post('/turns', { text: '好'.repeat(1500000) });
+  // 6M CJK chars = 18MB of UTF-8 — a char-counting cap would wave this
+  // through as a "valid" turn. (Body cap relaxed 4MB→16MB in 2026-10 to fit
+  // 18-image attaches; the probe body moved with it.)
+  const res = await post('/turns', { text: '好'.repeat(6000000) });
   assert.equal(res.status, 413);
 });
 
