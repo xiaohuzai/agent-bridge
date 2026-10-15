@@ -56,6 +56,7 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in (the official `claude-agent-acp` shim ships bundled) | ✅ live-verified |
 | **pi** | pi itself via its own installer (≥0.98, or `npm i -g @earendil-works/pi-coding-agent`) → run `pi` once to pick a provider (the `pi-acp` shim ships bundled; pi itself can't come from npm — its installer collides with the npm package) | ✅ live-verified |
 | **gemini** | `npm i -g @google/gemini-cli` → run `gemini` once to log in (or env auth: `GEMINI_API_KEY`, or a custom gateway via `GOOGLE_GEMINI_BASE_URL`) | ✅ live-verified |
+| **qoder** | install script `curl -fsSL https://qoder.com/install | bash` (or legacy `npm i -g @qoder-ai/qodercli`) → run `qoder login` once (ACP shares the CLI's login state), or env auth `QODER_PERSONAL_ACCESS_TOKEN` | ⚠️ wire-verified (handshake/capabilities/auth boundary, qoder-cli 1.1.71) — a real model turn awaits a credentialed machine |
 | **dsh** (DeepSeek Harness) | `npm i -g @openma/deepseek-harness-acp` (the openma ACP adapter — composes your installed dsh in-process, token-level streaming, sessions/credentials shared with the dsh desktop/Web UI); key via the dsh Web UI or `dsh-acp login` | ✅ live-verified (adapter 0.4.37 on dsh 0.2.0-rc.2) |
 | any ACP agent (opencode, kimi, qwen, …) | that agent's own CLI + login | ❓ schema-level |
 
@@ -89,18 +90,19 @@ On Windows, PowerShell runs both lines as-is; in `cmd`, use the path the CLI pri
     { "name": "claude",    "port": 3949, "apiKey": "" },
     { "name": "pi",        "port": 3950, "apiKey": "" },
     { "name": "gemini",    "port": 3951, "apiKey": "" },
+    { "name": "qoder",     "port": 3953, "apiKey": "" },
     { "name": "dsh",       "port": 3952, "apiKey": "" },
   ]
 }
 ```
 
-The shipped starter lists five known agents — codex on 3948, claude on 3949, pi on 3950, gemini on 3951, dsh on 3952. codex / claude / pi / gemini run as-is, no key needed on your own machine. **dsh** needs a DeepSeek key saved once (dsh Web UI or `dsh-acp login` — the same credential store the desktop/Web UI use); the adapter ships bundled, no separate install. It works in the directory you start `serve` from; add `"cwd"` to point it at a project — that directory also decides which dsh workspace the sessions register into (and whether the desktop/Web session list shows them). Route/model flags (`--model`, `--reasoning-effort`, `--permission-mode`) ride `args` (e.g. `["--model", "deepseek-flash"]`); dsh's verified key route needs no `args` at all — values and trade-offs in the dsh section of [docs/agents.md](./docs/agents.md).
+The shipped starter lists six known agents — codex on 3948, claude on 3949, pi on 3950, gemini on 3951, dsh on 3952, qoder on 3953. codex / claude / pi / gemini run as-is, no key needed on your own machine. **qoder** needs `qoder login` once (the ACP door shares the CLI's login state), or a personal access token via the entry's `env`. **dsh** needs a DeepSeek key saved once (dsh Web UI or `dsh-acp login` — the same credential store the desktop/Web UI use); the adapter ships bundled, no separate install. It works in the directory you start `serve` from; add `"cwd"` to point it at a project — that directory also decides which dsh workspace the sessions register into (and whether the desktop/Web session list shows them). Route/model flags (`--model`, `--reasoning-effort`, `--permission-mode`) ride `args` (e.g. `["--model", "deepseek-flash"]`); dsh's verified key route needs no `args` at all — values and trade-offs in the dsh section of [docs/agents.md](./docs/agents.md). It works in the directory you start `serve` from; add `"cwd"` to point it at a project — that directory also decides which dsh workspace the sessions register into (and whether the desktop/Web session list shows them). Route/model flags (`--model`, `--reasoning-effort`, `--permission-mode`) ride `args` (e.g. `["--model", "deepseek-flash"]`); dsh's verified key route needs no `args` at all — values and trade-offs in the dsh section of [docs/agents.md](./docs/agents.md).
 
 A single agent is the same file pruned to one entry — delete the rows you don't use. `chmod 600` starts to matter once a real `apiKey` goes in the file.
 
 | Field | Meaning |
 |---|---|
-| `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`, `gemini`, `dsh`, `zcode`) |
+| `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`, `gemini`, `qoder`, `dsh`, `zcode`) |
 | `port` | required for serve, unique per bridge (may be omitted for entries used only via `acp`) |
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
 | `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
@@ -141,11 +143,12 @@ New here? The whole journey is about five minutes:
 1. **Install Node 18+** from [nodejs.org](https://nodejs.org) if you don't have it.
 2. **Get agent-bridge**: `npm i -g @xiaohuzai/agent-bridge` — after this the `agent-bridge` command works in any directory. (Prefer source? Clone the repo and use `node cli.mjs` instead.)
 3. **Create your config**: `agent-bridge` needs an `agents.json` in the directory you start it from. Run `agent-bridge serve` once — with no config it prints the exact copy command for your install — or write the JSON shown under [Configure](#configure). The config needs no edits — codex on port 3948, claude on 3949, pi on 3950, gemini on 3951, no password needed on your own machine (step 4 installs and logs in the agents themselves — the ACP shims ship bundled).
-4. **Install & log in to every agent your config lists** — the starter enables four:
+4. **Install & log in to every agent your config lists** — the starter enables these:
    - **codex** — `npm i -g @openai/codex`, then `codex login` once.
    - **claude** — `npm i -g @anthropic-ai/claude-code`, then run `claude` once to log in (the ACP shim it needs ships bundled).
    - **pi** — pi via its own installer, then run `pi` once to pick a provider (the `pi-acp` shim ships bundled).
    - **gemini** — `npm i -g @google/gemini-cli`, then run `gemini` once to log in.
+   - **qoder** — `curl -fsSL https://qoder.com/install | bash`, then run `qoder` once to log in (or set `QODER_PERSONAL_ACCESS_TOKEN`).
 
    Only want one or two? Delete the other entries from `agents.json`. A bridge whose agent isn't installed still starts and answers `/health` — it only fails on its first turn, with an install hint — so a missing agent is easy to miss until you try it. `agent-bridge doctor` catches it before you try.
 5. **Start the bridge**:
@@ -157,11 +160,13 @@ New here? The whole journey is about five minutes:
    You'll see:
 
    ```
-   agent-bridge serve: 4 bridges on http://127.0.0.1
+   agent-bridge serve: 6 bridges on http://127.0.0.1
      codex      :3948  (no api key — loopback only)
      claude     :3949  (no api key — loopback only)
      pi         :3950  (no api key — loopback only)
      gemini     :3951  (no api key — loopback only)
+     dsh        :3952  (no api key — loopback only)
+     qoder      :3953  (no api key — loopback only)
    ```
 
 6. **Connect browsa**: in browsa's settings, add a bridge provider and point it at `http://127.0.0.1:3948` — that's the codex line above. No key needed on your own machine.
@@ -308,7 +313,7 @@ The authoritative contract — edge rules like first-turn session assignment and
 
 - **Multi-agent by design.** One daemon, one config file, N agents — each on its own port with its own key. The first wave of "a web UI for one CLI" projects is gone (archived, sunset); what survived is multi-agent.
 - **Approvals are first-class.** Permission requests stream to the client with the agent's own options, and the client decides once / always / deny. The best-known multi-agent HTTP bridge answers "always allow" server-side on the client's behalf — we think that's a bug, not a feature.
-- **Live-verified adapters.** codex runs on its native app-server protocol; claude/pi/gemini through ACP against the official shims; dsh through its own official ACP automation profile. Every protocol fact was captured from real agents, not from docs.
+- **Live-verified adapters.** codex runs on its native app-server protocol; claude/pi through ACP against the official shims; gemini/qoder through their native `--acp` modes; dsh through the openma ACP adapter that composes it in-process. Every protocol fact was captured from real agents, not from docs.
 - **Zero runtime dependencies.** One clone, one command. No installer, no container, no database — only the two stateless ACP shims ship as bundled optional dependencies; the agent CLIs stay yours.
 - **ACP on both ends.** The bridge speaks ACP toward agents (stdio adapters) and toward clients (WebSocket / stdio fronts) — which is also what qualifies it for the ACP Registry (submission record: [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md); editors spawn it directly via `npx @xiaohuzai/agent-bridge acp claude`).
 

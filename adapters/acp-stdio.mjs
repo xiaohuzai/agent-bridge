@@ -46,6 +46,18 @@
 // were observed (gemini reads/writes files locally in its own process) even
 // with fs clientCapabilities declared — the bridge needs no fs responder.
 //
+// QODER (qoder-cli 1.1.71 native ACP mode `qoder --acp`, live-verified
+// 2026-10-15 in a container, UNAUTHENTICATED — handshake/capabilities and the
+// auth boundary only; a real model turn still needs a credentialed machine):
+// protocolVersion 1 (the session/prompt response is the turn terminator — the
+// v1 path). ACP shares the CLI's login state: `qoder login` once, or
+// QODER_PERSONAL_ACCESS_TOKEN via the entry's env config; without either,
+// session/new fails -32000 "Authentication required" (relayed as the turn's
+// error). Advertised: loadSession, promptCapabilities {image:true,
+// embeddedContext:true}, sessionCapabilities resume/fork/list/close/delete,
+// mcpCapabilities {http,sse}. No authenticate call needed — auth is ambient,
+// like gemini's.
+//
 // CLAUDE /resume VISIBILITY (live-verified 2026-10-01, claude-agent-acp
 // 0.75.1 / SDK 0.3.257, real turns in a container): claude's interactive
 // /resume picker hides transcripts whose entrypoint is sdk-cli/sdk-ts/

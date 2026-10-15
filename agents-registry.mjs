@@ -34,6 +34,18 @@ export const KNOWN_AGENTS = {
   // too, pi-acp's own error names it.
   pi: { kind: 'acp', command: ['pi-acp'], install: 'npm i -g pi-acp', summary: 'pi via the pi-acp shim (needs pi >= 0.80.4 on PATH)' },
   gemini: { kind: 'acp', command: ['gemini', '--acp'], install: 'npm i -g @google/gemini-cli', summary: 'gemini CLI native ACP mode (needs gemini >= 0.62 on PATH, signed in or env-auth)' },
+  // qoder (Qoder CLI) native ACP mode: `qoder --acp` (docs.qoder.com/cli/acp).
+  // Live-verified 2026-10-15 in a container, qoder-cli 1.1.71, UNAUTHENTICATED
+  // (handshake/capabilities only — a real model turn still needs a credentialed
+  // machine): protocolVersion 1 (the session/prompt response is the turn
+  // terminator — the v1 path). ACP shares the CLI's login state: `qoder login`
+  // once, or QODER_PERSONAL_ACCESS_TOKEN via the entry's env config; without
+  // either, session/new fails -32000 "Authentication required" (the bridge
+  // relays it as the turn's error — the message names the fix). Advertised:
+  // loadSession, promptCapabilities {image, embeddedContext}, session
+  // resume/fork/list/close/delete, mcp http/sse. No authenticate call needed —
+  // auth is ambient like gemini's.
+  qoder: { kind: 'acp', command: ['qoder', '--acp'], install: 'curl -fsSL https://qoder.com/install | bash (or: npm i -g @qoder-ai/qodercli)', summary: 'qoder CLI native ACP mode (images; shares login state with the qoder CLI)' },
   // dsh (DeepSeek Harness) via the openma ACP adapter (@openma/
   // deepseek-harness-acp — a third-party, actively-maintained ACP v1 stdio
   // agent that composes the dsh harness in-process). Why THIS over dsh's own

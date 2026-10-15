@@ -56,6 +56,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录（官方 `claude-agent-acp` 壳已随包内置） | ✅ 实机验证 |
 | **pi** | pi 本体走官方自安装（≥0.98，或 `npm i -g @earendil-works/pi-coding-agent`）→ 跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置；pi 本体走不了 npm——安装器和 npm 包冲突） | ✅ 实机验证 |
 | **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
+| **qoder** | 安装脚本 `curl -fsSL https://qoder.com/install | bash`（或旧法 `npm i -g @qoder-ai/qodercli`）→ 跑一次 `qoder` 完成登录（ACP 与 CLI 共享登录态），或环境变量 `QODER_PERSONAL_ACCESS_TOKEN` | ⚠️ 链路已验证（握手/能力/鉴权边界，qoder-cli 1.1.71）——真实模型回合待有凭据的机器 |
 | **dsh**（DeepSeek Harness） | `npm i -g @openma/deepseek-harness-acp`（openma ACP 适配器——进程内组装你安装的 dsh，token 级流式，会话/凭据与 dsh 桌面版/Web 共享）；key 走 dsh Web UI 或 `dsh-acp login` | ✅ 实机验证（适配器 0.4.37 对 dsh 0.2.0-rc.2） |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 
@@ -89,18 +90,19 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
     { "name": "claude",    "port": 3949, "apiKey": "" },
     { "name": "pi",        "port": 3950, "apiKey": "" },
     { "name": "gemini",    "port": 3951, "apiKey": "" },
+    { "name": "qoder",     "port": 3953, "apiKey": "" },
     { "name": "dsh",       "port": 3952, "apiKey": "" },
   ]
 }
 ```
 
-自带起步配置列全五个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952。前四个开箱即跑，自己机器上不需要密码。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
+自带起步配置列全六个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、qoder 在 3953。前四个开箱即跑，自己机器上不需要密码。**qoder** 跑一次 `qoder login` 即可（ACP 与 CLI 共享登录态），或经条目 `env` 设个人访问令牌。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
 
 单个智能体就是同一份文件删到只剩一条，用不到的行删掉即可。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
 
 | 字段 | 说明 |
 |---|---|
-| `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`、`pi`、`gemini`、`dsh`、`zcode`） |
+| `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`、`pi`、`gemini`、`qoder`、`dsh`、`zcode`） |
 | `port` | serve 必填，每桥唯一（仅用于 `acp` 的条目可省略） |
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
 | `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
@@ -141,11 +143,12 @@ agent-bridge doctor --json   # 机器可读，供 agent 自动安装流程使用
 1. **装 Node 18+**（[nodejs.org](https://nodejs.org)），没有就先装。
 2. **拿到 agent-bridge**：`npm i -g @xiaohuzai/agent-bridge`——之后任意目录敲 `agent-bridge` 都行。（喜欢源码？clone 仓库改用 `node cli.mjs`，效果一样。）
 3. **建配置**：`agent-bridge` 需要在启动目录里有一个 `agents.json`。先跑一次 `agent-bridge serve`——没有配置时它会打印出你这次安装对应的复制命令——或者照[「配置」](#配置)一节手写那份 JSON。这份配置不用改——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951，自己机器上不需要密码（agent 本身要在第 4 步装）。
-4. **给你配置里的每个 agent 都装好并登录**——起步配置同时开了四个：
+4. **给你配置里的每个 agent 都装好并登录**——起步配置开了这些：
    - **codex**——`npm i -g @openai/codex`，然后 `codex login` 一次。
    - **claude**——`npm i -g @anthropic-ai/claude-code`，跑一次 `claude` 登录（它需要的 ACP 壳已随包内置）。
    - **pi**——pi 本体走官方自安装，然后跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置）。
    - **gemini**——`npm i -g @google/gemini-cli`，跑一次 `gemini` 登录。
+   - **qoder**——`curl -fsSL https://qoder.com/install | bash`，跑一次 `qoder` 登录（或设 `QODER_PERSONAL_ACCESS_TOKEN`）。
 
    只想要一两个？把 `agents.json` 里多余的条目删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。`agent-bridge doctor` 会在你试之前先抓出来。
 5. **启动桥**：
@@ -157,11 +160,13 @@ agent-bridge doctor --json   # 机器可读，供 agent 自动安装流程使用
    会看到：
 
    ```
-   agent-bridge serve: 4 bridges on http://127.0.0.1
+   agent-bridge serve: 6 bridges on http://127.0.0.1
      codex      :3948  (no api key — loopback only)
      claude     :3949  (no api key — loopback only)
      pi         :3950  (no api key — loopback only)
      gemini     :3951  (no api key — loopback only)
+     dsh        :3952  (no api key — loopback only)
+     qoder      :3953  (no api key — loopback only)
    ```
 
 6. **连接 browsa**：在 browsa 的设置里添加一个 bridge provider，地址填 `http://127.0.0.1:3948`——就是上面 codex 那一行。自己机器上不需要 key。
@@ -308,7 +313,7 @@ async function turn(text, sessionId) {
 
 - **为多 agent 而生。** 一个守护进程、一份配置文件、N 个 agent——各自端口、各自 apiKey。第一代"单 CLI 配个网页 UI"的项目已经谢幕（归档的归档、弃养的弃养）；活下来的都是多 agent。
 - **审批是一等公民。** 权限请求带着 agent 自己的选项流向客户端，由客户端决定 once / always / deny。知名度最高的多 agent HTTP 桥在服务端替客户端自动回答"总是允许"——我们认为那是 bug，不是 feature。
-- **实机验证的适配器。** codex 走原生 app-server 协议，claude/pi/gemini 走 ACP 对接官方壳，dsh 走其官方 ACP 自动化 profile——每一条协议事实都来自真实 agent，不是文档。
+- **实机验证的适配器。** codex 走原生 app-server 协议，claude/pi 走 ACP 对接官方壳，gemini/qoder 走各自的原生 `--acp` 模式，dsh 走进程内组装它的 openma ACP 适配器——每一条协议事实都来自真实 agent，不是文档。
 - **零运行时依赖。** 一次 clone，一条命令。没有安装器、没有容器、没有数据库——仅两个无状态 ACP 壳作为内置可选依赖随包分发，agent CLI 本体留在你自己手里。
 - **两端都是 ACP。** 桥对 agent 说 ACP（stdio 适配器），对客户端也说 ACP（WebSocket / stdio 门）——这也是它有资格进入 ACP Registry 的原因（提交记录见 [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md)；编辑器里 `npx @xiaohuzai/agent-bridge acp claude` 即可拉起）。
 

@@ -277,7 +277,7 @@ test('no config + unknown name → exit 1 naming the known agents', async () => 
   });
   const code = await c.exit();
   assert.equal(code, 1);
-  assert.match(c.stderr.join(''), /known agents: codex, claude, pi, gemini/);
+  assert.match(c.stderr.join(''), /known agents: codex, claude, pi, gemini, qoder, dsh, zcode/);
 });
 
 // Direct-module sanity: the neutral session + adapter work without the CLI
