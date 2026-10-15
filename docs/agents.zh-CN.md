@@ -153,7 +153,7 @@ pi                                      # 首次运行：选 provider / 登录
 { "name": "qoder", "port": 3953, "apiKey": "" }
 ```
 
-链路验证 2026-10-15（qoder-cli 1.1.71，容器，未登录——握手、能力与鉴权边界；真实模型回合待有凭据的机器）：protocolVersion 1（prompt 响应即回合终结者——v1 路径）；通告 `loadSession`、`promptCapabilities {image, embeddedContext}`、会话 resume/fork/list/close/delete、MCP http/sse；未登录时 `session/new` 报 `-32000 Authentication required`，桥会作为该回合的错误转出。
+链路验证 2026-10-15（qoder-cli 1.1.71，容器，未登录——握手、能力与鉴权边界；真实模型回合待有凭据的机器）：protocolVersion 1（prompt 响应即回合终结者——v1 路径）；通告 `loadSession`、`promptCapabilities {image, embeddedContext}`、会话 resume/fork/list/close/delete、MCP http/sse；未登录时 `session/new` 报 `-32000 Authentication required`，桥会作为该回合的错误转出。首个**并发审批**的 agent：并行工具调用会把两条 `session/request_permission` 在同一批里发出（无标题；kind 是标准的 `allow_once`/`reject_once`）——桥对其串行化（答完一张放行下一张），单审批卡客户端（browsa）无需改动即可用。源码读面证实 qoder-cli 是 gemini-cli 衍生——方言可预期与 gemini 同源。
 
 ## dsh（DeepSeek Harness）
 

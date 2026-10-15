@@ -161,6 +161,32 @@ test('always maps to allow_always; deny maps to reject_once', async () => {
   sse2.cancel();
 });
 
+test('pipelined permission requests are serialized: second held until the first is answered (qoder dialect)', async () => {
+  // qoder 1.1.71 fires one session/request_permission per PARALLEL tool call in
+  // a single stdio chunk (live 2026-10-15). Clients that keep one approval card
+  // per surface (browsa) would orphan the earlier card — the bridge holds the
+  // later request and releases it on each answer, so one card is ever pending.
+  const res = await post('/turns', { text: 'APPROVE2 both' });
+  const sse = sseReader(res.body);
+  const first = await sse.readUntil((f) => f.data?.type === 'approval');
+  assert.equal(first.data.requestId, '900');
+  let early = false;
+  await Promise.race([
+    sse.readUntil((f) => f.data?.type === 'approval' && f.data.requestId === '901').then(() => { early = true; }),
+    new Promise((r) => setTimeout(r, 300)),
+  ]);
+  assert.ok(!early, 'the second approval must not surface while the first is pending');
+  assert.ok(logs.some((l) => l.includes('held until id 900')), 'the hold is logged');
+  const ok = await post('/approvals/900', { choice: 'once' });
+  assert.equal(ok.status, 200);
+  const second = await sse.readUntil((f) => f.data?.type === 'approval' && f.data.requestId === '901');
+  assert.equal(second.data.requestId, '901');
+  await post('/approvals/901', { choice: 'once' });
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  assert.equal(done.data.full, 'ACP_reply', 'the turn finishes only after ALL pipelined permissions are answered');
+  sse.cancel();
+});
+
 test('client disconnect mid-turn cancels the ACP session', async () => {
   const ctrl = new AbortController();
   const res = await post('/turns', { text: 'SLOW please' }, {}, ctrl.signal);
