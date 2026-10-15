@@ -154,7 +154,7 @@ Native ACP, no shim — registered as `"qoder": { "kind": "acp", "command": ["qo
 { "name": "qoder", "port": 3953, "apiKey": "" }
 ```
 
-Wire-verified 2026-10-15 (qoder-cli 1.1.71, container, unauthenticated — handshake, capabilities and the auth boundary; a real model turn awaits a credentialed machine): protocolVersion 1 (the prompt response is the turn terminator — the v1 path); advertises `loadSession`, `promptCapabilities {image, embeddedContext}`, session resume/fork/list/close/delete, MCP http/sse; without credentials `session/new` fails `-32000 Authentication required`, which the bridge relays as the turn's error.
+Wire-verified 2026-10-15 (qoder-cli 1.1.71, container, unauthenticated — handshake, capabilities and the auth boundary; a real model turn awaits a credentialed machine): protocolVersion 1 (the prompt response is the turn terminator — the v1 path); advertises `loadSession`, `promptCapabilities {image, embeddedContext}`, session resume/fork/list/close/delete, MCP http/sse; without credentials `session/new` fails `-32000 Authentication required`, which the bridge relays as the turn's error. First agent seen to **pipeline permission requests**: with parallel tool calls it fires both `session/request_permission` requests in one chunk (untitled; standard `allow_once`/`reject_once` kinds) — the bridge serializes them (each card answered releases the next), so single-approval-card clients like browsa work unchanged. Source-read confirms qoder-cli is a gemini-cli derivative — expect gemini-like dialects.
 
 ## dsh (DeepSeek Harness)
 

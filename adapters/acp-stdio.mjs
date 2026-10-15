@@ -56,7 +56,15 @@
 // error). Advertised: loadSession, promptCapabilities {image:true,
 // embeddedContext:true}, sessionCapabilities resume/fork/list/close/delete,
 // mcpCapabilities {http,sse}. No authenticate call needed — auth is ambient,
-// like gemini's.
+// like gemini's. FIRST AGENT SEEN TO PIPELINE PERMISSION REQUESTS: with two
+// parallel tool calls it sends BOTH session/request_permission requests in one
+// chunk (numeric ids 0,1; no title/description) — every earlier agent asks one
+// at a time, which is why clients that keep a single approval card per surface
+// (browsa's removeAgentCards) never noticed. The bridge therefore SERIALIZES:
+// while one permission is outstanding, later ones are held and released on
+// each answer (respondApproval); cancel/child-death answer held frames
+// `cancelled` too. qoder's option vocabulary is standard (allow_once/
+// allow_always/reject_once kinds — source-read 1.1.71: proceed_once/cancel).
 //
 // CLAUDE /resume VISIBILITY (live-verified 2026-10-01, claude-agent-acp
 // 0.75.1 / SDK 0.3.257, real turns in a container): claude's interactive
@@ -181,6 +189,10 @@ export class AcpStdioAdapter {
     this.pending = new Map();     // rpc id → {resolve, reject, child}
     this.sessions = new Map();    // ACP sessionId → turn state
     this.permissions = new Map(); // permission request id → {sessionId, options, id}
+    this.permHold = [];           // request_permission frames HELD while another is outstanding — qoder
+                                  // pipelines one per parallel tool call (live 2026-10-15: two in one
+                                  // chunk), and clients that render a single approval card per surface
+                                  // (browsa's removeAgentCards) would orphan the earlier one
     this.buf = '';
     this.closed = false;
     this.rpcMethods = new Map(); // rpc id → method (for error-response logging)
@@ -263,6 +275,7 @@ export class AcpStdioAdapter {
       this.pending.delete(id);
       p.reject(new Error(msg));
     }
+    this.permHold = [];
     this.#settleTurns((t) => t.child === child, msg);
     if (this.child === child) {
       this.child = null;
@@ -276,6 +289,7 @@ export class AcpStdioAdapter {
   #sweepStale(msg) {
     for (const [, p] of this.pending) p.reject(new Error(msg));
     this.pending.clear();
+    this.permHold = [];
     this.#settleTurns(() => true, msg);
     this.sessions.clear();
     if (this.child) {
@@ -311,27 +325,16 @@ export class AcpStdioAdapter {
     // agent→client REQUEST: session/request_permission must be answered.
     if (j.id !== undefined && j.method) {
       if (/request_permission$/.test(j.method)) {
-        const params = j.params || {};
-        const sessionId = params.sessionId;
-        // The raw rpc id is kept for the answer: JSON-RPC ids may be strings,
-        // and coercing them back through Number() would answer with id null —
-        // the agent would block forever on the unanswered request.
-        this.permissions.set(String(j.id), { sessionId, options: params.options || [], id: j.id });
-        const t = sessionId ? this.sessions.get(sessionId) : null;
-        const kind = (k) => (params.options || []).find((o) => o.kind === k);
-        const pick = (k) => kind(k)?.optionId ?? kind(k === 'deny' ? 'reject_always' : k)?.optionId ?? params.options?.[0]?.optionId ?? '';
-        this.opts.log(`[acp] permission request id=${j.id}: ${params.title || params.description || '(untitled)'}`);
-        t?.events?.({
-          type: 'approval',
-          requestId: String(j.id),
-          tool: 'permission',
-          command: params.title || params.description || '',
-          choices: ['once', 'always', 'deny'],
-          // ACP-native option ids, for clients that want to render the
-          // agent's own labels instead of the three generic buttons:
-          options: (params.options || []).map((o) => ({ optionId: o.optionId, name: o.name, kind: o.kind })),
-          _pick: { once: pick('allow_once'), always: pick('allow_always'), deny: pick('deny') },
-        });
+        // Serialize: while one permission is outstanding, hold later ones and
+        // release them on each answer (respondApproval). The agent blocks on
+        // all of them anyway, so answering in order cannot deadlock — and
+        // one-card-at-a-time is what every v1 client already renders.
+        if (this.permissions.size > 0) {
+          this.permHold.push(j);
+          this.opts.log(`[acp] permission request id=${j.id}: held until id ${[...this.permissions.keys()].join(',')} is answered`);
+          return;
+        }
+        this.#admitPermission(j);
       } else {
         // e.g. item/tool/requestUserInput, mcpServer/elicitation/request —
         // not modeled in v1; refuse so the turn can proceed.
@@ -559,6 +562,31 @@ export class AcpStdioAdapter {
     return { sessionId: sid, turnId: '' };
   }
 
+  /** Surface one permission request to the client (approval event). */
+  #admitPermission(j) {
+    const params = j.params || {};
+    const sessionId = params.sessionId;
+    // The raw rpc id is kept for the answer: JSON-RPC ids may be strings,
+    // and coercing them back through Number() would answer with id null —
+    // the agent would block forever on the unanswered request.
+    this.permissions.set(String(j.id), { sessionId, options: params.options || [], id: j.id });
+    const t = sessionId ? this.sessions.get(sessionId) : null;
+    const kind = (k) => (params.options || []).find((o) => o.kind === k);
+    const pick = (k) => kind(k)?.optionId ?? kind(k === 'deny' ? 'reject_always' : k)?.optionId ?? params.options?.[0]?.optionId ?? '';
+    this.opts.log(`[acp] permission request id=${j.id}: ${params.title || params.description || '(untitled)'}`);
+    t?.events?.({
+      type: 'approval',
+      requestId: String(j.id),
+      tool: 'permission',
+      command: params.title || params.description || '',
+      choices: ['once', 'always', 'deny'],
+      // ACP-native option ids, for clients that want to render the
+      // agent's own labels instead of the three generic buttons:
+      options: (params.options || []).map((o) => ({ optionId: o.optionId, name: o.name, kind: o.kind })),
+      _pick: { once: pick('allow_once'), always: pick('allow_always'), deny: pick('deny') },
+    });
+  }
+
   /** Cancel a session's in-flight turn. Also answers any pending permission
    * request with the ACP-mandated `cancelled` outcome. */
   async interrupt(sessionId) {
@@ -569,6 +597,14 @@ export class AcpStdioAdapter {
       this.permissions.delete(reqId);
       this.#write({ jsonrpc: '2.0', id: p.id, result: { outcome: { outcome: 'cancelled' } } });
     }
+    // Held (never yet surfaced) permission frames of this session must be
+    // answered too — the agent awaits them even though the client never saw them.
+    const stillHeld = [];
+    for (const j of this.permHold) {
+      if (j.params?.sessionId && j.params.sessionId !== sessionId) { stillHeld.push(j); continue; }
+      this.#write({ jsonrpc: '2.0', id: j.id, result: { outcome: { outcome: 'cancelled' } } });
+    }
+    this.permHold = stillHeld;
     try {
       await this.rpc('session/cancel', { sessionId });
     } catch (e) {
@@ -599,6 +635,10 @@ export class AcpStdioAdapter {
     const optionId = kind?.optionId ?? entry.options[0]?.optionId;
     if (!optionId) throw new Error('acp permission request had no options');
     this.#write({ jsonrpc: '2.0', id: entry.id, result: { outcome: { outcome: 'selected', optionId } } });
+    this.opts.log(`[acp] permission id=${requestId} answered ${choice} → "${optionId}"`);
+    // Release the next pipelined permission request, if any.
+    const next = this.permHold.shift();
+    if (next) this.#admitPermission(next);
   }
 
   listSessions() {
@@ -610,6 +650,7 @@ export class AcpStdioAdapter {
 
   stop() {
     this.closed = true;
+    this.permHold = [];
     try { this.child?.stdin?.end(); } catch (_) {}
     try { this.child?.kill('SIGKILL'); } catch (_) {}
     this.child = null;

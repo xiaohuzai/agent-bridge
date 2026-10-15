@@ -47,6 +47,8 @@ const GEMMETA = process.argv.includes('GEMMETA');
 const pendingPrompt = new Map(); // sessionId → pending session/prompt rpc id
 const hangSessions = new Set();  // v1: sessions whose prompt must NEVER be answered (wedged-shim simulation)
 let permId = 900;                // rpc id of the last permission request (string under 'STRID')
+let permTwo = false;             // APPROVE2: a second pipelined permission (permId+1) is outstanding too
+const permAnswered = new Set();  // permission rpc ids answered so far (this flow)
 
 function finish(sessionId, stopReason) {
   if (V1) {
@@ -87,9 +89,11 @@ process.stdin.on('end', () => process.exit(0));
 function handle(j) {
   err(`FAKE_METHOD:${j.method || ''}`);
   // client's answer to our permission request (id remembered at request time)
-  if (j.id === permId && j.result) {
+  if (j.result && (j.id === permId || (permTwo && j.id === permId + 1))) {
     err(`FAKE_PERM_ID:${JSON.stringify(j.id)}`);
     err(`FAKE_PERMISSION:${JSON.stringify(j.result.outcome)}`);
+    permAnswered.add(j.id);
+    if (permTwo && permAnswered.size < 2) return; // the agent blocks on ALL pipelined requests — finish only when both are in
     const sessionId = sessions.values().next().value;
     send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc1', title: 'sensitive op', status: 'completed' } } });
     send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ACP_reply' } } } });
@@ -123,6 +127,8 @@ function handle(j) {
       else send({ jsonrpc: '2.0', id: j.id, result: {} }); // v2: acceptance only
       if (text.includes('APPROVE')) {
         permId = text.includes('STRID') ? 'str-900' : 900;
+        permTwo = text.includes('APPROVE2'); // qoder dialect (2026-10-15): pipelined permission requests
+        permAnswered.clear();
         send({
           jsonrpc: '2.0', id: permId, method: 'session/request_permission',
           params: { sessionId, title: 'run sensitive op', options: [
@@ -131,6 +137,10 @@ function handle(j) {
             { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
           ] },
         });
+        if (permTwo) send({ jsonrpc: '2.0', id: permId + 1, method: 'session/request_permission', params: { sessionId, options: [
+          { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'reject-once', name: 'Deny', kind: 'reject_once' },
+        ] } });
         return;
       }
       if (text.includes('SLOW')) {
