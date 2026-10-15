@@ -10,7 +10,7 @@ another doc disagree, the other doc wins.
 ## What this is
 
 **agent-bridge** is a UI-agnostic Node daemon with zero runtime dependencies that adapts
-local CLI coding agents (codex, claude code, pi, gemini, dsh, zcode, … any ACP agent) to a small
+local CLI coding agents (codex, claude code, pi, gemini, dsh, qoder, zcode, … any ACP agent) to a small
 HTTP+SSE wire protocol (v1) — plus opt-in ACP doors (WebSocket `/acp`,
 spawnable stdio) so ACP clients and editors attach without learning v1. One
 process can serve several agents: one bridge per config entry, each on its
@@ -23,7 +23,7 @@ own port. It is deliberately not tied to any product, UI, or vendor.
 | Install, configure, use | [README.md](./README.md) (EN) · [README.zh-CN.md](./README.zh-CN.md) (中文) |
 | The v1 wire protocol (events, edge rules) | header comment of [server.mjs](./server.mjs) — **authoritative, frozen** |
 | Pre-flight checks (`agent-bridge doctor`) | header comment of [doctor.mjs](./doctor.mjs) |
-| Per-agent setup (codex / claude / pi / gemini, credentials) | [docs/agents.md](./docs/agents.md) · [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) |
+| Per-agent setup (codex / claude / pi / gemini / qoder, credentials) | [docs/agents.md](./docs/agents.md) · [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) |
 | ACP front design & compliance | [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md) |
 | ACP Registry submission | [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md) |
 | Architecture, traps, testing, git workflow, roadmap | [AGENTS.md](./AGENTS.md) |

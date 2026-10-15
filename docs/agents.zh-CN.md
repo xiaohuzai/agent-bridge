@@ -17,6 +17,7 @@ node cli.mjs serve            # 读 ./agents.json（或：serve --config FILE）
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08——真回合（流式完整）、会话连续、usage、审批流程；断连中断与桥重启续会话有测试覆盖，实机未跑 |
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11——经 svkozak/pi-acp 0.0.33 + pi 0.85.1 真回合（流式、工具调用），由 mock OpenAI provider 驱动；桥重启续会话（自动 `session/load` 回退）实机已跑 |
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01——原生 `gemini --acp` 0.62.0 真回合（流式、shell 工具+审批请求、cancel），由 mock Google GenAI 后端驱动；桥重启续会话（`session/load` 回退）实机已跑；usage 走响应的 `_meta.quota.token_count`（已映射） |
+| qoder | `{ "name": "qoder", "port": 3953, "apiKey": "" }` | ⚠️ 2026-10-15——握手/能力 + 鉴权边界实机验证（qoder-cli 1.1.71，未登录：ACP v1、图片 + embeddedContext、loadSession；`session/new` → `-32000 Authentication required`）；真实模型回合待有凭据的机器 |
 | dsh（DeepSeek Harness） | `{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ⚠️ 2026-10-09——协议链对 dsh 0.2.0-rc.2 实机验证（spawn → ACP v1 握手 → session/new → prompt → 干净的鉴权错误 SSE；模型调用本身需有凭据的机器）；图片通路 2026-10-10 验到 provider 边界（占位 key，出图回答待有凭据机器） |
 | opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
 
@@ -143,6 +144,16 @@ pi                                      # 首次运行：选 provider / 登录
 原生 ACP，无需壳——注册表行 `"gemini": { "kind": "acp", "command": ["gemini", "--acp"] }`（`npm i -g @google/gemini-cli`；0.62 起旗标是 `--acp`，`--experimental-acp` 仍可用但已弃用）。首回合前的鉴权三选一：跑一次 `gemini` 登录，或设 `GEMINI_API_KEY`，或把 `GOOGLE_GEMINI_BASE_URL` 指到网关——env 鉴权时 ACP 的 `session/new` 不需要 `authenticate`。
 
 实机验证 2026-10-01（gemini-cli 0.62.0，mock Google GenAI 后端，过桥真回合）：protocolVersion 1（prompt 响应即终结者）；流式 delta；shell 工具在危险命令上会发 `session/request_permission`（按 kind 映射选项）；cancel 后挂起的 prompt 会应答 `stopReason:'cancelled'`；usage 在响应的 `_meta.quota.token_count`（桥已映射）；`session/resume` 被拒（`-32601`），桥重启走 `session/load` 恢复；声明了图片能力（`promptCapabilities.image`）但实机未跑图片回合。文件读写由 CLI 在本地完成——桥不会收到 fs 代理请求。
+
+## qoder
+
+原生 ACP，无需壳——注册表行 `"qoder": { "kind": "acp", "command": ["qoder", "--acp"] }`（[docs.qoder.com/cli/acp](https://docs.qoder.com/cli/acp)；安装：`curl -fsSL https://qoder.com/install | bash`，或旧法 `npm i -g @qoder-ai/qodercli`，需 Node ≥ 20）。首回合前的鉴权二选一：跑一次 `qoder login`（浏览器流程——ACP 与 CLI 共享登录态），或经条目 `env` 设 `QODER_PERSONAL_ACCESS_TOKEN`（qoder.com/account/integrations 获取）——两种方式都不需要 ACP `authenticate` 调用，鉴权是环境态的，同 gemini。
+
+```json
+{ "name": "qoder", "port": 3953, "apiKey": "" }
+```
+
+链路验证 2026-10-15（qoder-cli 1.1.71，容器，未登录——握手、能力与鉴权边界；真实模型回合待有凭据的机器）：protocolVersion 1（prompt 响应即回合终结者——v1 路径）；通告 `loadSession`、`promptCapabilities {image, embeddedContext}`、会话 resume/fork/list/close/delete、MCP http/sse；未登录时 `session/new` 报 `-32000 Authentication required`，桥会作为该回合的错误转出。
 
 ## dsh（DeepSeek Harness）
 

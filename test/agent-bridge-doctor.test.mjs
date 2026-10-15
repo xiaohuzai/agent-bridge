@@ -69,7 +69,7 @@ test('doctor with no agents.json: registry defaults, warn-only, starter hint, ex
   assert.equal(configCheck.status, 'warn');
   assert.match(configCheck.hint, /agents\.example\.json agents\.json/, 'the very next step stays copy-pasteable');
   assert.match(configCheck.detail, /registry defaults/);
-  for (const name of ['codex', 'claude', 'pi', 'gemini']) {
+  for (const name of ['codex', 'claude', 'pi', 'gemini', 'qoder']) {
     const c = report.checks.find((x) => x.check === `agent ${name}`);
     assert.ok(c, `registry default for ${name} is reported`);
     assert.ok(['pass', 'warn'].includes(c.status));

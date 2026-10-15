@@ -56,7 +56,7 @@ test('validateConfig: all problems reported at once, with the fix hint', () => {
       { name: 'claude', port: 70000, apiKey: 'k', sandbox: 'yolo' }, // bad port + bad sandbox
       { name: 'pi', port: 3951, apiKey: 'k', env: 'FOO=bar' }       // env must be an object
     ] }),
-    (e) => /unknown agent "nope".*known agents: codex, claude, pi, gemini/s.test(e.message)
+    (e) => /unknown agent "nope".*known agents: codex, claude, pi, gemini, qoder, dsh, zcode/s.test(e.message)
       && /native adapter.*codexBin.*not "command"/s.test(e.message)
       && /duplicate name "codex"/.test(e.message)
       && /duplicate port 3949/.test(e.message)

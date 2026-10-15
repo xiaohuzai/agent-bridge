@@ -17,6 +17,7 @@ Verification status at a glance (honesty first — tell us what works or breaks,
 | claude code | `{ "name": "claude", "port": 3949, "apiKey": "" }` | ✅ macOS 2026-09-08 — real turns (streaming, full answer text), session continuity, usage, approval flow; disconnect-interrupt and bridge-restart resume are test-covered but not yet exercised live |
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11 — real turns (streaming, tool calls) through svkozak/pi-acp 0.0.33 + pi 0.85.1, driven by a mock OpenAI provider; bridge-restart resume (automatic `session/load` fallback) exercised live |
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01 — real turns (streaming, shell tool + approval request, cancel) through native `gemini --acp` 0.62.0, driven by a mock Google GenAI backend; bridge-restart resume (`session/load` fallback) exercised live; usage rides on `_meta.quota.token_count` (mapped) |
+| qoder | `{ "name": "qoder", "port": 3953, "apiKey": "" }` | ⚠️ 2026-10-15 — handshake/capabilities + auth boundary live-verified (qoder-cli 1.1.71, unauthenticated: ACP v1, images + embeddedContext, loadSession; `session/new` → `-32000 Authentication required`); a real model turn awaits a credentialed machine |
 | dsh (DeepSeek Harness) | `{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ⚠️ 2026-10-09 — wire chain live-verified against dsh 0.2.0-rc.2 (spawn → ACP v1 handshake → session/new → prompt → clean auth-error SSE; the model call itself needs a credentialed machine); image path verified to the provider boundary 2026-10-10 (placeholder key; the image-answering turn awaits a credentialed machine) |
 | opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
 
@@ -144,6 +145,16 @@ None of these are live-verified yet — report your results (good or bad) and we
 Native ACP, no shim — registered as `"gemini": { "kind": "acp", "command": ["gemini", "--acp"] }` (`npm i -g @google/gemini-cli`; on ≥0.62 the flag is `--acp`, `--experimental-acp` still works but is deprecated). Auth before the first turn: either sign in once with `gemini`, or set `GEMINI_API_KEY`, or point `GOOGLE_GEMINI_BASE_URL` at a gateway — with env auth the ACP `session/new` needs no `authenticate` call.
 
 Live-verified 2026-10-01 (gemini-cli 0.62.0, mock Google GenAI backend, real turns through the bridge): protocolVersion 1 (prompt-response terminator); streaming deltas; shell tool with `session/request_permission` (kind-mapped options) on risky commands; cancel answers the pending prompt with `stopReason:'cancelled'`; usage arrives on the response's `_meta.quota.token_count` (the bridge maps it); `session/resume` is refused (`-32601`) so bridge-restart restore goes through `session/load`; images advertised (`promptCapabilities.image`) but not yet exercised live. Files are read/written locally by the CLI — no fs-proxy requests hit the bridge.
+
+## qoder
+
+Native ACP, no shim — registered as `"qoder": { "kind": "acp", "command": ["qoder", "--acp"] }` ([docs.qoder.com/cli/acp](https://docs.qoder.com/cli/acp); install: `curl -fsSL https://qoder.com/install | bash`, or the legacy `npm i -g @qoder-ai/qodercli`, Node ≥ 20). Auth before the first turn: run `qoder login` once (browser flow — the ACP server shares the CLI's login state), or set `QODER_PERSONAL_ACCESS_TOKEN` (from qoder.com/account/integrations) via the entry's `env` — no ACP `authenticate` call is needed either way, auth is ambient like gemini's.
+
+```json
+{ "name": "qoder", "port": 3953, "apiKey": "" }
+```
+
+Wire-verified 2026-10-15 (qoder-cli 1.1.71, container, unauthenticated — handshake, capabilities and the auth boundary; a real model turn awaits a credentialed machine): protocolVersion 1 (the prompt response is the turn terminator — the v1 path); advertises `loadSession`, `promptCapabilities {image, embeddedContext}`, session resume/fork/list/close/delete, MCP http/sse; without credentials `session/new` fails `-32000 Authentication required`, which the bridge relays as the turn's error.
 
 ## dsh (DeepSeek Harness)
 
