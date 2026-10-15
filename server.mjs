@@ -33,7 +33,7 @@
 //             e.g. 'refusal' — may appear on done events; v1 clients that
 //             don't read it are unaffected)
 //             full may carry inline <thinking>…</thinking> blocks (2026-10-09):
-//             agents that stream reasoning (workbuddy, zcode, codex summaries,
+//             agents that stream reasoning (zcode, codex summaries,
 //             ACP agent_thought_chunk) keep it in full, so a client that
 //             renders the live deltas as a collapsible thinking block keeps it
 //             after DONE. Delta concat and full agree on the thinking shape.

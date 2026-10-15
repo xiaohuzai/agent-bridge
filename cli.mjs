@@ -101,7 +101,7 @@ options:
                   these three are codex knobs · corsOrigin "*" · "acp": true
                   (a serve entry also serves ACP clients at ws://…/acp).
                   Adapter overrides (codexBin, codexHome, serverCjs,
-                  workbuddyPort, …): README → Configure.
+                  …): README → Configure.
   --bind ADDR     serve/doctor only: bind address (default 127.0.0.1; 0.0.0.0
                   for LAN/VPN)
   --json          doctor only: print the report as JSON
