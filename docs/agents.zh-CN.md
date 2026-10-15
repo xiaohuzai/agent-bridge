@@ -18,7 +18,6 @@ node cli.mjs serve            # 读 ./agents.json（或：serve --config FILE）
 | pi | `{ "name": "pi", "port": 3950, "apiKey": "" }` | ✅ 2026-09-11——经 svkozak/pi-acp 0.0.33 + pi 0.85.1 真回合（流式、工具调用），由 mock OpenAI provider 驱动；桥重启续会话（自动 `session/load` 回退）实机已跑 |
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01——原生 `gemini --acp` 0.62.0 真回合（流式、shell 工具+审批请求、cancel），由 mock Google GenAI 后端驱动；桥重启续会话（`session/load` 回退）实机已跑；usage 走响应的 `_meta.quota.token_count`（已映射） |
 | dsh（DeepSeek Harness） | `{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ⚠️ 2026-10-09——协议链对 dsh 0.2.0-rc.2 实机验证（spawn → ACP v1 握手 → session/new → prompt → 干净的鉴权错误 SSE；模型调用本身需有凭据的机器）；图片通路 2026-10-10 验到 provider 边界（占位 key，出图回答待有凭据机器） |
-| workbuddy | `{ "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/your/project" }` | ✅ 2026-10-08——真实回合（流式、thinking 折叠、ACP 内容块传图、审批往返、中止）走原生回环适配器对接运行中的 WorkBuddy AI 桌面 5.4.3 |
 | opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
 
 ---
@@ -188,24 +187,3 @@ standalone 适配器的凭据是共享 `~/.dsh` 存储里的 **API key**：`dsh-
 - codex 收不到审批事件 —— 条目里没写 `"approval": "on-request"`。
 - 换了桥后面的 agent 之后旧对话报错 —— sessionId 是 agent 私有的（codex 线程 id ≠ claude 会话 id），清掉对话历史重新开始即可。
 - 别的都正常但某个 agent 行为诡异 —— 先看是不是上表里"仅 schema 级"的：没实机验证过的 agent，坑就是我们下一步要填的，欢迎把现象带回来。
-
-
-## workbuddy
-
-原生适配器（`adapters/workbuddy.mjs`，`kind: 'workbuddy'`），作为**运行中的 WorkBuddy AI 桌面应用**的纯客户端：桌面版自己拉起并常驻一个本地 CodeBuddy Code worker 网关（ACP over Streamable HTTP，回环端口），适配器自动发现它——对回环监听端口按 `/health` 特征最新探测，条目 `"workbuddyPort"` 可覆盖。桌面应用需已安装、已登录且**正在运行**（无需控制台注册、无需 OAuth——适配器不碰凭据；模型与登录态都在 WorkBuddy 应用里）。
-
-配置条目：
-
-```json
-{ "name": "workbuddy", "port": 3953, "apiKey": "", "cwd": "/path/to/your/project" }
-```
-
-2026-10-08 实机验证（WorkBuddy AI 5.4.3，macOS，真实回合过桥）：connect（回环免鉴权）→ initialize → session/new / session/prompt 走 Streamable HTTP + SSE；流式增量中 reasoning 折成 `<thinking>` 块；工具调用出 tool 事件；权限请求以审批卡呈现（`session/request_permission` 按映射的 optionId 应答）；图片以 ACP image 内容块随行（`promptCapabilities.image: true`）；`session/cancel` 中止；`loadSession: true` 让 sessionId 跨桥重启存活（`session/load` 续接）。该面未暴露用量（省略）；无命名通道（桥答 501）；AskUserQuestion 类提问未接线——会话权限模式（默认 `bypassPermissions`）会自动消解。
-
-会话模型，2026-10-08 在用户机器上实测确认——先知道，免得找不到自己的对话：
-
-- **worker 的网关会话只存内存。** ACP 会话 id 在应用的全部存储位置都搜不到——重启 WorkBuddy 桌面版会清掉所有桥对话的 worker 侧上下文。下一条消息自动在新会话里继续，流中有一条 `note` 说明「此前上下文不带过来」；start 事件会把新会话 id 重映射回客户端，客户端无需改动。
-- **桌面版自己的 UI 不会列出经桥开始的对话。** 这是 ACP「会话归客户端管」的设计（网关没有列表/命名通道），不是 bug——你的客户端（browsa、你的脚本）才是会话管理器。想把对话搬进桌面：从客户端导出内容，粘贴到桌面的新聊天里即可。
-- **自动发现依赖 `lsof` + `curl`**（macOS/Linux 自带；Windows 10+ 虽带 curl 但没有 lsof）。Windows 上请在条目里显式写 `"workbuddyPort"`。
-
-
