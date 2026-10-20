@@ -35,7 +35,7 @@ let pendingApprovalId = null;
 let slowState = null; // { threadId, turnId }
 
 function complete(threadId, turnId, status, items) {
-  send({ method: 'thread/tokenUsage/updated', params: { threadId, turnId, tokenUsage: { total: { inputTokens: 21, outputTokens: 7 }, last: { inputTokens: 21, outputTokens: 7 } } } });
+  send({ method: 'thread/tokenUsage/updated', params: { threadId, turnId, tokenUsage: { total: { inputTokens: 21, outputTokens: 7, cachedInputTokens: 15, cacheWriteInputTokens: 3 }, last: { inputTokens: 21, outputTokens: 7, cachedInputTokens: 15, cacheWriteInputTokens: 3 } } } });
   send({ method: 'turn/completed', params: { threadId, turn: { id: turnId, items, status, error: null } } });
 }
 

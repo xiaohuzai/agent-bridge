@@ -862,10 +862,22 @@ export class ZcodeServerAdapter {
     }
     const end = entry.projector.usage?.cumulative || null;
     const start = entry.usageStart;
-    const usage = end
-      ? { prompt_tokens: Math.max(0, (end.inputTokens ?? 0) - (start?.inputTokens ?? 0)),
-          completion_tokens: Math.max(0, (end.outputTokens ?? 0) - (start?.outputTokens ?? 0)) }
-      : null;
+    // Cache counters are cumulative too — delta each one, then present the
+    // prompt total in the bridge's inclusive convention (prompt_tokens covers
+    // fresh + cache read + cache write) with the cache read as a subset.
+    const delta = (k) => Math.max(0, (end?.[k] ?? 0) - (start?.[k] ?? 0));
+    let usage = null;
+    if (end) {
+      const fresh = delta('inputTokens');
+      const cachedRead = delta('cacheReadTokens');
+      const cacheWrite = delta('cacheWriteTokens');
+      usage = {
+        prompt_tokens: fresh + cachedRead + cacheWrite,
+        completion_tokens: delta('outputTokens'),
+      };
+      if (cachedRead > 0) usage.prompt_tokens_details = { cached_tokens: cachedRead };
+      if (cacheWrite > 0) usage.cache_write_tokens = cacheWrite;
+    }
     if (end) this.lastUsage.set(entry.sessionId, end);
     this.lastKnownSessionId = entry.sessionId;
     entry.events?.({ type: 'done', full: entry.projector.fullText(), usage });

@@ -156,6 +156,35 @@ function closeThinking(entry) {
   entry.events?.({ type: 'delta', text: '\n</thinking>\n' });
 }
 
+/**
+ * ACP PromptResponse.usage → the bridge's usage-event shape, cache included.
+ *
+ * ACP shims disagree on whether `inputTokens` includes the cache counters:
+ * Claude/codex/opencode report FRESH input (exclusive; cache read/write ride
+ * separately), while gemini-cli maps Gemini's `promptTokenCount` (INCLUSIVE;
+ * `cachedContentTokenCount` is a subset). `totalTokens` exposes the
+ * difference: an inclusive input plus the cache counters overshoots
+ * `totalTokens - outputTokens`; an exclusive one does not. When totalTokens
+ * is absent we assume exclusive (the majority convention).
+ */
+export function mapAcpUsage(u) {
+  if (!u || typeof u !== 'object') return null;
+  const input = u.inputTokens ?? u.input_tokens ?? 0;
+  const output = u.outputTokens ?? u.output_tokens ?? 0;
+  const cachedRead = u.cachedReadTokens ?? u.cached_read_tokens ?? 0;
+  const cachedWrite = u.cachedWriteTokens ?? u.cached_write_tokens ?? 0;
+  const total = u.totalTokens ?? u.total_tokens;
+  const inclusive = typeof total === 'number'
+    && input + cachedRead + cachedWrite > total - output;
+  const usage = {
+    prompt_tokens: inclusive ? input : input + cachedRead + cachedWrite,
+    completion_tokens: output,
+  };
+  if (cachedRead > 0) usage.prompt_tokens_details = { cached_tokens: cachedRead };
+  if (cachedWrite > 0) usage.cache_write_tokens = cachedWrite;
+  return usage;
+}
+
 export class AcpStdioAdapter {
   constructor({
     command,                 // array: ['claude-agent-acp'] or ['gemini','--acp']
@@ -545,11 +574,10 @@ export class AcpStdioAdapter {
       // v1 completion: the prompt response carries the final stopReason and
       // the turn's usage (v2 completes via state_update instead).
       entry.promptInFlight = false;
-      if (r.usage) entry.usage = { prompt_tokens: r.usage.inputTokens ?? 0, completion_tokens: r.usage.outputTokens ?? 0 };
+      if (r.usage) entry.usage = mapAcpUsage(r.usage);
       else if (r._meta?.quota?.token_count) {
         // gemini-cli (0.62.0, live 2026-10-01): usage on _meta.quota.token_count
-        const q = r._meta.quota.token_count;
-        entry.usage = { prompt_tokens: q.input_tokens ?? 0, completion_tokens: q.output_tokens ?? 0 };
+        entry.usage = mapAcpUsage(r._meta.quota.token_count);
       }
       this.opts.log(`[acp] ← prompt response: stopReason=${r.stopReason}${entry.usage ? `, usage ${entry.usage.prompt_tokens}/${entry.usage.completion_tokens}` : ', no usage'}`);
       if (!entry.finished) {

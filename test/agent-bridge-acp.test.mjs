@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const FAKE_ACP = join(__dirname, 'fake-acp-agent.mjs');
 
 const { createBridgeServer } = await import('../server.mjs');
-const { AcpStdioAdapter } = await import('../adapters/acp-stdio.mjs');
+const { AcpStdioAdapter, mapAcpUsage } = await import('../adapters/acp-stdio.mjs');
 
 chmodSync(FAKE_ACP, 0o755);
 
@@ -246,6 +246,35 @@ test('official-style v1 agent: version negotiation + prompt-response completion 
   assert.equal(done.data.full, 'ACP_reply');
   assert.deepEqual(done.data.usage, { prompt_tokens: 8, completion_tokens: 2 });
   sse.cancel();
+});
+
+test('v1 usage: ACP cache read/write are forwarded (exclusive input)', async () => {
+  await stopServer();
+  await startServer({ command: [FAKE_ACP, 'v1', 'CACHE'] });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'start');
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  assert.deepEqual(done.data.usage, {
+    prompt_tokens: 120, // fresh 20 + cache read 80 + cache write 20
+    completion_tokens: 10,
+    prompt_tokens_details: { cached_tokens: 80 },
+    cache_write_tokens: 20,
+  });
+  sse.cancel();
+});
+
+test('mapAcpUsage: gemini-style inclusive input is not double-counted', () => {
+  // gemini-cli maps promptTokenCount (INCLUSIVE) + cachedContentTokenCount.
+  assert.deepEqual(
+    mapAcpUsage({ totalTokens: 120, inputTokens: 100, cachedReadTokens: 80, outputTokens: 20 }),
+    { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 80 } },
+  );
+  // claude/codex/opencode: fresh input + separate cache counters.
+  assert.deepEqual(
+    mapAcpUsage({ totalTokens: 130, inputTokens: 20, cachedReadTokens: 80, cachedWriteTokens: 20, outputTokens: 10 }),
+    { prompt_tokens: 120, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 80 }, cache_write_tokens: 20 },
+  );
 });
 
 test('v1 agent: cancel settles the turn via the prompt response (stopReason cancelled)', async () => {

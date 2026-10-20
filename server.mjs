@@ -27,7 +27,10 @@
 //             across one call's started/completed events; v1 clients that
 //             don't read it are unaffected)
 //       data: {"type":"approval","requestId":"…","tool":"command","command":"…","cwd":"…"}
-//       data: {"type":"usage","prompt_tokens":N,"completion_tokens":M}
+//       data: {"type":"usage","prompt_tokens":N,"completion_tokens":M,
+//              "cached_tokens":K,"cache_write_tokens":W}
+//             (cache fields are optional/additive; prompt_tokens is the FULL
+//              prompt total and cached_tokens is a subset of it)
 //       data: {"type":"done","full":"…"}          ← turn finished normally
 //             (additive: optional "stopReason" — the raw ACP stopReason,
 //             e.g. 'refusal' — may appear on done events; v1 clients that
