@@ -127,7 +127,12 @@ test('zcode happy path: handshake → start → streamed deltas (thinking folded
   // done.full carries the same <thinking> block the deltas streamed (2026-10-09:
   // reasoning joins the assembled text — before, it streamed but vanished)
   assert.equal(done.data.full, '<thinking>\n思考中…\n</thinking>\n\nFAKE_reply');
-  assert.deepEqual(done.data.usage, { prompt_tokens: 120, completion_tokens: 45 });
+  assert.deepEqual(done.data.usage, {
+    prompt_tokens: 155, // fresh 120 + cache read 30 + cache write 5
+    completion_tokens: 45,
+    prompt_tokens_details: { cached_tokens: 30 },
+    cache_write_tokens: 5,
+  });
   // the v4 handshake + runtime-preferences auto-answer ran against the child
   assert.ok(logs.some((l) => l.includes('FAKE_PREFS')), 'expected the preferences host-request to be answered');
   assert.ok(logs.some((l) => l.includes('zcode server ready')));

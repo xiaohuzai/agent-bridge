@@ -152,6 +152,9 @@ test('turn streams start → deltas → done with full text and usage', async ()
   assert.equal(deltas.join(''), 'FAKE_reply');
   assert.equal(done.data.full, 'FAKE_reply');
   assert.equal(done.data.usage.prompt_tokens, 21);
+  assert.deepEqual(done.data.usage.prompt_tokens_details, { cached_tokens: 15 },
+    'codex cachedInputTokens is a subset of the whole-prompt inputTokens');
+  assert.equal(done.data.usage.cache_write_tokens, 3);
   sse.cancel();
 });
 

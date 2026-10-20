@@ -169,7 +169,7 @@ function streamTurn(sessionId, text) {
     { op: 'row.appended', row: answerRow },
     { op: 'row.delta', rowId: answerRow.rowId, path: 'text', append: reply.slice(0, 5) },
     { op: 'row.delta', rowId: answerRow.rowId, path: 'text', append: reply.slice(5) },
-    { op: 'state.updated', patch: { usage: { cumulative: { inputTokens: 120, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0 } } } },
+    { op: 'state.updated', patch: { usage: { cumulative: { inputTokens: 120, outputTokens: 45, cacheReadTokens: 30, cacheWriteTokens: 5 } } } },
     { op: 'row.upserted', row: { ...answerRow, state: 'complete', text: reply } },
     { op: 'row.upserted', row: { ...turnRow, state: 'completedSuccess' } },
   ] });

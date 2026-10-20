@@ -58,6 +58,9 @@ function finish(sessionId, stopReason) {
       if (GEMMETA) {
         // usage shape as captured live from gemini-cli 0.62.0 (2026-10-01)
         send({ jsonrpc: '2.0', id, result: { stopReason, _meta: { quota: { token_count: { input_tokens: 8, output_tokens: 2 } } } } });
+      } else if (process.argv.includes('CACHE')) {
+        // codex-acp-style EXCLUSIVE input (fresh 20) + cache counters.
+        send({ jsonrpc: '2.0', id, result: { stopReason, usage: { totalTokens: 130, inputTokens: 20, cachedReadTokens: 80, cachedWriteTokens: 20, outputTokens: 10, thoughtTokens: 0 } } });
       } else {
         // usage shape as captured live from codex-acp 1.10.0
         send({ jsonrpc: '2.0', id, result: { stopReason, usage: { totalTokens: 10, inputTokens: 8, cachedReadTokens: 0, outputTokens: 2, thoughtTokens: 0 } } });
