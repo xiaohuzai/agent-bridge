@@ -72,15 +72,37 @@ export const KNOWN_AGENTS = {
   // canonical paths, version-gated) — so the desktop/Web session list renders
   // them (without this they'd work but stay invisible there).
   dsh: { kind: 'acp', command: ['dsh-acp'], workspaceRegister: 'dsh', install: 'ships bundled with agent-bridge — run "npm i" in the agent-bridge checkout (a fresh clone installs nothing), or npm i -g @openma/deepseek-harness-acp (needs node >= 22.15; a failed optional dep is skipped silently)', summary: 'DeepSeek Harness via the openma ACP adapter (token streaming; shares sessions and credentials with the dsh desktop/Web UI)' },
-  // zcode runs on its NATIVE adapter (adapters/zcode-server.mjs) against the
-  // runtime the ZCode desktop app installs — no separate CLI install exists
-  // (the CLI release has no public download channel). The adapter
-  // auto-resolves the newest server bundle from the desktop's content-
-  // addressed cache; "serverCjs"/"nodeBin" on the entry override. Model and
-  // login state live in the user's ZCode app — the adapter never touches
-  // credentials; the conversation sessions are the app's own (visible/resumable
-  // there, named "browsa：<first line>" when browsa titles them).
-  zcode: { kind: 'zcode', install: 'ZCode desktop app (open it once so its runtime is cached)', summary: 'ZCode via its local stdio server (native adapter; model/login from the ZCode app)' },
+  // zcode runs on the HEADLESS-CLI adapter (adapters/headless-cli.mjs)
+  // against the official `zcode` CLI's headless mode. The older native
+  // adapter (adapters/zcode-server.mjs) rode the desktop's stdio server;
+  // re-tested live 2026-10-21, a bridge-spawned server registers a provider
+  // and then drops the client at turn start ("ZCode Protocol client is
+  // disposed") — the pause recorded in AGENTS.md is still real, so the
+  // registry no longer routes there. The headless surface was captured live
+  // the same day (CLI 0.17.0 / server 3.16.2): `zcode -p … --output-format
+  // stream-json` emits JSONL — model.streaming text deltas, tool.updated
+  // scheduled/started/result, turn.completed with usage — and `--resume
+  // sess_…` continues the same persisted session (cacheReadTokens 22528 on a
+  // 28.5K-input follow-up). One process per turn (~2–4s boot; PONG 12.7s,
+  // tool turn 18.5s) and a fresh prompt carries the CLI's own ~28K-token
+  // system prompt.
+  //
+  // `mode` is the permission decision: a headless turn has no approval card,
+  // and the CLI's own -p default is yolo. This registry defaults to PLAN
+  // (read-only); set "mode": "build"|"edit"|"guarded"|"yolo" per entry to
+  // widen it deliberately. Images degrade to a note: the CLI only attaches
+  // local files (--attach), and the bridge never writes user images to disk.
+  // The CLI is not bundled — desktop installs carry it at
+  // ~/.zcode/server/bin/zcode, which the adapter falls back to when `zcode`
+  // is not on PATH.
+  zcode: {
+    kind: 'headless',
+    profile: 'zcode',
+    command: ['zcode'],
+    mode: 'plan',
+    install: 'the ZCode desktop app (its CLI lives at ~/.zcode/server/bin/zcode) or the standalone zcode CLI on PATH',
+    summary: 'ZCode via its official headless CLI (streamed JSONL; --resume sessions; no interactive approvals)',
+  },
 };
 
 export function knownAgentNames() {

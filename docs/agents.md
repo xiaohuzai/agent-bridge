@@ -19,6 +19,7 @@ Verification status at a glance (honesty first — tell us what works or breaks,
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01 — real turns (streaming, shell tool + approval request, cancel) through native `gemini --acp` 0.62.0, driven by a mock Google GenAI backend; bridge-restart resume (`session/load` fallback) exercised live; usage rides on `_meta.quota.token_count` (mapped) |
 | qoder | `{ "name": "qoder", "port": 3953, "apiKey": "" }` | ⚠️ 2026-10-15 — handshake/capabilities + auth boundary live-verified (qoder-cli 1.1.71, unauthenticated: ACP v1, images + embeddedContext, loadSession; `session/new` → `-32000 Authentication required`); a real model turn awaits a credentialed machine |
 | dsh (DeepSeek Harness) | `{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ⚠️ 2026-10-09 — wire chain live-verified against dsh 0.2.0-rc.2 (spawn → ACP v1 handshake → session/new → prompt → clean auth-error SSE; the model call itself needs a credentialed machine); image path verified to the provider boundary 2026-10-10 (placeholder key; the image-answering turn awaits a credentialed machine) |
+| zcode | `{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "plan" }` | ✅ 2026-10-21 — real turns through the headless CLI (streaming deltas, tool rows, usage, `--resume` with provider cache; PONG + a Read-tool turn, driven through the bridge) |
 | opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
 
 ---
@@ -183,6 +184,35 @@ Live-verified 2026-10-09/10 (adapter 0.4.37 against dsh 0.2.0-rc.2): handshake a
 - **API key route (verified end-to-end)**: the product default `deepseek-official`. Save a key once — `dsh-acp login`, the dsh Web UI (Settings → Models), or `DEEPSEEK_API_KEY` in the bridge's launching environment — and run the entry without `args`.
 - **Account route**: dsh also knows `--provider deepseek-account`, and the desktop login's grants do live in the shared `~/.dsh` store — but every credential path the standalone adapter itself exposes is a key, and a bridge turn on this route has only ever been seen failing with the credential error. Treat it as unverified; the key route is the supported path.
 - `--model` / `--reasoning-effort` / `--permission-mode` ride the same `args` (the adapter's CLI flags).
+
+## zcode
+
+ZCode exposes an official **headless CLI** — the external driver surface this bridge uses:
+
+```bash
+zcode -p '<text>' --output-format stream-json --no-color --mode plan --cwd <dir> [--resume sess_…]
+```
+
+The desktop app ships it at `~/.zcode/server/bin/zcode` (auto-discovered when `zcode` is not on PATH); a standalone install puts it on PATH. agent-bridge runs **one process per turn** and translates the JSONL event stream into v1 — no PTY and no screen parsing.
+
+**Install & sign in**: open/install the ZCode desktop app once (or install the standalone CLI) and sign in once (`zcode login`, or via the desktop app). The CLI and the desktop share `~/.zcode` — login state, MCP servers, skills, hooks — so a bridge turn sees the same configuration a terminal `zcode` does.
+
+**agents.json entry**:
+
+```json
+{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "plan" }
+```
+
+**Behavior notes** (live-verified 2026-10-21 against CLI 0.17.0 / server 3.16.2, through the real bridge):
+
+- **Streaming**: `model.streaming` `text_delta` → v1 `delta`; `turn.completed.response` is the authoritative `done.full`. Reasoning deltas, when the model emits them, are fenced in `<thinking>…</thinking>` so `full` agrees with the delta concat.
+- **Tool calls**: `tool.updated` `scheduled/started/result` → v1 `tool` rows paired by the agent's own `toolCallId`; the detail prefers `command` / `file_path` / `pattern`.
+- **Usage**: `inputTokens` / `outputTokens` / `cacheReadTokens` / `cacheWriteTokens` → `prompt_tokens` / `completion_tokens` / `cached_tokens` / `cache_write_tokens`.
+- **Sessions**: the CLI assigns `sess_…`; send it back on later turns and the adapter adds `--resume`. Resume really continues the conversation (the follow-up recalled the previous prompt) and hits the provider cache (22,528 cached tokens on a 28.5K-input turn).
+- **No interactive approvals.** A headless turn has no approval card, and the CLI's own `-p` default is `yolo`. The bridge defaults to `"mode": "plan"` (read-only) and exposes `build` / `edit` / `guarded` / `yolo` per entry — **choosing the mode IS the permission decision**. Loosen it deliberately.
+- **No images.** The CLI's only attachment surface is local files (`--attach`), and the bridge never writes user images to disk; image turns degrade to a note (the same posture as the ACP path).
+- **Cost/latency**: one process per turn (~2–4s CLI boot); a fresh prompt carries the CLI's own ~28K-token system prompt/tools. Observed: PONG 12.7s, Read-tool turn 18.5s, resumed turn 15.3s.
+- The older native adapter (`adapters/zcode-server.mjs`, driving the desktop's stdio server) is **paused**: re-tested 2026-10-21, a bridge-spawned server registers a provider and then drops the client at turn start (`ZCode Protocol client is disposed`). The registry routes to the headless CLI; the native file is kept for reference.
 
 ## ACP clients (the front)
 

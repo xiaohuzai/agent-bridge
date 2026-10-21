@@ -58,6 +58,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 | **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
 | **qoder** | 安装脚本 `curl -fsSL https://qoder.com/install | bash`（或旧法 `npm i -g @qoder-ai/qodercli`）→ 跑一次 `qoder` 完成登录（ACP 与 CLI 共享登录态），或环境变量 `QODER_PERSONAL_ACCESS_TOKEN` | ⚠️ 链路已验证（握手/能力/鉴权边界，qoder-cli 1.1.71）——真实模型回合待有凭据的机器 |
 | **dsh**（DeepSeek Harness） | `npm i -g @openma/deepseek-harness-acp`（openma ACP 适配器——进程内组装你安装的 dsh，token 级流式，会话/凭据与 dsh 桌面版/Web 共享）；key 走 dsh Web UI 或 `dsh-acp login` | ✅ 实机验证（适配器 0.4.37 对 dsh 0.2.0-rc.2） |
+| **zcode** | ZCode 桌面版（CLI 随装在 `~/.zcode/server/bin/zcode`）或 PATH 上的独立 `zcode` CLI → 登录一次（`zcode login` / 桌面版）；headless 回合默认只读 `plan`——要写文件把 `"mode"` 设成 `build`/`edit` | ✅ 实机验证（headless stream-json，CLI 0.17.0：流式、工具行、usage、`--resume` + 缓存） |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 
 ACP **壳**（`claude-agent-acp`、`pi-acp`）作为内置可选依赖随包分发——无状态胶水，无需单独安装；你自己维护的壳优先生效，壳始终跟你在用的 CLI 版本配对（内置副本只是零配置兜底）。agent **CLI 本体**刻意留在你自己手里：它们各自独立演进、自带状态，塞一份固定版本进 agent-bridge 会把终端写入的 CLI 状态（`~/.codex`、`~/.claude`）分叉成两套——桥启动的就是你已经在用、已经登录的那个 CLI。pi 本体额外走不了 npm（安装器冲突，见上表）。某个 agent 没装时，对应的桥照样会启动、`/health` 也正常，只有第一次对话才失败（带安装提示）。
@@ -92,11 +93,12 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
     { "name": "gemini",    "port": 3951, "apiKey": "" },
     { "name": "qoder",     "port": 3953, "apiKey": "" },
     { "name": "dsh",       "port": 3952, "apiKey": "" },
+    { "name": "zcode",     "port": 3954, "apiKey": "", "mode": "plan" },
   ]
 }
 ```
 
-自带起步配置列全六个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、qoder 在 3953。前四个开箱即跑，自己机器上不需要密码。**qoder** 跑一次 `qoder login` 即可（ACP 与 CLI 共享登录态），或经条目 `env` 设个人访问令牌。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
+自带起步配置列全七个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、qoder 在 3953、zcode 在 3954。前四个开箱即跑，自己机器上不需要密码。**qoder** 跑一次 `qoder login` 即可（ACP 与 CLI 共享登录态），或经条目 `env` 设个人访问令牌。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**zcode** 复用 ZCode 桌面版/CLI 已有的登录态；headless 回合没有审批卡，所以 `mode`（默认 `plan`，或 `build`/`edit`/`guarded`/`yolo`）就是权限决定——默认 `plan` 是只读的。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
 
 单个智能体就是同一份文件删到只剩一条，用不到的行删掉即可。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
 
@@ -109,6 +111,7 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 | `args` | 可选；**追加**到 agent 启动命令后的额外参数（仅 ACP 拉起的 agent）——如 dsh 的模型旗标 `["--model", "deepseek-flash"]`；`~` 不展开，请用绝对路径 |
 | `cwd` | 可选；不写就跑在你启动 `serve` 的目录（写 `"."` 等价）；`~` 与相对路径会自动解析 |
 | `env` | 可选 `{VAR: value}` 对象，合并进 daemon 环境后传给被 spawn 的 agent；条目 env 覆盖注册表默认 |
+| `mode` | 仅 headless agent（zcode）：`plan`（默认，只读）· `build` · `edit` · `guarded` · `yolo`——headless 回合没有审批卡，这个字段就是权限决定 |
 | `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见「三扇门」） |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优（取值与取舍见下） |
 
@@ -149,6 +152,8 @@ agent-bridge doctor --json   # 机器可读，供 agent 自动安装流程使用
    - **pi**——pi 本体走官方自安装，然后跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置）。
    - **gemini**——`npm i -g @google/gemini-cli`，跑一次 `gemini` 登录。
    - **qoder**——`curl -fsSL https://qoder.com/install | bash`，跑一次 `qoder` 登录（或设 `QODER_PERSONAL_ACCESS_TOKEN`）。
+   - **dsh**——装好 DeepSeek Harness（桌面版或 CLI），存一次 key（`dsh-acp login` 或 dsh Web UI；适配器随包内置）。
+   - **zcode**——装/开 ZCode 桌面版（CLI 随装在 `~/.zcode/server/bin/zcode`）或独立 `zcode` CLI，登录一次；headless 回合默认只读（`mode: plan`）。
 
    只想要一两个？把 `agents.json` 里多余的条目删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。`agent-bridge doctor` 会在你试之前先抓出来。
 5. **启动桥**：

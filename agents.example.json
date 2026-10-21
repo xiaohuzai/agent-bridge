@@ -6,6 +6,7 @@
     { "name": "pi",        "port": 3950, "apiKey": "" },
     { "name": "gemini",    "port": 3951, "apiKey": "" },
     { "name": "dsh",       "port": 3952, "apiKey": "" },
-    { "name": "qoder",     "port": 3953, "apiKey": "" }
+    { "name": "qoder",     "port": 3953, "apiKey": "" },
+    { "name": "zcode",     "port": 3954, "apiKey": "", "mode": "plan" }
   ]
 }
