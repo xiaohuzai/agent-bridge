@@ -23,8 +23,9 @@ own port. It is deliberately not tied to any product, UI, or vendor.
 | Install, configure, use | [README.md](./README.md) (EN) · [README.zh-CN.md](./README.zh-CN.md) (中文) |
 | The v1 wire protocol (events, edge rules) | header comment of [server.mjs](./server.mjs) — **authoritative, frozen** |
 | Pre-flight checks (`agent-bridge doctor`) | header comment of [doctor.mjs](./doctor.mjs) |
-| Per-agent setup (codex / claude / pi / gemini / qoder, credentials) | [docs/agents.md](./docs/agents.md) · [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) |
+| Per-agent setup (codex / claude / pi / gemini / qoder / dsh / zcode, credentials) | [docs/agents.md](./docs/agents.md) · [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) |
 | ACP front design & compliance | [docs/design-acp-front.zh-CN.md](./docs/design-acp-front.zh-CN.md) |
+| Headless-CLI provider, Orca scan, direct-connect analysis | [docs/design-headless-provider.zh-CN.md](./docs/design-headless-provider.zh-CN.md) |
 | ACP Registry submission | [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md) |
 | Architecture, traps, testing, git workflow, roadmap | [AGENTS.md](./AGENTS.md) |
 | What each adapter learned from live agents | header comment of the adapter in [adapters/](./adapters/) |

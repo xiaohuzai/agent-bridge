@@ -1,4 +1,12 @@
-// agent-bridge/adapters/zcode-server.mjs — ZCode adapter.
+// agent-bridge/adapters/zcode-server.mjs — ZCode adapter (PAUSED).
+//
+// PAUSED 2026-10-21: the registry no longer routes here. Re-tested live, a
+// bridge-spawned desktop server registers a provider and then drops the
+// client at turn start ("ZCode Protocol client is disposed") — the desktop
+// HOST owns the protocol lifetime. zcode now runs on adapters/headless-cli.mjs
+// against the official CLI (`zcode -p … --output-format stream-json`), which
+// completes real turns. Kept for reference / a future desktop-host surface;
+// do not re-wire without a fresh live turn.
 //
 // Speaks the ZCode server's binary RPC on stdio — the same interface the
 // ZCode desktop app drives over stdio pipes and the open-source repo's

@@ -42,7 +42,7 @@ import { fileURLToPath } from 'node:url';
 import { createBridgeServer } from './server.mjs';
 import { attachAcpFront } from './acp-front-ws.mjs';
 import { CodexAppServerAdapter } from './adapters/codex-app-server.mjs';
-import { ZcodeServerAdapter } from './adapters/zcode-server.mjs';
+import { HeadlessCliAdapter, HEADLESS_PROFILES } from './adapters/headless-cli.mjs';
 import { AcpStdioAdapter } from './adapters/acp-stdio.mjs';
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 
@@ -129,15 +129,13 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
         errors.push(`${at}: "command" must be a non-empty array of strings`);
       } else if (spec?.kind === 'codex') {
         errors.push(`${at}: "${name}" runs on the native adapter — use "codexBin" to point at the binary, not "command"`);
-      } else if (spec?.kind === 'zcode') {
-        errors.push(`${at}: "${name}" runs on the native adapter — the server bundle is auto-resolved (or use "serverCjs"), not "command"`);
       }
     }
     if (b.args !== undefined) {
       if (!Array.isArray(b.args) || b.args.some((c) => typeof c !== 'string' || !c.trim())) {
         errors.push(`${at}: "args" must be an array of strings (appended to the agent's spawn command; [] clears the registry default)`);
       } else if (spec && spec.kind !== 'acp') {
-        errors.push(`${at}: "${name}" runs on the native adapter — "args" only applies to ACP-spawned agents (use the kind's own override fields)`);
+        errors.push(`${at}: "${name}" runs on the ${spec.kind} adapter — "args" only applies to ACP-spawned agents (use the kind's own override fields)`);
       }
     }
     if (b.cwd !== undefined && (typeof b.cwd !== 'string' || !b.cwd.trim())) errors.push(`${at}: "cwd" must be a non-empty string`);
@@ -146,10 +144,19 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
     }
     if (b.codexBin !== undefined && (typeof b.codexBin !== 'string' || !b.codexBin.trim())) errors.push(`${at}: "codexBin" must be a non-empty string`);
     if (b.codexHome !== undefined && (typeof b.codexHome !== 'string' || !b.codexHome.trim())) errors.push(`${at}: "codexHome" must be a non-empty string`);
-    if (b.serverCjs !== undefined && (typeof b.serverCjs !== 'string' || !b.serverCjs.trim())) errors.push(`${at}: "serverCjs" must be a non-empty string (path to the ZCode desktop's zcode-server.cjs)`);
-    if (b.nodeBin !== undefined && (typeof b.nodeBin !== 'string' || !b.nodeBin.trim())) errors.push(`${at}: "nodeBin" must be a non-empty string (node binary to run the zcode server bundle)`);
-    if (b.agentCommand !== undefined && (typeof b.agentCommand !== 'string' || !b.agentCommand.trim())) errors.push(`${at}: "agentCommand" must be a non-empty string (zcode agent CLI the server spawns — auto-resolved from the desktop install when omitted)`);
-    if (b.serverCjs !== undefined && typeof b.serverCjs === 'string' && b.serverCjs.trim() && !existsSync(expandHome(b.serverCjs.trim()))) errors.push(`${at}: "serverCjs" does not exist: ${b.serverCjs}`);
+    if (b.mode !== undefined) {
+      if (typeof b.mode !== 'string' || !b.mode.trim()) errors.push(`${at}: "mode" must be a non-empty string`);
+      else if (spec?.kind !== 'headless') errors.push(`${at}: "mode" only applies to headless agents (${name} runs on the ${spec?.kind} adapter)`);
+      else {
+        const modes = HEADLESS_PROFILES[spec.profile]?.modes || [];
+        if (!modes.includes(b.mode)) errors.push(`${at}: "${name}" mode must be one of ${modes.join(' | ')}`);
+      }
+    }
+    // The native ZCode adapter's overrides are gone: zcode now drives the
+    // official headless CLI, and a stale config would otherwise be ignored.
+    for (const stale of ['serverCjs', 'nodeBin', 'agentCommand']) {
+      if (b[stale] !== undefined) errors.push(`${at}: "${stale}" belonged to the paused native zcode adapter — zcode now runs on its headless CLI (remove it; use "command"/"mode" if needed)`);
+    }
     if (b.network !== undefined && typeof b.network !== 'boolean') errors.push(`${at}: "network" must be a boolean (workspace-write network access)`);
     if (b.sandbox !== undefined && !SANDBOXES.includes(b.sandbox)) errors.push(`${at}: "sandbox" must be one of ${SANDBOXES.join(' | ')}`);
     if (b.approval !== undefined && !APPROVALS.includes(b.approval)) errors.push(`${at}: "approval" must be one of ${APPROVALS.join(' | ')}`);
@@ -191,14 +198,19 @@ export function adapterFor(b, { log = () => {} } = {}) {
       }),
     };
   }
-  if (spec.kind === 'zcode') {
+  if (spec.kind === 'headless') {
     return {
       agent: b.name,
-      adapter: new ZcodeServerAdapter({
-        serverCjs: b.serverCjs ? resolve(expandHome(b.serverCjs)) : undefined,
-        nodeBin: b.nodeBin ? resolve(expandHome(b.nodeBin)) : undefined,
-        agentCommand: b.agentCommand ? (/[/\\]|\.cjs$/i.test(b.agentCommand) ? resolve(expandHome(b.agentCommand)) : b.agentCommand) : undefined,
+      adapter: new HeadlessCliAdapter({
+        profile: spec.profile,
+        // undefined keeps the profile's default argv AND the bundled-install
+        // fallback (desktop CLIs are not always on PATH); an explicit command
+        // is used verbatim.
+        command: b.command || undefined,
         cwd: b.cwd || process.cwd(),
+        mode: b.mode || spec.mode,
+        env: { ...spec.env, ...b.env }, // entry env overrides the registry default
+        installHint: spec.install,
         log: wrappedLog,
       }),
     };

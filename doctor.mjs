@@ -27,12 +27,12 @@
 
 import http from 'node:http';
 import { createServer } from 'node:net';
-import { accessSync, constants } from 'node:fs';
+import { accessSync, constants, existsSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { loadConfig, configPermissionsWarning, missingConfigHint, LOOPBACKS } from './serve.mjs';
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 import { agentPath } from './adapters/agent-env.mjs';
-import { resolveServerCjs } from './adapters/zcode-server.mjs';
+import { HEADLESS_PROFILES } from './adapters/headless-cli.mjs';
 
 const HEALTH_TIMEOUT_MS = 1500;
 const HEALTH_BODY_CAP = 4096;
@@ -97,18 +97,21 @@ function probeHealth(port, bind, token) {
 }
 
 /** The spawn command a bridge entry will use — mirrors adapterFor's
- * resolution (explicit override > registry default) as a static check. */
-function spawnCommandOf(b) {
+ * resolution (explicit override > registry default > headless fallback
+ * install) as a static check. */
+function resolveCommandOf(b) {
   const spec = KNOWN_AGENTS[b.name];
-  if (spec.kind === 'codex') return { cmd: b.codexBin || 'codex', overridden: b.codexBin !== undefined };
-  if (spec.kind === 'zcode') {
-    // No PATH command: the adapter reuses the desktop app's installed runtime
-    // bundle (auto-resolved, "serverCjs" overrides).
-    let resolved = null;
-    try { resolved = resolveServerCjs({ serverCjs: b.serverCjs }); } catch (_) {}
-    return { cmd: resolved || 'zcode-server.cjs (not found)', overridden: b.serverCjs !== undefined, isFile: !!resolved };
+  const isCodex = spec.kind === 'codex';
+  const cmd = isCodex ? (b.codexBin || 'codex') : (b.command || spec.command)[0];
+  const overridden = isCodex ? b.codexBin !== undefined : b.command !== undefined;
+  let found = findOnPath(cmd);
+  if (!found && spec.kind === 'headless' && !overridden) {
+    // Desktop-bundled CLIs (ZCode) are not on PATH; the adapter falls back to
+    // the install's own launcher, so doctor must check the same place.
+    const fallback = HEADLESS_PROFILES[spec.profile]?.fallbackBin?.();
+    if (fallback && existsSync(fallback)) found = fallback;
   }
-  return { cmd: (b.command || spec.command)[0], overridden: b.command !== undefined };
+  return { cmd, overridden, found };
 }
 
 /** Run every check. Returns {ok, checks} WITHOUT printing — cli.mjs owns the
@@ -131,22 +134,10 @@ export async function runDoctor({ configPath = 'agents.json', bind = '127.0.0.1'
       push('config', 'warn', `no agents.json here — checking the registry defaults instead`, hint.trim() || undefined);
       for (const name of knownAgentNames()) {
         const spec = KNOWN_AGENTS[name];
-        if (spec.kind === 'zcode') {
-          // No PATH command exists — the adapter reuses the desktop app's
-          // installed runtime bundle, so the check is bundle discovery.
-          let bundle = null;
-          try { bundle = resolveServerCjs({}); } catch (_) {}
-          push(`agent ${name}`,
-            bundle ? 'pass' : 'warn',
-            bundle ? `zcode server bundle found (${bundle}) — ready to configure` : 'zcode server bundle not found (registry default: the ZCode desktop app\'s installed runtime)',
-            bundle ? undefined : `install: ${spec.install}`);
-          continue;
-        }
-        const cmd = spec.kind === 'codex' ? 'codex' : spec.command[0];
-        const found = findOnPath(cmd);
+        const { cmd, found } = resolveCommandOf({ name });
         push(`agent ${name}`,
           found ? 'pass' : 'warn',
-          found ? `${cmd} found — ready to configure` : `${cmd} not on PATH (registry default: ${spec.command ? spec.command.join(' ') : 'native codex adapter'})`,
+          found ? `${cmd} found (${found}) — ready to configure` : `${cmd} not found (registry default: ${spec.command ? spec.command.join(' ') : 'native codex adapter'})`,
           found ? undefined : `install: ${spec.install}`);
       }
       return { ok: true, checks };
@@ -158,19 +149,8 @@ export async function runDoctor({ configPath = 'agents.json', bind = '127.0.0.1'
   if (perm) push('config', 'warn', perm);
 
   for (const b of cfg.bridges) {
-    if (KNOWN_AGENTS[b.name]?.kind === 'zcode') {
-      // zcode checks the resolved runtime bundle, not a PATH command.
-      const { cmd, isFile } = spawnCommandOf(b);
-      if (isFile) {
-        push(`bridge ${b.name}`, 'pass', `zcode server bundle found (${cmd})`);
-      } else {
-        push(`bridge ${b.name}`, 'fail',
-          `zcode server bundle not found — serve still starts and answers /health, but this bridge's first turn dies with a resolution error`,
-          `install/open the ZCode desktop app once, or set the entry's "serverCjs" to the zcode-server.cjs inside it`);
-      }
-    } else {
-      const { cmd, overridden } = spawnCommandOf(b);
-      const found = findOnPath(cmd);
+    {
+      const { cmd, overridden, found } = resolveCommandOf(b);
       if (found) {
         push(`bridge ${b.name}`, 'pass', `command "${cmd}" found (${found})`);
       } else {
