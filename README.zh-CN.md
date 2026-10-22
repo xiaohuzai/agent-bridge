@@ -98,7 +98,7 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 }
 ```
 
-自带起步配置列全七个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、qoder 在 3953、zcode 在 3954。前四个开箱即跑，自己机器上不需要密码。**qoder** 跑一次 `qoder login` 即可（ACP 与 CLI 共享登录态），或经条目 `env` 设个人访问令牌。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**zcode** 复用 ZCode 桌面版/CLI 已有的登录态；headless 回合没有审批卡，所以 `mode`（默认 `plan`，或 `build`/`edit`/`guarded`/`yolo`）就是权限决定——默认 `plan` 是只读的。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
+自带起步配置列全七个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、qoder 在 3953、zcode 在 3954。前四个开箱即跑，自己机器上不需要密码。**qoder** 跑一次 `qoder login` 即可（ACP 与 CLI 共享登录态），或经条目 `env` 设个人访问令牌。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**zcode** 复用 ZCode 桌面版/CLI 已有的登录态；headless 回合没有审批卡，所以 `mode`（默认 `plan`，或 `build`/`edit`/`guarded`/`yolo`）就是权限决定——默认 `plan` 是只读的。桥不传模型：ZCode 按自身配置解析默认（`~/.zcode/v2/provider_config.json` 的 `config.defaultModelSelection`，该提供商不可用——比如未登录——时自动回落到供应商/模型排序）；当前桌面版 UI 写不进该字段，关掉 ZCode 手改一次文件即可，方法与核验见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 zcode 一节。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
 
 单个智能体就是同一份文件删到只剩一条，用不到的行删掉即可。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
 

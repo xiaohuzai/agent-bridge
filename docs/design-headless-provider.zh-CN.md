@@ -227,3 +227,24 @@ stdout 是 JSONL，每行一个 envelope：
 - 协议事实实机验证：事件 schema、resume、缓存、工具行都来自 2026-10-21 的真机抓取，
   记录在 `adapters/headless-cli.mjs` 头部与 `docs/agents*.md`。
 - 用户优先：CLI 走 PATH，找不到时回退到桌面版自带路径，绝不内置固定版本。
+
+## 增补：默认模型解析与配置（2026-10-22 实测）
+
+桥对模型保持无知：zcode 条目不带任何模型字段，CLI 也没有 `--model`。每个回合的模型
+由 ZCode 引擎按自身配置解析，顺序为：
+
+1. `~/.zcode/v2/provider_config.json` 的 `config.defaultModelSelection`
+   （`{providerId, modelId, options.reasoningLevel?}`；schema 见 Orca 仓库的
+   zcode fixture 与本机桌面 app.asar 的 zod 定义）——提供商可用时按它走；
+2. 未设置、或该提供商不可用（含未登录订阅）时，**静默回落** `providerOrder`
+   首位提供商 × 其 `modelOrder` 首位模型。实测把 `defaultModelSelection` 指向
+   不存在的提供商，回合正常完成并落在第一个第三方提供商上，不报错。
+
+当前桌面版 UI 写不进该字段：安装包里有持久化方法（`saveConfiguredDefault`）但没有任何
+调用方；设置页「设为默认连接」是 SSH 设备连接，与模型无关；TUI `/model` 只改会话。
+唯一入口是关闭 ZCode 后手改 JSON。Windows 桌面与 WSL 各持一份独立 `~/.zcode`，桥跑在
+哪侧就改哪侧；运行中的 server 可能用内存副本回写文件，字段消失就再补。
+
+核对实际使用的模型：`~/.zcode/cli/db/db.sqlite` 的 `model_usage` 表
+（`provider_id` / `model_id` / `started_at`）。另：同默认模型的重复 headless 回合命中
+provider 前缀缓存（28K 输入实测 24.5K cached），固定成本大头被缓存抵掉。

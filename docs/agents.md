@@ -197,6 +197,26 @@ The desktop app ships it at `~/.zcode/server/bin/zcode` (auto-discovered when `z
 
 **Install & sign in**: open/install the ZCode desktop app once (or install the standalone CLI) and sign in once (`zcode login`, or via the desktop app). The CLI and the desktop share `~/.zcode` — login state, MCP servers, skills, hooks — so a bridge turn sees the same configuration a terminal `zcode` does.
 
+**Default model** (live-verified 2026-10-22, CLI 0.17.0): the bridge **never passes a model** — the CLI has no `--model` flag, and ZCode resolves its own default for every turn:
+
+1. `config.defaultModelSelection` in `~/.zcode/v2/provider_config.json` — `{ "providerId": …, "modelId": … }`; used as-is while that provider is available;
+2. otherwise — or when that provider is unavailable, e.g. signed out of the account plan — ZCode **silently falls back** to the first provider in `config.providerOrder` × its first entry in `modelOrder`. The turn does not fail (verified by pointing `defaultModelSelection` at a nonexistent provider: the turn completed on the first third-party provider).
+
+**Setting the default**: close ZCode and edit the file by hand. The current desktop UI cannot write this field — the installed build ships the persistence method with no control calling it, the settings entry 「设为默认连接」 is about SSH device connections, not models, and the TUI's `/model` only re-skins the current session. Example — make a signed-in Zhipu GLM plan the default:
+
+```json
+"defaultModelSelection": { "providerId": "account:bigmodel-individual-coding-plan", "modelId": "GLM-5.3-Flash" }
+```
+
+To check what a turn actually used, ask the agent's own ledger — in `~/.zcode/cli/db/db.sqlite`:
+
+```sql
+SELECT provider_id, model_id, datetime(started_at/1000,'unixepoch','localtime')
+FROM model_usage ORDER BY started_at DESC;
+```
+
+Two gotchas: the Windows desktop and WSL keep **separate** `~/.zcode` trees — edit the one on the machine where the bridge runs; and a running ZCode server may rewrite the file from memory, so if the field disappears, re-add it.
+
 **agents.json entry**:
 
 ```json

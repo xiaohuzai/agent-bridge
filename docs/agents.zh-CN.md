@@ -196,6 +196,26 @@ zcode -p '<text>' --output-format stream-json --no-color --mode plan --cwd <dir>
 
 **安装与登录**：装/开一次 ZCode 桌面版（或装独立 CLI），登录一次（`zcode login`，或经桌面版）。CLI 与桌面共享 `~/.zcode`——登录态、MCP、skills、hooks——所以桥里的回合和终端里的 `zcode` 看到的是同一套配置。
 
+**默认模型**（2026-10-22 对 CLI 0.17.0 实机验证）：桥**从不传模型**——CLI 没有 `--model` 参数，每个回合的模型由 ZCode 按自己的配置解析：
+
+1. `~/.zcode/v2/provider_config.json` 里的 `config.defaultModelSelection`——`{ "providerId": …, "modelId": … }`；该提供商可用时按它走；
+2. 没设置、或该提供商不可用（比如没登录对应订阅）时，ZCode **静默回落**到 `config.providerOrder` 第一个提供商 × 它 `modelOrder` 的第一个模型——回合不会失败（实测：把 `defaultModelSelection` 指向一个不存在的提供商，回合正常完成并落在第一个第三方提供商上）。
+
+**设置默认**：关掉 ZCode 后手改这个文件。当前桌面版 UI 写不进这个字段——安装包里有持久化方法但没有任何界面调用它，设置页的「设为默认连接」是 SSH 设备连接、与模型无关，TUI 的 `/model` 只改当前会话。例：把已登录的智谱 GLM 订阅设为默认：
+
+```json
+"defaultModelSelection": { "providerId": "account:bigmodel-individual-coding-plan", "modelId": "GLM-5.3-Flash" }
+```
+
+想核对某回合实际用的模型，查 agent 自己的账本——`~/.zcode/cli/db/db.sqlite`：
+
+```sql
+SELECT provider_id, model_id, datetime(started_at/1000,'unixepoch','localtime')
+FROM model_usage ORDER BY started_at DESC;
+```
+
+两个坑：Windows 桌面与 WSL 各持一份**独立**的 `~/.zcode`——桥跑在哪侧就改哪侧的；运行中的 ZCode server 可能用内存副本回写文件，字段若消失就再补上。
+
 **agents.json 条目**：
 
 ```json

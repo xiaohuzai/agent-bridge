@@ -195,7 +195,7 @@ Point any wire-protocol client at these addresses.</code></pre>
     </ol>
     <div class="note">
       <p class="note-title">agent 本身要先装好</p>
-      <p>bridge 不替你安装智能体：codex、claude、gemini 各一条 npm 命令，pi 走官方自安装器，qoder 一条官方安装脚本（装好跑一次 <code>qoder</code> 登录），dsh 装好 DeepSeek Harness（桌面版或 CLI）并登录，zcode 装好 ZCode 桌面版或独立 CLI 并登录；装好并登录后，bridge 只负责把它们接到你的客户端。claude、pi、dsh 对话所走的 ACP 适配器（claude-agent-acp、pi-acp、openma deepseek-harness-acp）已随包内置，无需单独安装。缺智能体的桥照常启动、照常回答 <code>/health</code>，第一个回合才报错并给出安装提示（含确切命令）。</p>
+      <p>bridge 不替你安装智能体：codex、claude、gemini 各一条 npm 命令，pi 走官方自安装器，qoder 一条官方安装脚本（装好跑一次 <code>qoder</code> 登录），dsh 装好 DeepSeek Harness（桌面版或 CLI）并登录，zcode 装好 ZCode 桌面版或独立 CLI 并登录；装好并登录后，bridge 只负责把它们接到你的客户端。claude、pi、dsh 对话所走的 ACP 适配器（claude-agent-acp、pi-acp、openma deepseek-harness-acp）已随包内置，无需单独安装。缺智能体的桥照常启动、照常回答 <code>/health</code>，第一个回合才报错并给出安装提示（含确切命令）。ZCode 的回合不需要设模型：CLI 按自身配置解析默认（<code>~/.zcode/v2/provider_config.json</code> 的 <code>defaultModelSelection</code>，提供商不可用时自动回落到供应商/模型排序）——在该文件里设一次，桥的每个回合自动跟随。</p>
       <pre><code>npm i -g @openai/codex                                       <span class="tok-com"># codex</span>
 npm i -g @anthropic-ai/claude-code                           <span class="tok-com"># claude</span>
 npm i -g @google/gemini-cli                                  <span class="tok-com"># gemini</span>
