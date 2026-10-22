@@ -58,7 +58,7 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 | **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
 | **qoder** | 安装脚本 `curl -fsSL https://qoder.com/install | bash`（或旧法 `npm i -g @qoder-ai/qodercli`）→ 跑一次 `qoder` 完成登录（ACP 与 CLI 共享登录态），或环境变量 `QODER_PERSONAL_ACCESS_TOKEN` | ⚠️ 链路已验证（握手/能力/鉴权边界，qoder-cli 1.1.71）——真实模型回合待有凭据的机器 |
 | **dsh**（DeepSeek Harness） | `npm i -g @openma/deepseek-harness-acp`（openma ACP 适配器——进程内组装你安装的 dsh，token 级流式，会话/凭据与 dsh 桌面版/Web 共享）；key 走 dsh Web UI 或 `dsh-acp login` | ✅ 实机验证（适配器 0.4.37 对 dsh 0.2.0-rc.2） |
-| **zcode** | ZCode 桌面版（CLI 随装在 `~/.zcode/server/bin/zcode`）或 PATH 上的独立 `zcode` CLI → 登录一次（`zcode login` / 桌面版）；headless 回合默认只读 `plan`——要写文件把 `"mode"` 设成 `build`/`edit` | ✅ 实机验证（headless stream-json，CLI 0.17.0：流式、工具行、usage、`--resume` + 缓存） |
+| **zcode** | ZCode 桌面版（桥会自动找到它自带的 CLI——Linux `~/.zcode/server/bin/zcode`，Windows/macOS 用 app 内 `resources/glm/zcode.cjs` 跑在 app 运行时上；也可用 `ZCODE_CLI` 或条目 `command` 手动指定）或 PATH 上的独立 `zcode` CLI → 登录一次（`zcode login` / 桌面版）；headless 回合默认只读 `plan`——要写文件把 `"mode"` 设成 `build`/`edit` | ✅ 实机验证（headless stream-json，CLI 0.17.0：流式、工具行、usage、`--resume` + 缓存） |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 
 ACP **壳**（`claude-agent-acp`、`pi-acp`）作为内置可选依赖随包分发——无状态胶水，无需单独安装；你自己维护的壳优先生效，壳始终跟你在用的 CLI 版本配对（内置副本只是零配置兜底）。agent **CLI 本体**刻意留在你自己手里：它们各自独立演进、自带状态，塞一份固定版本进 agent-bridge 会把终端写入的 CLI 状态（`~/.codex`、`~/.claude`）分叉成两套——桥启动的就是你已经在用、已经登录的那个 CLI。pi 本体额外走不了 npm（安装器冲突，见上表）。某个 agent 没装时，对应的桥照样会启动、`/health` 也正常，只有第一次对话才失败（带安装提示）。
