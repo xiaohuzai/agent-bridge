@@ -95,7 +95,7 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
       const exe = join(root, 'ZCode', 'ZCode.exe');
       if (!existsSync(cjs)) continue;
       const provider = join(root, 'ZCode', 'resources', 'config', 'provider', 'zcode-builtin.json');
-      const providerEnv = existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {};
+      const providerEnv = providerPairEnv(provider, { home });
       // `bin` below already includes the bridge's own node first (see the
       // nodeRuntime() helper) — same reason as macOS.
       const node = nodeRuntime();
@@ -120,7 +120,7 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
       const gui = join(root, 'MacOS', 'ZCode');
       if (!existsSync(cjs)) continue;
       const provider = join(root, 'Resources', 'config', 'provider', 'zcode-builtin.json');
-      const providerEnv = existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {};
+      const providerEnv = providerPairEnv(provider, { home });
       // ZERO-CONFIG node resolution, in preference order:
       //   1. the node running THIS bridge (process.execPath) — always a real
       //      node, needs no user setup;
@@ -160,6 +160,23 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
     out.push({ bin: wrapper, prefix: [], envPatch: {}, label: `${wrapper} (Linux desktop)` });
   }
   return out;
+}
+
+/** The builtin/personal provider-config env pair. The CLI requires BOTH or
+ * neither: `resolveNodeProviderRuntimePaths()` throws
+ * "ZCode Built-in 与 Personal Provider Config 路径必须同时提供" when only one
+ * is set, and setting only the builtin one is what made macOS print
+ * "ZCode Built-in missing" (2026-10-22). Personal config lives in the normal
+ * ~/.zcode location, so point it there explicitly whenever we point the
+ * builtin one. If either path is absent, set NEITHER and let the CLI resolve
+ * its own defaults. */
+function providerPairEnv(builtinPath, { home = homedir() } = {}) {
+  const personal = join(home, '.zcode', 'v2', 'provider_config.json');
+  if (!existsSync(builtinPath) || !existsSync(personal)) return {};
+  return {
+    ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: builtinPath,
+    ZCODE_PERSONAL_PROVIDER_CONFIG_FILE: personal,
+  };
 }
 
 /** Is this really a Node runtime? Presence is not proof — Electron bundles
@@ -546,7 +563,11 @@ export class HeadlessCliAdapter {
       new Promise((resolve) => { admitTimer = setTimeout(() => resolve(null), ADMISSION_TIMEOUT_MS); }),
     ]).finally(() => { if (admitTimer) clearTimeout(admitTimer); });
     if (admission === null) {
-      this.log(`[${this.spec.name}] no session id within ${ADMISSION_TIMEOUT_MS}ms — returning unadmitted turn`);
+      // Not an error: on a cold start the CLI may take longer than the
+      // admission window to emit its first event. The turn keeps running and
+      // `start` (with the session id) still arrives; the client's disconnect
+      // path is covered by res.on('close') in server.mjs, not by this timeout.
+      this.log(`[${this.spec.name}] still booting after ${ADMISSION_TIMEOUT_MS}ms — the turn continues; the start event will arrive once the CLI emits its first frame (normal on a cold start)`);
     }
     return { sessionId: turn.sessionId, turnId: turn.turnId };
   }

@@ -286,17 +286,25 @@ test('zcodeFallbackCandidates: the desktop-app bundle shapes per platform', asyn
   // catalog pointed in.
   writeFileSync(join(t1, 'ZCode', 'resources', 'glm', 'zcode.cjs'),
     "if (process.argv.includes('--version')) { console.log('0.17.0'); }\n");
-  const win = zcodeFallbackCandidates({ programDirs: [t1], platform: 'win32' });
+  // The builtin provider path is only set TOGETHER with the personal one, so
+  // this test must provide a home that has it — the runner's real HOME has no
+  // ~/.zcode (CI caught exactly that).
+  const winHome = mkdtempSync(join(tmpdir(), 'ab-zc-win-home-'));
+  mkdirSync(join(winHome, '.zcode', 'v2'), { recursive: true });
+  writeFileSync(join(winHome, '.zcode', 'v2', 'provider_config.json'), '{}');
+  const win = zcodeFallbackCandidates({ programDirs: [t1], platform: 'win32', home: winHome });
   assert.equal(win.length, 1);
   assert.equal(win[0].bin, process.execPath, 'the bridge node runs the CLI — no user config');
   assert.match(win[0].prefix[0], /resources[\\/]glm[\\/]zcode\.cjs$/);
   assert.equal(win[0].envPatch.ELECTRON_RUN_AS_NODE, undefined, 'a real node needs no Electron flag');
   assert.match(win[0].envPatch.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE, /zcode-builtin\.json$/, 'the app-bundle CLI needs the app\'s provider catalog');
+  assert.equal(win[0].envPatch.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE, join(winHome, '.zcode', 'v2', 'provider_config.json'));
 
   const t2 = mkdtempSync(join(tmpdir(), 'ab-zc-mac'));
   mkApp(t2, { exeRel: 'MacOS/ZCode', cjsRel: 'Resources/glm/zcode.cjs', providerRel: null });
   // darwin expects roots shaped like "<…>/ZCode.app/Contents" — t2 plays Contents
-  const mac = zcodeFallbackCandidates({ programDirs: [t2], platform: 'darwin' });
+  const emptyHome = mkdtempSync(join(tmpdir(), 'ab-zc-empty-home-'));
+  const mac = zcodeFallbackCandidates({ programDirs: [t2], platform: 'darwin', home: emptyHome });
   assert.equal(mac.length, 1);
   assert.match(mac[0].bin, /MacOS[\\/]ZCode$/);
   assert.equal(mac[0].envPatch.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE, undefined, 'no catalog file → no env patch for it');
@@ -310,7 +318,7 @@ test('zcodeFallbackCandidates: the desktop-app bundle shapes per platform', asyn
   // `<node> <cjs> --version`, never by existence.
   writeFileSync(join(t2b, 'Resources', 'glm', 'zcode.cjs'),
     "if (process.argv.includes('--version')) { console.log('0.17.0'); }\n");
-  const macNode = zcodeFallbackCandidates({ programDirs: [t2b], platform: 'darwin' });
+  const macNode = zcodeFallbackCandidates({ programDirs: [t2b], platform: 'darwin', home: emptyHome });
   assert.equal(macNode.length, 1);
   assert.equal(macNode[0].bin, process.execPath, 'must use the node running the bridge — no user config');
   assert.equal(macNode[0].envPatch.ELECTRON_RUN_AS_NODE, undefined, 'a real node needs no Electron flag');
@@ -319,9 +327,29 @@ test('zcodeFallbackCandidates: the desktop-app bundle shapes per platform', asyn
   const t2c = mkdtempSync(join(tmpdir(), 'ab-zc-mac-broken'));
   mkApp(t2c, { exeRel: 'MacOS/ZCode', cjsRel: 'Resources/glm/zcode.cjs', providerRel: null });
   writeFileSync(join(t2c, 'Resources', 'glm', 'zcode.cjs'), 'process.exit(3);\n');
-  const macBroken = zcodeFallbackCandidates({ programDirs: [t2c], platform: 'darwin' });
+  const macBroken = zcodeFallbackCandidates({ programDirs: [t2c], platform: 'darwin', home: emptyHome });
   assert.match(macBroken[0].bin, /MacOS[\\/]ZCode$/, 'unrunnable CLI → GUI launcher');
   assert.equal(macBroken[0].envPatch.ELECTRON_RUN_AS_NODE, '1');
+
+  // The CLI REQUIRES the builtin and personal provider-config paths as a PAIR:
+  // setting only the builtin one makes it print "ZCode Built-in missing" and
+  // degrade (2026-10-22, macOS). Either both are set or neither is.
+  const t2d = mkdtempSync(join(tmpdir(), 'ab-zc-pair'));
+  mkApp(t2d, { exeRel: 'MacOS/ZCode', cjsRel: 'Resources/glm/zcode.cjs', providerRel: 'Resources/config/provider/zcode-builtin.json' });
+  writeFileSync(join(t2d, 'Resources', 'glm', 'zcode.cjs'),
+    "if (process.argv.includes('--version')) { console.log('0.17.0'); }\n");
+  const homeWithPersonal = mkdtempSync(join(tmpdir(), 'ab-zc-home-'));
+  mkdirSync(join(homeWithPersonal, '.zcode', 'v2'), { recursive: true });
+  writeFileSync(join(homeWithPersonal, '.zcode', 'v2', 'provider_config.json'), '{}');
+  const paired = zcodeFallbackCandidates({ programDirs: [t2d], platform: 'darwin', home: homeWithPersonal });
+  assert.ok(paired[0].envPatch.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE, 'builtin path set');
+  assert.equal(paired[0].envPatch.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE, join(homeWithPersonal, '.zcode', 'v2', 'provider_config.json'),
+    'personal path MUST ride along — the CLI rejects a lone builtin path');
+
+  const homeNoPersonal = mkdtempSync(join(tmpdir(), 'ab-zc-home2-'));
+  const lone = zcodeFallbackCandidates({ programDirs: [t2d], platform: 'darwin', home: homeNoPersonal });
+  assert.equal(lone[0].envPatch.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE, undefined,
+    'no personal config → set NEITHER, let the CLI resolve its own paths');
 
   const t3 = mkdtempSync(join(tmpdir(), 'ab-zc-lin'));
   mkdirSync(join(t3, '.zcode', 'server', 'bin'), { recursive: true });
