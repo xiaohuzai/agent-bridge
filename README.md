@@ -153,7 +153,7 @@ New here? The whole journey is about five minutes:
    - **gemini** — `npm i -g @google/gemini-cli`, then run `gemini` once to log in.
    - **qoder** — `curl -fsSL https://qoder.com/install | bash`, then run `qoder` once to log in (or set `QODER_PERSONAL_ACCESS_TOKEN`).
    - **dsh** — install DeepSeek Harness (desktop app or CLI) and save a key once (`dsh-acp login` or the dsh Web UI; the adapter ships bundled).
-   - **zcode** — install/open the ZCode desktop app (its CLI ships inside at `~/.zcode/server/bin/zcode`) or the standalone `zcode` CLI, and sign in once; headless turns default to read-only `mode: plan`.
+   - **zcode** — install/open the ZCode desktop app (the bridge finds its bundled CLI automatically — no env, no path tuning) or the standalone `zcode` CLI, and sign in once; headless turns default to read-only `mode: plan`.
 
    Only want one or two? Delete the other entries from `agents.json`. A bridge whose agent isn't installed still starts and answers `/health` — it only fails on its first turn, with an install hint — so a missing agent is easy to miss until you try it. `agent-bridge doctor` catches it before you try.
 5. **Start the bridge**:

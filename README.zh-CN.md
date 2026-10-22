@@ -153,7 +153,7 @@ agent-bridge doctor --json   # 机器可读，供 agent 自动安装流程使用
    - **gemini**——`npm i -g @google/gemini-cli`，跑一次 `gemini` 登录。
    - **qoder**——`curl -fsSL https://qoder.com/install | bash`，跑一次 `qoder` 登录（或设 `QODER_PERSONAL_ACCESS_TOKEN`）。
    - **dsh**——装好 DeepSeek Harness（桌面版或 CLI），存一次 key（`dsh-acp login` 或 dsh Web UI；适配器随包内置）。
-   - **zcode**——装/开 ZCode 桌面版（CLI 随装在 `~/.zcode/server/bin/zcode`）或独立 `zcode` CLI，登录一次；headless 回合默认只读（`mode: plan`）。
+   - **zcode**——装/开 ZCode 桌面版（桥会自动找到它自带的 CLI，无需任何环境变量或路径配置）或独立 `zcode` CLI，登录一次；headless 回合默认只读（`mode: plan`）。
 
    只想要一两个？把 `agents.json` 里多余的条目删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。`agent-bridge doctor` 会在你试之前先抓出来。
 5. **启动桥**：
