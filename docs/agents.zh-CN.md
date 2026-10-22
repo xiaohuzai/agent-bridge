@@ -192,7 +192,7 @@ ZCode 提供官方 **headless CLI**——本桥走的就是这个对外驱动面
 zcode -p '<text>' --output-format stream-json --no-color --mode plan --cwd <dir> [--resume sess_…]
 ```
 
-桌面版把它随装在 `~/.zcode/server/bin/zcode`（`zcode` 不在 PATH 时自动发现）；独立安装则直接在 PATH 上。agent-bridge **每回合起一个进程**，把 JSONL 事件流翻译成 v1——没有 PTY，也不解析屏幕。
+CLI 解析顺序:条目 `command`(与默认 `zcode` 不同时)> `ZCODE_CLI` 环境变量 > PATH 上的 `zcode` > 桌面版自带 CLI——Linux 是 `~/.zcode/server/bin/zcode`(sh 包装、直接 spawn);Windows/macOS 是 app 内 `resources/glm/zcode.cjs`,用 app 自己的二进制以 `ELECTRON_RUN_AS_NODE` 模式运行,并把 `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` 指向 app 的 provider 目录(两种形态均已实测;Windows 桌面树里**没有**独立的 CLI 可执行文件)。条目 `command` 写的就是默认值时不会禁用回落。agent-bridge **每回合起一个进程**,把 JSONL 事件流翻译成 v1——没有 PTY,也不解析屏幕。
 
 **安装与登录**：装/开一次 ZCode 桌面版（或装独立 CLI），登录一次（`zcode login`，或经桌面版）。CLI 与桌面共享 `~/.zcode`——登录态、MCP、skills、hooks——所以桥里的回合和终端里的 `zcode` 看到的是同一套配置。
 

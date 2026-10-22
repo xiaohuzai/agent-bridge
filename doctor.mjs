@@ -106,10 +106,13 @@ function resolveCommandOf(b) {
   const overridden = isCodex ? b.codexBin !== undefined : b.command !== undefined;
   let found = findOnPath(cmd);
   if (!found && spec.kind === 'headless' && !overridden) {
-    // Desktop-bundled CLIs (ZCode) are not on PATH; the adapter falls back to
-    // the install's own launcher, so doctor must check the same place.
-    const fallback = HEADLESS_PROFILES[spec.profile]?.fallbackBin?.();
-    if (fallback && existsSync(fallback)) found = fallback;
+    // Desktop-bundled CLIs (ZCode) are not on PATH; the adapter walks the
+    // same platform candidates (Linux ~/.zcode/server/bin/zcode, the
+    // Windows/macOS app bundle run as Electron-as-Node) — doctor checks the
+    // same places so its verdict can never disagree with a spawn.
+    for (const c of (HEADLESS_PROFILES[spec.profile]?.fallbackCandidates?.() || [])) {
+      if (existsSync(c.bin)) { found = c.bin; break; }
+    }
   }
   return { cmd, overridden, found };
 }

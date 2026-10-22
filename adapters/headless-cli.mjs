@@ -71,10 +71,66 @@ const ADMISSION_TIMEOUT_MS = 15_000;
 const KILL_GRACE_MS = 1_500;
 const STDERR_TAIL_BYTES = 4_096;
 
-/** Tiny getter so tests can point the profile at a fixture without touching
- * the user's real install (the fallback is only consulted on ENOENT). */
-function zcodeFallbackBin(home = homedir()) {
-  return join(home, '.zcode', 'server', 'bin', 'zcode');
+/** CLI candidates beyond a bare `zcode` on PATH — every shape below was
+ * verified against a real install (Linux/WSL 2026-10-21, Windows 2026-10-22):
+ *   Linux desktop:  ~/.zcode/server/bin/zcode — a sh wrapper, spawned as-is.
+ *   Windows/macOS desktop: the app bundles the CLI as resources/glm/zcode.cjs
+ *     and runs it on the app's OWN Electron in ELECTRON_RUN_AS_NODE mode
+ *     (verified: `ELECTRON_RUN_AS_NODE=1 ZCode.exe …\zcode.cjs --version`
+ *     prints 0.17.0; macOS is the same shape the native adapter verified
+ *     2026-10-08 — Contents/Resources/glm/zcode.cjs on Contents/MacOS/ZCode).
+ *     The app-bundle CLI cannot find its builtin provider catalog beside
+ *     itself (packaging delta — it looks at glm/provider/, the app ships
+ *     Resources/config/provider/), so point ZCODE_BUILTIN_PROVIDER_CONFIG_FILE
+ *     at the app's copy when present. */
+export function zcodeFallbackCandidates({ home = homedir(), programDirs, platform = process.platform } = {}) {
+  const out = [];
+  if (platform === 'win32') {
+    const dirs = programDirs || [
+      process.env.ProgramFiles || 'C:\\Program Files',
+      join(home, 'AppData', 'Local', 'Programs'),
+    ];
+    for (const root of dirs) {
+      const cjs = join(root, 'ZCode', 'resources', 'glm', 'zcode.cjs');
+      const exe = join(root, 'ZCode', 'ZCode.exe');
+      if (!existsSync(cjs) || !existsSync(exe)) continue;
+      const provider = join(root, 'ZCode', 'resources', 'config', 'provider', 'zcode-builtin.json');
+      out.push({
+        bin: exe,
+        prefix: [cjs],
+        envPatch: {
+          ELECTRON_RUN_AS_NODE: '1',
+          ...(existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {}),
+        },
+        label: `${cjs} (desktop app bundle)`,
+      });
+    }
+    return out;
+  }
+  if (platform === 'darwin') {
+    const dirs = programDirs || ['/Applications/ZCode.app/Contents'];
+    for (const root of dirs) {
+      const cjs = join(root, 'Resources', 'glm', 'zcode.cjs');
+      const exe = join(root, 'MacOS', 'ZCode');
+      if (!existsSync(cjs) || !existsSync(exe)) continue;
+      const provider = join(root, 'Resources', 'config', 'provider', 'zcode-builtin.json');
+      out.push({
+        bin: exe,
+        prefix: [cjs],
+        envPatch: {
+          ELECTRON_RUN_AS_NODE: '1',
+          ...(existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {}),
+        },
+        label: `${cjs} (desktop app bundle)`,
+      });
+    }
+    return out;
+  }
+  const wrapper = join(home, '.zcode', 'server', 'bin', 'zcode');
+  if (existsSync(wrapper)) {
+    out.push({ bin: wrapper, prefix: [], envPatch: {}, label: `${wrapper} (Linux desktop)` });
+  }
+  return out;
 }
 
 export const HEADLESS_PROFILES = {
@@ -83,7 +139,7 @@ export const HEADLESS_PROFILES = {
     modes: ['build', 'edit', 'plan', 'yolo', 'guarded'],
     defaultMode: 'plan',
     command: ['zcode'],
-    fallbackBin: zcodeFallbackBin,
+    fallbackCandidates: zcodeFallbackCandidates,
     /** The argv for one turn. Placeholders are already substituted; this is
      * the only place that knows ZCode's flag names. */
     argsFor({ text, mode, cwd, sessionId }) {
@@ -317,10 +373,14 @@ export class HeadlessCliAdapter {
     } catch (e) {
       this.turns.delete(turn);
       if (turn.sessionId && this.sessions.get(turn.sessionId) === turn) this.sessions.delete(turn.sessionId);
-      const message = e.code === 'ENOENT'
-        ? `agent binary not found: ${this.command ? this.command[0] : this.spec.command[0]}`
-          + (this.installHint ? ` — install: ${this.installHint}` : '')
-        : `failed to start ${this.spec.name}: ${e.message}`;
+      const message = e.spawnMessage
+        // #spawnTurn's own errors (missing cwd, exhausted candidates) are
+        // already end-user-shaped — pass them through verbatim.
+        ? e.message
+        : e.code === 'ENOENT'
+          ? `agent binary not found: ${this.command ? this.command[0] : this.spec.command[0]}`
+            + (this.installHint ? ` — install: ${this.installHint}` : '')
+          : `failed to start ${this.spec.name}: ${e.message}`;
       // The HTTP layer relays a thrown startTurn as the turn's error event;
       // emitting here too would double it.
       throw new Error(message);
@@ -384,34 +444,69 @@ export class HeadlessCliAdapter {
     return { sessionId: turn.sessionId, turnId: turn.turnId };
   }
 
-  /** Spawn argv, retrying the profile's fallback binary once on ENOENT when
-   * the command was not explicitly configured (desktop-bundled CLIs are not
-   * always on PATH — ZCode's lives under ~/.zcode/server/bin). */
+  /** Spawn argv for one turn, walking the candidate chain on ENOENT:
+   * explicit non-default command > ZCODE_CLI env > `zcode` on PATH > the
+   * platform's desktop-install candidates. A command EQUAL to the profile
+   * default is treated as "no explicit command" so copying ["zcode"] into an
+   * entry does not silently disable the fallbacks. */
   #spawnTurn({ text, sessionId }) {
+    // A missing cwd also surfaces as spawn ENOENT (Node reports "spawn node
+    // ENOENT" with the BINARY's name even when the cwd is the problem —
+    // verified 2026-10-22), which the old error misread as "binary not
+    // found". Pre-check and name the real problem.
+    if (!existsSync(this.cwd)) {
+      const err = new Error(`${this.spec.name}: workspace cwd does not exist: ${this.cwd} — fix the bridge entry's "cwd"`);
+      err.spawnMessage = true;
+      throw err;
+    }
     const argv = this.spec.argsFor({ text, mode: this.mode, cwd: this.cwd, sessionId });
-    const explicit = this.command !== null;
-    const base = this.command || this.spec.command;
-    const tryOnce = (bin, prefix = []) => new Promise((resolve, reject) => {
-      const child = spawn(bin, [...prefix, ...argv], {
+    const isDefault = JSON.stringify(this.command) === JSON.stringify(this.spec.command);
+    const explicit = this.command !== null && !isDefault;
+    const attempts = [];
+    if (explicit) {
+      attempts.push({ bin: this.command[0], prefix: this.command.slice(1), envPatch: {}, label: `command ${this.command.join(' ')}` });
+    } else {
+      const mergedEnv = agentSpawnEnv(this.env);
+      if (mergedEnv.ZCODE_CLI) {
+        attempts.push({ bin: mergedEnv.ZCODE_CLI, prefix: [], envPatch: {}, label: `ZCODE_CLI=${mergedEnv.ZCODE_CLI}` });
+      }
+      attempts.push({ bin: this.spec.command[0], prefix: this.spec.command.slice(1), envPatch: {}, label: `${this.spec.command[0]} (PATH)` });
+      for (const c of (this.spec.fallbackCandidates?.() || [])) attempts.push(c);
+    }
+    const tryOnce = (att) => new Promise((resolve, reject) => {
+      const child = spawn(att.bin, [...att.prefix, ...argv], {
         cwd: this.cwd,
-        env: agentSpawnEnv(this.env),
+        env: agentSpawnEnv({ ...this.env, ...att.envPatch }),
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
-        // Windows npm shims are .cmd; args include the user's prompt, so this
-        // path is best-effort (the Linux/macOS path never uses a shell).
-        shell: process.platform === 'win32',
+        // Windows: .cmd/.bat shims need a shell; a real .exe (the desktop
+        // app's ZCode.exe) must NOT go through one — its "C:\Program Files\…"
+        // path would split on the space. POSIX never uses a shell (the user's
+        // prompt rides in argv).
+        shell: process.platform === 'win32' && !/\.exe$/i.test(att.bin),
       });
       child.once('spawn', () => resolve(child));
       child.once('error', (err) => reject(err));
     });
-    return tryOnce(base[0], base.slice(1)).catch((err) => {
-      if (err.code !== 'ENOENT' || explicit || !this.spec.fallbackBin) throw err;
-      const fallback = this.spec.fallbackBin();
-      if (!existsSync(fallback)) throw err;
-      this.log(`[${this.spec.name}] ${base[0]} not on PATH — using ${fallback}`);
-      this.command = [fallback];
-      return tryOnce(fallback);
-    });
+    const walk = (i) => {
+      if (i >= attempts.length) {
+        const err = new Error(
+          `agent binary not found — tried: ${attempts.map((a) => a.label).join(', ')}`
+          + (this.installHint ? ` — install: ${this.installHint}` : '')
+          + ' — or point the entry\'s "command" (or ZCODE_CLI) at the CLI',
+        );
+        err.code = 'ENOENT';
+        err.spawnMessage = true;
+        throw err;
+      }
+      const att = attempts[i];
+      return tryOnce(att).catch((err) => {
+        if (err.code !== 'ENOENT') throw err;
+        if (i + 1 < attempts.length) this.log(`[${this.spec.name}] ${att.label} not found — trying next candidate`);
+        return walk(i + 1);
+      });
+    };
+    return walk(0);
   }
 
   /** Kill the turn's process. There is no stop rpc on a headless CLI; SIGTERM

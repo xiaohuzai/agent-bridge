@@ -100,7 +100,7 @@ export const KNOWN_AGENTS = {
     profile: 'zcode',
     command: ['zcode'],
     mode: 'plan',
-    install: 'the ZCode desktop app (its CLI lives at ~/.zcode/server/bin/zcode) or the standalone zcode CLI on PATH',
+    install: 'the ZCode desktop app (the bridge auto-finds its bundled CLI — Linux ~/.zcode/server/bin/zcode, Windows/macOS resources/glm/zcode.cjs run on the app runtime) or the zcode CLI on PATH — or point the entry\'s "command"/ZCODE_CLI at it',
     summary: 'ZCode via its official headless CLI (streamed JSONL; --resume sessions; no interactive approvals)',
   },
 };

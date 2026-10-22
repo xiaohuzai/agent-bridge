@@ -8,7 +8,7 @@
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -28,13 +28,13 @@ let port;
 let logs;
 let logFile;
 
-async function startServer({ mode, command, env = {} } = {}) {
+async function startServer({ mode, command, env = {}, cwdOverride } = {}) {
   logs = [];
   logFile = join(tmpdir(), `fake-zcode-${randomUUID()}.json`);
   adapter = new HeadlessCliAdapter({
     profile: 'zcode',
     command: command || [process.execPath, FAKE_ZCODE],
-    cwd: process.cwd(),
+    cwd: cwdOverride || process.cwd(),
     mode,
     env: { FAKE_ZCODE_LOG: logFile, ...env },
     installHint: 'install zcode',
@@ -257,4 +257,85 @@ test('the admission timer is cleared once the turn settles (no dangling event-lo
   await new Promise((r) => setTimeout(r, 60)); // let the admission race's finally run
   const after = timeoutCount();
   assert.ok(after <= before, `dangling Timeout after done (before=${before}, after=${after}) — the 15s admission timer must be cleared`);
+});
+
+// ─── CLI resolution chain (2026-10-22: the Windows desktop tree has NO CLI —
+// the app bundles resources/glm/zcode.cjs, run on the app's own Electron in
+// ELECTRON_RUN_AS_NODE mode; verified live from WSL interop: --version →
+// 0.17.0. The old single Linux fallback made every Windows bridge die with
+// "agent binary not found".) ────────────────────────────────────────────────────
+
+test('zcodeFallbackCandidates: the desktop-app bundle shapes per platform', async () => {
+  const { zcodeFallbackCandidates } = await import('../adapters/headless-cli.mjs');
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+
+  const mkApp = (root, { exeRel, cjsRel, providerRel }) => {
+    mkdirSync(join(root, dirname(exeRel)), { recursive: true });
+    mkdirSync(join(root, dirname(cjsRel)), { recursive: true });
+    writeFileSync(join(root, exeRel), 'x');
+    writeFileSync(join(root, cjsRel), 'x');
+    if (providerRel) {
+      mkdirSync(join(root, dirname(providerRel)), { recursive: true });
+      writeFileSync(join(root, providerRel), '{}');
+    }
+  };
+  const t1 = mkdtempSync(join(tmpdir(), 'ab-zc-win'));
+  mkApp(t1, { exeRel: 'ZCode/ZCode.exe', cjsRel: 'ZCode/resources/glm/zcode.cjs', providerRel: 'ZCode/resources/config/provider/zcode-builtin.json' });
+  const win = zcodeFallbackCandidates({ programDirs: [t1], platform: 'win32' });
+  assert.equal(win.length, 1);
+  assert.match(win[0].bin, /ZCode\.exe$/);
+  assert.match(win[0].prefix[0], /resources[\\/]glm[\\/]zcode\.cjs$/);
+  assert.equal(win[0].envPatch.ELECTRON_RUN_AS_NODE, '1', 'the .cjs bundle must run as Electron-as-Node');
+  assert.match(win[0].envPatch.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE, /zcode-builtin\.json$/, 'the app-bundle CLI needs the app\'s provider catalog');
+
+  const t2 = mkdtempSync(join(tmpdir(), 'ab-zc-mac'));
+  mkApp(t2, { exeRel: 'MacOS/ZCode', cjsRel: 'Resources/glm/zcode.cjs', providerRel: null });
+  // darwin expects roots shaped like "<…>/ZCode.app/Contents" — t2 plays Contents
+  const mac = zcodeFallbackCandidates({ programDirs: [t2], platform: 'darwin' });
+  assert.equal(mac.length, 1);
+  assert.match(mac[0].bin, /MacOS[\\/]ZCode$/);
+  assert.equal(mac[0].envPatch.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE, undefined, 'no catalog file → no env patch for it');
+
+  const t3 = mkdtempSync(join(tmpdir(), 'ab-zc-lin'));
+  mkdirSync(join(t3, '.zcode', 'server', 'bin'), { recursive: true });
+  writeFileSync(join(t3, '.zcode', 'server', 'bin', 'zcode'), '#!/bin/sh\n');
+  const lin = zcodeFallbackCandidates({ home: t3, platform: 'linux' });
+  assert.deepEqual(lin, [{ bin: join(t3, '.zcode', 'server', 'bin', 'zcode'), prefix: [], envPatch: {}, label: `${join(t3, '.zcode', 'server', 'bin', 'zcode')} (Linux desktop)` }]);
+});
+
+test('ZCODE_CLI resolves the CLI end-to-end, even when the entry copied the default command', async () => {
+  await stopServer();
+  // An executable wrapper standing in for a user-pinned CLI binary.
+  const wrapper = join(tmpdir(), `ab-zc-cli-${randomUUID()}.sh`);
+  writeFileSync(wrapper, `#!/bin/sh\nexec '${process.execPath}' '${FAKE_ZCODE}' "$@"\n`);
+  chmodSync(wrapper, 0o755);
+  await startServer({ command: ['zcode'], env: { ZCODE_CLI: wrapper } }); // command === registry default ⇒ NOT explicit
+  const res = await post('/turns', { text: 'PONG' });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data.type === 'done');
+  assert.equal(done.data.full, 'PONG');
+  assert.equal(spawnedArgs().prompt, 'PONG');
+  rmSync(wrapper, { force: true });
+});
+
+test('a missing entry cwd reports the CWD, not "binary not found" (both are ENOENT)', async () => {
+  await stopServer();
+  await startServer({ cwdOverride: '/definitely/not/here' });
+  const res = await post('/turns', { text: 'PONG' });
+  const sse = sseReader(res.body);
+  const err = await sse.readUntil((f) => f.data.type === 'error');
+  assert.match(err.data.message, /cwd does not exist: \/definitely\/not\/here/);
+  assert.doesNotMatch(err.data.message, /binary not found/);
+});
+
+test('exhausted candidates list every attempt and the manual levers', async () => {
+  await stopServer();
+  await startServer({ command: ['/nonexistent/zcode-cli-x'], env: {} });
+  const res = await post('/turns', { text: 'PONG' });
+  const sse = sseReader(res.body);
+  const err = await sse.readUntil((f) => f.data.type === 'error');
+  assert.match(err.data.message, /agent binary not found/);
+  assert.match(err.data.message, /tried: command \/nonexistent\/zcode-cli-x/);
+  assert.match(err.data.message, /ZCODE_CLI/);
+  assert.match(err.data.message, /install zcode/);
 });

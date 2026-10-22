@@ -193,7 +193,7 @@ ZCode exposes an official **headless CLI** — the external driver surface this 
 zcode -p '<text>' --output-format stream-json --no-color --mode plan --cwd <dir> [--resume sess_…]
 ```
 
-The desktop app ships it at `~/.zcode/server/bin/zcode` (auto-discovered when `zcode` is not on PATH); a standalone install puts it on PATH. agent-bridge runs **one process per turn** and translates the JSONL event stream into v1 — no PTY and no screen parsing.
+The CLI is resolved in order: the entry's `command` (when it differs from the default `zcode`) > `ZCODE_CLI` env > `zcode` on PATH > the desktop app's bundled CLI — Linux `~/.zcode/server/bin/zcode` (a wrapper, spawned as-is), and on Windows/macOS `resources/glm/zcode.cjs` run on the app's own binary in `ELECTRON_RUN_AS_NODE` mode with `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` pointed at the app's provider catalog (both shapes verified live; the Windows desktop tree ships NO standalone CLI binary). An entry `command` equal to the default does NOT disable the fallbacks. agent-bridge runs **one process per turn** and translates the JSONL event stream into v1 — no PTY and no screen parsing.
 
 **Install & sign in**: open/install the ZCode desktop app once (or install the standalone CLI) and sign in once (`zcode login`, or via the desktop app). The CLI and the desktop share `~/.zcode` — login state, MCP servers, skills, hooks — so a bridge turn sees the same configuration a terminal `zcode` does.
 
