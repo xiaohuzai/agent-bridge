@@ -235,7 +235,15 @@ FROM model_usage ORDER BY started_at DESC;
 - **macOS/Windows 零配置——桥用自己的 node 跑 CLI。** 桌面包里的 `zcode.cjs` 由运行 agent-bridge 的那个 node（`process.execPath`，天然是真 node）执行。这一点有两重意义：① app 的 GUI 二进制会让 CLI 自己 spawn 的子进程闪 Terminal 窗口——CLI 会把 `ELECTRON_RUN_AS_NODE` 从工具/Bash 子进程 env 里删掉（3.16.2 bundle 的 `vPe()`），于是每条命令都重新拉起 GUI app；② Electron 的 helper 二进制不是 node（`FATAL: Unable to find helper app`）。每个候选都会真的跑一次 `<node> <cjs> --version` 来验证，全部失败才退回 GUI launcher。`ZCODE_CLI` 仍可覆盖（接受完整命令行），但正常情况下永远不需要。
 - **每个回合都会报告实际使用的模型**：一个 `kind: "model"` 的 `note` 事件，带 `model: {provider, model, reasoningLevel}`，取自 CLI 自己的 `turn.started.intent.modelSelection`。回复文本里模型自报的名字不可信，以这个 note 为准。
 
-- **没有交互式审批。** headless 回合没有审批卡，CLI 自己 `-p` 的默认值还是 `yolo`。桥默认 `"mode": "plan"`（只读），条目可选 `build` / `edit` / `guarded` / `yolo`——**选 mode 就是权限决定**。要放宽请显式放宽。
+- **没有交互式审批——`mode` 就是权限决定。** headless 回合没有审批卡，CLI 自己 `-p` 的默认值还是 `yolo`；桥默认 **`edit`**。五个取值的差别只有两处：
+  | mode | 能否写文件 | 是否先问 |
+  |---|---|---|
+  | `plan` | ❌ 只读 | — |
+  | `edit`（默认） | ✅ 自动应用 | 从不 |
+  | `build` | ✅ | **会停下等批准——headless 下没人能批，所以不要在这里用** |
+  | `guarded` | ✅（类 yolo） | 仅在识别到危险 shell 命令前（`rm -rf`、`git reset --hard`、force push、`rsync --delete`） |
+  | `yolo` | ✅ | 从不，连危险命令也不问 |
+  `build` 是给交互式 TUI 用的（那里有人能按批准）。对以问答为主、偶尔写文档的客户端，`edit` 是实际默认；要完全禁止写入就用 `plan`。
 - **不支持图片。** CLI 唯一的附件面是本地文件（`--attach`），而桥从不把用户图片写盘；带图回合降级为一条提示（与 ACP 路径同一姿态）。
 - **成本/延迟**：每回合一个进程（CLI 启动约 2–4s）；新会话的 prompt 自带 CLI 约 28K token 的系统提示/工具。实测：PONG 12.7s、Read 工具回合 18.5s、续接回合 15.3s。
 - 旧的 native 适配器（`adapters/zcode-server.mjs`，直连桌面 stdio server）**已暂停**：2026-10-21 复测，桥拉起的 server 注册好 provider 后在回合开始时丢弃客户端（`ZCode Protocol client is disposed`）。注册表改走 headless CLI；native 文件仅留作参考。

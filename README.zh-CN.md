@@ -93,12 +93,12 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
     { "name": "gemini",    "port": 3951, "apiKey": "" },
     { "name": "qoder",     "port": 3953, "apiKey": "" },
     { "name": "dsh",       "port": 3952, "apiKey": "" },
-    { "name": "zcode",     "port": 3954, "apiKey": "", "mode": "plan" },
+    { "name": "zcode",     "port": 3954, "apiKey": "", "mode": "edit" },
   ]
 }
 ```
 
-自带起步配置列全七个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、qoder 在 3953、zcode 在 3954。前四个开箱即跑，自己机器上不需要密码。**qoder** 跑一次 `qoder login` 即可（ACP 与 CLI 共享登录态），或经条目 `env` 设个人访问令牌。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**zcode** 复用 ZCode 桌面版/CLI 已有的登录态；headless 回合没有审批卡，所以 `mode`（默认 `plan`，或 `build`/`edit`/`guarded`/`yolo`）就是权限决定——默认 `plan` 是只读的。**headless 回合用哪个模型，完全由 ZCode 的供应商排序决定：`providerOrder` 里的第一个供应商，再取它 `modelOrder` 里的第一个模型**——桥不传模型，也传不了。要改就改 `~/.zcode/v2/provider_config.json`（先关掉 ZCode，运行中的 server 会用内存里的值覆盖文件），并把 `modelOrder` 与 `personalModelIds` 写成同一个顺序，这样界面显示的就是实际会跑的。桌面 UI 会写的 `defaultModelSelection` 在 **headless `-p` 路径上被忽略**（2026-10-22 实测：该字段的各种写法全都不生效）；而**账号类供应商（如已登录的智谱/bigmodel 套餐）永远不会被自动选中**——把自定义供应商全部隐藏后，`zcode -p` 直接报 `Select a model before sending a message`。`--resume` 会完全跳过模型解析，所以续接一个用账号模型创建好的会话，就会一直用那个模型。每个回合都会用一个 `note` 事件（`kind: "model"`）报告它实际解析到的模型——以它为准，不要信回复文本。细节见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 zcode 一节。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
+自带起步配置列全七个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、qoder 在 3953、zcode 在 3954。前四个开箱即跑，自己机器上不需要密码。**qoder** 跑一次 `qoder login` 即可（ACP 与 CLI 共享登录态），或经条目 `env` 设个人访问令牌。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**zcode** 复用 ZCode 桌面版/CLI 已有的登录态；headless 回合没有审批卡，所以 `mode` **就是**权限决定：`edit`（默认，自动应用改动——适合以问答为主、偶尔写文档的场景）、`plan`（只读）、`guarded`/`yolo` 放宽。**`build` 在 headless 下不要用**：它会停下来等批准，而没人能批准。**headless 回合用哪个模型，完全由 ZCode 的供应商排序决定：`providerOrder` 里的第一个供应商，再取它 `modelOrder` 里的第一个模型**——桥不传模型，也传不了。要改就改 `~/.zcode/v2/provider_config.json`（先关掉 ZCode，运行中的 server 会用内存里的值覆盖文件），并把 `modelOrder` 与 `personalModelIds` 写成同一个顺序，这样界面显示的就是实际会跑的。桌面 UI 会写的 `defaultModelSelection` 在 **headless `-p` 路径上被忽略**（2026-10-22 实测：该字段的各种写法全都不生效）；而**账号类供应商（如已登录的智谱/bigmodel 套餐）永远不会被自动选中**——把自定义供应商全部隐藏后，`zcode -p` 直接报 `Select a model before sending a message`。`--resume` 会完全跳过模型解析，所以续接一个用账号模型创建好的会话，就会一直用那个模型。每个回合都会用一个 `note` 事件（`kind: "model"`）报告它实际解析到的模型——以它为准，不要信回复文本。细节见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 zcode 一节。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
 
 单个智能体就是同一份文件删到只剩一条，用不到的行删掉即可。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
 
@@ -111,7 +111,7 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 | `args` | 可选；**追加**到 agent 启动命令后的额外参数（仅 ACP 拉起的 agent）——如 dsh 的模型旗标 `["--model", "deepseek-flash"]`；`~` 不展开，请用绝对路径 |
 | `cwd` | 可选；不写就跑在你启动 `serve` 的目录（写 `"."` 等价）；`~` 与相对路径会自动解析 |
 | `env` | 可选 `{VAR: value}` 对象，合并进 daemon 环境后传给被 spawn 的 agent；条目 env 覆盖注册表默认 |
-| `mode` | 仅 headless agent（zcode）：`plan`（默认，只读）· `build` · `edit` · `guarded` · `yolo`——headless 回合没有审批卡，这个字段就是权限决定 |
+| `mode` | 仅 headless agent（zcode）：`edit`（默认，自动应用改动）· `plan`（只读）· `build`（改前等批准——**headless 会卡住**，因为没有审批卡）· `guarded`（yolo + 危险 shell 命令前停一次）· `yolo`（全放开） |
 | `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见「三扇门」） |
 | `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优（取值与取舍见下） |
 
@@ -153,7 +153,7 @@ agent-bridge doctor --json   # 机器可读，供 agent 自动安装流程使用
    - **gemini**——`npm i -g @google/gemini-cli`，跑一次 `gemini` 登录。
    - **qoder**——`curl -fsSL https://qoder.com/install | bash`，跑一次 `qoder` 登录（或设 `QODER_PERSONAL_ACCESS_TOKEN`）。
    - **dsh**——装好 DeepSeek Harness（桌面版或 CLI），存一次 key（`dsh-acp login` 或 dsh Web UI；适配器随包内置）。
-   - **zcode**——装/开 ZCode 桌面版（桥会自动找到它自带的 CLI，无需任何环境变量或路径配置）或独立 `zcode` CLI，登录一次；headless 回合默认只读（`mode: plan`）。
+   - **zcode**——装/开 ZCode 桌面版（桥会自动找到它自带的 CLI，无需任何环境变量或路径配置）或独立 `zcode` CLI，登录一次；headless 回合默认 `mode: edit`（自动应用改动；要只读就设 `plan`）。
 
    只想要一两个？把 `agents.json` 里多余的条目删掉。agent 没装的桥照样会启动、`/health` 也正常——只有第一次对话才失败（带安装提示），所以在真正用它之前很容易被忽略。`agent-bridge doctor` 会在你试之前先抓出来。
 5. **启动桥**：
