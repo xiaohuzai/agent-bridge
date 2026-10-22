@@ -111,17 +111,36 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
     const dirs = programDirs || ['/Applications/ZCode.app/Contents'];
     for (const root of dirs) {
       const cjs = join(root, 'Resources', 'glm', 'zcode.cjs');
-      const exe = join(root, 'MacOS', 'ZCode');
-      if (!existsSync(cjs) || !existsSync(exe)) continue;
+      const gui = join(root, 'MacOS', 'ZCode');
+      if (!existsSync(cjs)) continue;
       const provider = join(root, 'Resources', 'config', 'provider', 'zcode-builtin.json');
+      const providerEnv = existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {};
+      // PREFER a plain node runtime when the bundle ships one. The GUI binary
+      // works as a launcher (ELECTRON_RUN_AS_NODE=1) but the CLI STRIPS that
+      // variable from every child it spawns — `vPe()` deletes it for tool/Bash
+      // subprocesses (verified in the 3.16.2 bundle) — so each child re-launches
+      // the GUI app and macOS flashes a Terminal window per command. A real
+      // node binary never does that.
+      const bundledNode = [
+        join(root, 'Resources', 'node'),
+        join(root, 'Resources', 'runtime', 'node'),
+        join(root, 'Frameworks', 'ZCode Helper.app', 'Contents', 'MacOS', 'ZCode Helper'),
+      ].find((p) => existsSync(p));
+      if (bundledNode) {
+        out.push({
+          bin: bundledNode,
+          prefix: [cjs],
+          envPatch: { ...providerEnv },
+          label: `${cjs} (desktop app bundle, bundled node runtime)`,
+        });
+        continue;
+      }
+      if (!existsSync(gui)) continue;
       out.push({
-        bin: exe,
+        bin: gui,
         prefix: [cjs],
-        envPatch: {
-          ELECTRON_RUN_AS_NODE: '1',
-          ...(existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {}),
-        },
-        label: `${cjs} (desktop app bundle)`,
+        envPatch: { ELECTRON_RUN_AS_NODE: '1', ...providerEnv },
+        label: `${cjs} (desktop app bundle; GUI launcher — set ZCODE_CLI to a real node if Terminal windows pop up)`,
       });
     }
     return out;
@@ -511,7 +530,11 @@ export class HeadlessCliAdapter {
     } else {
       const mergedEnv = agentSpawnEnv(this.env);
       if (mergedEnv.ZCODE_CLI) {
-        attempts.push({ bin: mergedEnv.ZCODE_CLI, prefix: [], envPatch: {}, label: `ZCODE_CLI=${mergedEnv.ZCODE_CLI}` });
+        // A command LINE, not just a path: the escape hatch for platforms
+        // where the desktop bundle has no plain node binary is
+        // `ZCODE_CLI="/usr/bin/env node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs"`.
+        const parts = mergedEnv.ZCODE_CLI.trim().split(/\s+/);
+        attempts.push({ bin: parts[0], prefix: parts.slice(1), envPatch: {}, label: `ZCODE_CLI=${mergedEnv.ZCODE_CLI}` });
       }
       attempts.push({ bin: this.spec.command[0], prefix: this.spec.command.slice(1), envPatch: {}, label: `${this.spec.command[0]} (PATH)` });
       for (const c of (this.spec.fallbackCandidates?.() || [])) attempts.push(c);
