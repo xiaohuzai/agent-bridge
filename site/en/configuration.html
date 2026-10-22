@@ -164,7 +164,7 @@
             <tr>
               <td>mode</td><td>string</td><td><span class="chip chip-enum">plan</span></td>
               <td><span class="chip chip-enum">plan</span> <span class="chip chip-enum">build</span> <span class="chip chip-enum">edit</span> <span class="chip chip-enum">guarded</span> <span class="chip chip-enum">yolo</span></td>
-              <td>Headless agents only (zcode). A headless turn has no approval card, so this field IS the permission decision; <code>plan</code> is read-only and <code>yolo</code> must be chosen explicitly.</td>
+              <td>Headless agents only (zcode). A headless turn has no approval card, so this field IS the permission decision; <code>plan</code> is read-only and <code>yolo</code> must be chosen explicitly. It does not pick the model: a headless turn runs the first provider in ZCode's <code>providerOrder</code> and that provider's first <code>modelOrder</code> entry — edit <code>~/.zcode/v2/provider_config.json</code> (with ZCode closed). Account plans are never auto-selected.</td>
             </tr>
             <tr class="grp"><td colspan="5">Client doors</td></tr>
             <tr>
