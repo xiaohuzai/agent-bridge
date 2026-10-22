@@ -61,7 +61,7 @@
 // prompt carries ~28K input tokens (the CLI's own system prompt/tools), and
 // resumed turns still read ~22.5K from cache.
 
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -115,17 +115,22 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
       if (!existsSync(cjs)) continue;
       const provider = join(root, 'Resources', 'config', 'provider', 'zcode-builtin.json');
       const providerEnv = existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {};
-      // PREFER a plain node runtime when the bundle ships one. The GUI binary
-      // works as a launcher (ELECTRON_RUN_AS_NODE=1) but the CLI STRIPS that
-      // variable from every child it spawns — `vPe()` deletes it for tool/Bash
-      // subprocesses (verified in the 3.16.2 bundle) — so each child re-launches
-      // the GUI app and macOS flashes a Terminal window per command. A real
-      // node binary never does that.
+      // A plain node runtime is preferred when the bundle ships one: the GUI
+      // binary works as a launcher (ELECTRON_RUN_AS_NODE=1) but the CLI STRIPS
+      // that variable from every child it spawns — `vPe()` deletes it for
+      // tool/Bash subprocesses (verified in the 3.16.2 bundle) — so each child
+      // re-launches the GUI app and macOS flashes a Terminal window per
+      // command. A real node binary never does that.
+      //
+      // The candidate MUST be proven to be node, not merely present: Electron
+      // ships `Frameworks/<App> Helper.app` binaries that are NOT node, and
+      // launching one fails `FATAL: Unable to find helper app` (2026-10-22).
+      // So each candidate is executed once with `--version` and accepted only
+      // if it answers like node.
       const bundledNode = [
         join(root, 'Resources', 'node'),
         join(root, 'Resources', 'runtime', 'node'),
-        join(root, 'Frameworks', 'ZCode Helper.app', 'Contents', 'MacOS', 'ZCode Helper'),
-      ].find((p) => existsSync(p));
+      ].find((p) => existsSync(p) && isNodeBinary(p));
       if (bundledNode) {
         out.push({
           bin: bundledNode,
@@ -150,6 +155,20 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
     out.push({ bin: wrapper, prefix: [], envPatch: {}, label: `${wrapper} (Linux desktop)` });
   }
   return out;
+}
+
+/** Is this really a Node runtime? Presence is not proof — Electron bundles
+ * ship helper binaries (Frameworks/<App> Helper.app) that are NOT node and die
+ * with "FATAL: Unable to find helper app" when asked to run a script
+ * (2026-10-22: the adapter picked one and broke a working bridge). Ask it:
+ * a node binary prints "v22.x.y" for --version within a second. */
+function isNodeBinary(bin) {
+  try {
+    const out = execFileSync(bin, ['--version'], { timeout: 3000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return /^v\d+\.\d+\.\d+/m.test(String(out || '').trim());
+  } catch (_) {
+    return false;
+  }
 }
 
 export const HEADLESS_PROFILES = {
@@ -533,24 +552,31 @@ export class HeadlessCliAdapter {
         // A command LINE, not just a path: the escape hatch for platforms
         // where the desktop bundle has no plain node binary is
         // `ZCODE_CLI="/usr/bin/env node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs"`.
-        const parts = mergedEnv.ZCODE_CLI.trim().split(/\s+/);
-        attempts.push({ bin: parts[0], prefix: parts.slice(1), envPatch: {}, label: `ZCODE_CLI=${mergedEnv.ZCODE_CLI}` });
+        // Runs through `sh -c` so QUOTED paths with spaces survive (a naive
+        // whitespace split breaks "/Applications/ZCode.app/…"); the user owns
+        // this value, so shell semantics are what they expect.
+        attempts.push({ shellLine: mergedEnv.ZCODE_CLI.trim(), label: `ZCODE_CLI=${mergedEnv.ZCODE_CLI}` });
       }
       attempts.push({ bin: this.spec.command[0], prefix: this.spec.command.slice(1), envPatch: {}, label: `${this.spec.command[0]} (PATH)` });
       for (const c of (this.spec.fallbackCandidates?.() || [])) attempts.push(c);
     }
     const tryOnce = (att) => new Promise((resolve, reject) => {
-      const child = spawn(att.bin, [...att.prefix, ...argv], {
-        cwd: this.cwd,
-        env: agentSpawnEnv({ ...this.env, ...att.envPatch }),
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-        // Windows: .cmd/.bat shims need a shell; a real .exe (the desktop
-        // app's ZCode.exe) must NOT go through one — its "C:\Program Files\…"
-        // path would split on the space. POSIX never uses a shell (the user's
-        // prompt rides in argv).
-        shell: process.platform === 'win32' && !/\.exe$/i.test(att.bin),
-      });
+      const useShell = !!att.shellLine || (process.platform === 'win32' && !/\.exe$/i.test(att.bin));
+      const child = att.shellLine
+        // ZCODE_CLI: shell-parsed so quoted paths survive; the prompt rides
+        // argv, never interpolated into the command string.
+        ? spawn(att.shellLine, argv, { cwd: this.cwd, env: agentSpawnEnv({ ...this.env, ...att.envPatch }), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: true })
+        : spawn(att.bin, [...att.prefix, ...argv], {
+          cwd: this.cwd,
+          env: agentSpawnEnv({ ...this.env, ...att.envPatch }),
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+          // Windows: .cmd/.bat shims need a shell; a real .exe (the desktop
+          // app's ZCode.exe) must NOT go through one — its "C:\Program Files\…"
+          // path would split on the space. POSIX never uses a shell here (the
+          // user's prompt rides in argv).
+          shell: useShell,
+        });
       child.once('spawn', () => resolve(child));
       child.once('error', (err) => reject(err));
     });
