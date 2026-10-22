@@ -29,6 +29,9 @@ let out = '';
 process.stdout.on('error', () => {}); // EPIPE when the bridge kills us
 const send = (obj) => { out = JSON.stringify(obj); process.stdout.write(out + '\n'); };
 const err = (s) => process.stderr.write(s + '\n');
+// Entry-env assertion hook (same shape as the ACP fake): when the bridge
+// passes FAKE_ENV_PROBE through the adapter's env, it lands here.
+if (process.env.FAKE_ENV_PROBE) err(`FAKE_ENV:PROBE=${process.env.FAKE_ENV_PROBE}`);
 
 let turnSeq = 0;
 let pendingApprovalId = null;

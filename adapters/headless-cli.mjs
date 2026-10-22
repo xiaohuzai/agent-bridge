@@ -117,9 +117,9 @@ export const HEADLESS_PROFILES = {
             turn.thinking += p.delta;
             emit({ type: 'delta', text: p.delta });
           } else if (p.kind === 'reasoning_start') {
-            turn.reasoningStarted = true;
+            // nothing to emit: the <thinking> fence opens lazily on the first
+            // reasoning DELTA (live captures show start/end with empty text).
           } else if (p.kind === 'reasoning_end') {
-            turn.reasoningStarted = false;
             if (turn.thinkingOpen) {
               turn.thinkingOpen = false;
               emit({ type: 'delta', text: '</thinking>\n' });
@@ -178,13 +178,13 @@ function emitUsage(u, turn, emit) {
   const key = `${u.inputTokens}/${u.outputTokens}/${u.cacheReadTokens ?? 0}/${u.cacheWriteTokens ?? 0}`;
   if (turn.lastUsageKey === key) return; // turn.completed and result repeat it
   turn.lastUsageKey = key;
-  emit({
-    type: 'usage',
+  turn.usage = {
     prompt_tokens: u.inputTokens,
     completion_tokens: u.outputTokens,
     ...(typeof u.cacheReadTokens === 'number' ? { cached_tokens: u.cacheReadTokens } : {}),
     ...(typeof u.cacheWriteTokens === 'number' ? { cache_write_tokens: u.cacheWriteTokens } : {}),
-  });
+  };
+  emit({ type: 'usage', ...turn.usage });
 }
 
 /** The one-line human detail for a tool row: the same preference order v1
@@ -217,9 +217,11 @@ export class HeadlessCliAdapter {
     this.installHint = installHint || '';
     this.log = log;
     this.stopped = false;
+    // The ACP front advertises image support from this flag; headless CLIs
+    // only attach local files, so the bridge must NOT claim image support.
+    this.promptImage = false;
     this.turns = new Set(); // live turn records
     this.sessions = new Map(); // sessionId → turn record (for interrupt)
-    this.pendingInterrupts = new Set(); // turns killed before their session id landed
   }
 
   /** Spawn the CLI for one turn. Admission resolves once the process is up and
@@ -244,20 +246,18 @@ export class HeadlessCliAdapter {
       tools: new Map(),
       child: null,
       settled: false,       // done/aborted/error emitted
-      admitted: false,
       aborted: false,
       stderr: '',
+      usage: null,          // last mapped usage — rides the done event too
       admitResolve: null,
-      admitReject: null,
       finish: null,
       lastUsageKey: '',
     };
     this.turns.add(turn);
     if (sessionId) this.sessions.set(sessionId, turn);
 
-    const admit = new Promise((resolve, reject) => {
+    const admit = new Promise((resolve) => {
       turn.admitResolve = resolve;
-      turn.admitReject = reject;
     });
 
     const emit = (e) => {
@@ -276,7 +276,9 @@ export class HeadlessCliAdapter {
         if (turn.thinking && !final.includes('<thinking>')) {
           final = `<thinking>${turn.thinking}</thinking>\n${final}`;
         }
-        onEvent({ type: 'done', full: final });
+        // done carries usage: v1 clients read the standalone usage event, but
+        // the ACP front maps usage ONLY from done (adapter contract, server.mjs).
+        onEvent({ type: 'done', full: final, ...(turn.usage ? { usage: turn.usage } : {}) });
       } else if (kind === 'aborted') {
         onEvent({ type: 'aborted' });
       } else {
@@ -368,10 +370,14 @@ export class HeadlessCliAdapter {
       startEvent();
       turn.admitResolve({ sessionId, turnId: '' });
     }
+    // The timeout's timer MUST be cleared when admission wins the race — an
+    // un-cleared 15s timer held the event loop (and the turn closure) long
+    // after every turn (verified 2026-10-22: process exit delayed ~14.7s).
+    let admitTimer = null;
     const admission = await Promise.race([
       admit,
-      new Promise((resolve) => setTimeout(() => resolve(null), ADMISSION_TIMEOUT_MS)),
-    ]);
+      new Promise((resolve) => { admitTimer = setTimeout(() => resolve(null), ADMISSION_TIMEOUT_MS); }),
+    ]).finally(() => { if (admitTimer) clearTimeout(admitTimer); });
     if (admission === null) {
       this.log(`[${this.spec.name}] no session id within ${ADMISSION_TIMEOUT_MS}ms — returning unadmitted turn`);
     }

@@ -56,6 +56,10 @@ usage: agent-bridge [serve] [--config FILE] [--bind ADDR] | agent-bridge acp <na
     }
   }
   if (!args.mode) args.mode = 'serve'; // the default mode word
+  if (args.json && args.mode !== 'doctor') {
+    console.error('--json is a doctor-only flag (machine-readable report)');
+    process.exit(1);
+  }
   return args;
 }
 
@@ -90,18 +94,18 @@ options:
                   fields: name · port (serve mode, 1–65535; entries used only
                   by the acp front may omit it) · apiKey (empty/omitted = keyless,
                   loopback only; required for non-loopback --bind) · command
-                  [...] (ACP-shim agents only — codex uses "codexBin", zcode
-                  auto-resolves) · args [...] (ACP-spawned agents only — extra
-                  argv appended to the agent's command, e.g. dsh's
-                  --provider deepseek-account) ·
+                  [...] (ACP-shim and headless agents — codex uses "codexBin") ·
+                  args [...] (ACP-spawned agents only — extra argv appended to
+                  the agent's command, e.g. dsh's --provider deepseek-account) ·
+                  mode (headless only: plan|build|edit|guarded|yolo — the
+                  permission decision; plan is read-only) ·
                   cwd (~ expanded; default: the dir serve
                   started from) · env {} (extra vars for the spawned agent) ·
                   sandbox (read-only|workspace-write|danger-full-access) ·
                   approval (never|on-request|untrusted) · network (bool) —
                   these three are codex knobs · corsOrigin "*" · "acp": true
                   (a serve entry also serves ACP clients at ws://…/acp).
-                  Adapter overrides (codexBin, codexHome, serverCjs,
-                  …): README → Configure.
+                  Adapter overrides (codexBin, codexHome, …): README → Configure.
   --bind ADDR     serve/doctor only: bind address (default 127.0.0.1; 0.0.0.0
                   for LAN/VPN)
   --json          doctor only: print the report as JSON

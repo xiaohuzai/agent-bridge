@@ -119,9 +119,10 @@ export class CodexAppServerAdapter {
     sandbox = 'read-only',        // 'read-only' | 'workspace-write' | 'danger-full-access'
     network = false,              // workspace-write networkAccess (read-only ignores it)
     approval = 'never',           // 'never' | 'on-request' | 'untrusted'
+    env = {},                     // per-entry {VAR: value} merged over the daemon env
     log = () => {},
   } = {}) {
-    this.opts = { codexBin, codexHome, cwd, sandbox, network, approval, log };
+    this.opts = { codexBin, codexHome, cwd, sandbox, network, approval, env, log };
     this.child = null;
     this.ready = false;
     this.starting = null;          // in-flight spawn+initialize (serialization lock)
@@ -152,8 +153,10 @@ export class CodexAppServerAdapter {
     // half-dead one (e.g. an initialize that timed out) instead of leaking it.
     this.#sweepStale('codex app-server restarted');
     // env: the system PATH first, this package's bundled ACP shim dirs
-    // APPENDED after it (adapters/agent-env.mjs); CODEX_HOME overrides on top.
-    const env = agentSpawnEnv(codexHome ? { CODEX_HOME: codexHome } : {});
+    // APPENDED after it (adapters/agent-env.mjs); CODEX_HOME and the entry's
+    // own env ({VAR: value} — e.g. OPENAI_API_KEY for config.toml providers)
+    // override on top.
+    const env = agentSpawnEnv({ ...(codexHome ? { CODEX_HOME: codexHome } : {}), ...this.opts.env });
     const child = spawn(codexBin, ['app-server'], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

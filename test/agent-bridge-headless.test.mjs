@@ -226,3 +226,35 @@ test('config validation: zcode is headless, mode is whitelisted, stale native fi
     /belonged to the paused native zcode adapter/,
   );
 });
+
+// ─── 2026-10-22 audit regressions (repro-verified before the fix) ──────────────
+
+test('ACP front: usage rides the done event and image support is NOT advertised', async () => {
+  const { createAcpFrontSession } = await import('../acp-front.mjs');
+  const out = [];
+  const front = createAcpFrontSession({
+    adapter, agent: 'zcode', version: 'test', log: () => {},
+    wire: { send: (o) => out.push(o), close: () => {} }, onClosed: () => {},
+  });
+  front.handleMessage(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+  assert.equal(out[0].result.agentCapabilities.promptCapabilities.image, false,
+    'headless degrades images to a note — advertising image support would lie to ACP clients');
+  front.handleMessage(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'session/new', params: {} }));
+  const sid = out.find((m) => m.id === 2).result.sessionId;
+  front.handleMessage(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'PONG' }] } }));
+  await new Promise((r) => setTimeout(r, 1500));
+  const resp = out.find((m) => m.id === 3);
+  assert.equal(resp.result.usage.inputTokens, 100, 'the ACP front maps usage ONLY from the done event');
+  assert.equal(resp.result.usage.outputTokens, 3);
+});
+
+test('the admission timer is cleared once the turn settles (no dangling event-loop hold)', async () => {
+  const timeoutCount = () => process.getActiveResourcesInfo().filter((x) => x === 'Timeout').length;
+  const before = timeoutCount();
+  const res = await post('/turns', { text: 'PONG' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  await new Promise((r) => setTimeout(r, 60)); // let the admission race's finally run
+  const after = timeoutCount();
+  assert.ok(after <= before, `dangling Timeout after done (before=${before}, after=${after}) — the 15s admission timer must be cleared`);
+});

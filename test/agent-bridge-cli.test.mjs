@@ -89,3 +89,9 @@ test('--help explains the config format: agent list, fields, full-reference poin
   assert.match(stdout, /codexBin/);
   assert.match(stdout, /#configure/, 'must point at the full reference');
 });
+
+test('--json outside doctor errors loudly (it used to be silently ignored)', async () => {
+  const { code, stderr } = await runCli(['serve', '--json'], tmp);
+  assert.equal(code, 1);
+  assert.match(stderr, /doctor-only/);
+});

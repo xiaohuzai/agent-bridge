@@ -10,6 +10,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import net from 'node:net';
 import { chmodSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -27,11 +28,12 @@ let adapter;
 let port;
 let logs;
 
-async function startServer({ token, corsOrigin, codexBin, bindAddress } = {}) {
+async function startServer({ token, corsOrigin, codexBin, bindAddress, env } = {}) {
   logs = [];
   // spawn() honors shebangs on Linux, so the fake script itself is the binary.
   adapter = new CodexAppServerAdapter({
     codexBin: codexBin || FAKE_CODEX,
+    ...(env ? { env } : {}),
     log: (m) => logs.push(m),
   });
   server = createBridgeServer({ adapter, agent: 'codex', version: 'test', token, corsOrigin, bindAddress, log: (m) => logs.push(m) });
@@ -499,4 +501,86 @@ test('POST /threads/:id/title: missing/blank title → 400; adapter without a re
   } finally {
     bare.close();
   }
+});
+
+// ─── 2026-10-22 audit regressions (repro-verified before the fix) ──────────────
+
+test('a contract-violating SYNC interrupt must not crash the daemon on disconnect', async () => {
+  await stopServer();
+  adapter = {
+    startTurn: ({ onEvent }) => {
+      setTimeout(() => onEvent({ type: 'start', sessionId: 'sync-int', turnId: 't1' }), 20);
+      setTimeout(() => onEvent({ type: 'done', full: 'x' }), 400);
+      return new Promise(() => {}); // v1-style: never resolves
+    },
+    interrupt() {}, // sync: returns undefined — bare .catch() on this threw
+    respondApproval() {},
+    listSessions: () => [],
+    stop() {},
+  };
+  server = createBridgeServer({ adapter, agent: 'fake', version: 'test', log: (m) => logs.push(m) });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  port = server.address().port;
+  const ac = new AbortController();
+  await post('/turns', { text: 'hi' }, {}, ac.signal);
+  await new Promise((r) => setTimeout(r, 120)); // let the start event land
+  ac.abort();
+  await new Promise((r) => setTimeout(r, 500));
+  const health = await fetch(`http://127.0.0.1:${port}/health`);
+  assert.equal(health.status, 200, 'the daemon must survive a sync interrupt return on the disconnect path');
+});
+
+test('hard disconnect BEFORE the first start event still interrupts the turn', async () => {
+  await stopServer();
+  let interrupts = 0;
+  adapter = {
+    startTurn: ({ onEvent }) => {
+      setTimeout(() => onEvent({ type: 'start', sessionId: 'late-id', turnId: 't1' }), 250);
+      setTimeout(() => onEvent({ type: 'done', full: 'x' }), 900);
+      return new Promise(() => {}); // v1-style: startTurn pending the whole turn
+    },
+    async interrupt() { interrupts++; },
+    respondApproval() {},
+    listSessions: () => [],
+    stop() {},
+  };
+  server = createBridgeServer({ adapter, agent: 'fake', version: 'test', log: (m) => logs.push(m) });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  port = server.address().port;
+  // A raw socket destroyed mid-request is the honest browser-crash shape:
+  // res 'close' fires immediately, while undici's abort can lag behind the
+  // start event and mask the race.
+  const body = JSON.stringify({ text: 'hard kill' });
+  await new Promise((resolve) => {
+    const sock = net.connect(port, '127.0.0.1', () => {
+      sock.write(`POST /turns HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+      setTimeout(() => { sock.destroy(); resolve(); }, 60);
+    });
+  });
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.equal(interrupts, 1, `interrupt must fire once when the session id lands after the client died (got ${interrupts})`);
+});
+
+test('malformed percent-encoding in path ids answers 400, not a 500', async () => {
+  const r1 = await fetch(`http://127.0.0.1:${port}/approvals/%E0%A4%A`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ choice: 'once' }),
+  });
+  assert.equal(r1.status, 400);
+  const r2 = await fetch(`http://127.0.0.1:${port}/threads/%E0%A4%A/title`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'x' }),
+  });
+  assert.equal(r2.status, 400);
+});
+
+test('entry env rides into the codex child (silently dropped for codex entries until 2026-10-22)', async () => {
+  await stopServer();
+  await startServer({ env: { FAKE_ENV_PROBE: 'codex-env-ok' } });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  sse.cancel();
+  assert.ok(
+    logs.some((l) => l.includes('FAKE_ENV:PROBE=codex-env-ok')),
+    `the entry env field must reach the codex child; logs: ${logs.join(' | ').slice(0, 300)}`,
+  );
 });
