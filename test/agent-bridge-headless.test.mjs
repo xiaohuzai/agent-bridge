@@ -8,7 +8,7 @@
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -302,12 +302,23 @@ test('zcodeFallbackCandidates: the desktop-app bundle shapes per platform', asyn
   const t2b = mkdtempSync(join(tmpdir(), 'ab-zc-mac-node'));
   mkApp(t2b, { exeRel: 'MacOS/ZCode', cjsRel: 'Resources/glm/zcode.cjs', providerRel: null });
   mkdirSync(join(t2b, 'Resources'), { recursive: true });
-  writeFileSync(join(t2b, 'Resources', 'node'), 'x');
+  // A REAL node (symlinked), because the adapter proves a candidate is node by
+  // running `--version` — mere existence is not accepted (an Electron Helper
+  // binary passes existsSync and then dies "Unable to find helper app").
+  symlinkSync(process.execPath, join(t2b, 'Resources', 'node'));
   const macNode = zcodeFallbackCandidates({ programDirs: [t2b], platform: 'darwin' });
   assert.equal(macNode.length, 1);
   assert.match(macNode[0].bin, /Resources[\\/]node$/, 'must prefer the bundled node runtime');
   assert.equal(macNode[0].envPatch.ELECTRON_RUN_AS_NODE, undefined, 'a real node needs no Electron flag');
   assert.match(macNode[0].label, /bundled node runtime/);
+
+  const t2c = mkdtempSync(join(tmpdir(), 'ab-zc-mac-fake'));
+  mkApp(t2c, { exeRel: 'MacOS/ZCode', cjsRel: 'Resources/glm/zcode.cjs', providerRel: null });
+  mkdirSync(join(t2c, 'Resources'), { recursive: true });
+  writeFileSync(join(t2c, 'Resources', 'node'), '#!/bin/sh\nexit 1\n');
+  chmodSync(join(t2c, 'Resources', 'node'), 0o755);
+  const macFake = zcodeFallbackCandidates({ programDirs: [t2c], platform: 'darwin' });
+  assert.match(macFake[0].bin, /MacOS[\\/]ZCode$/, 'a non-node file must be rejected, falling back to the GUI launcher');
 
   const t3 = mkdtempSync(join(tmpdir(), 'ab-zc-lin'));
   mkdirSync(join(t3, '.zcode', 'server', 'bin'), { recursive: true });
