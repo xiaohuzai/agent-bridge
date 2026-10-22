@@ -10,6 +10,7 @@
 
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { chmodSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -20,6 +21,7 @@ const FAKE_CODEX = join(__dirname, 'fake-codex-app-server.mjs');
 
 const { createBridgeServer } = await import('../server.mjs');
 const { attachAcpFront } = await import('../acp-front-ws.mjs');
+const { createFrameDecoder } = await import('../wire-ws.mjs');
 const { AcpStdioAdapter } = await import('../adapters/acp-stdio.mjs');
 const { CodexAppServerAdapter } = await import('../adapters/codex-app-server.mjs');
 const { wsConnect } = await import('./ws-client.mjs');
@@ -378,4 +380,44 @@ test('plain GET /acp (no upgrade) falls through to the v1 404', async () => {
   assert.equal(res.status, 404);
   const body = await res.json();
   assert.equal(body.error, 'not found');
+});
+
+// ─── 2026-10-22 second-pass audit regressions ──────────────────────────────────
+
+test('dispose() detaches the upgrade listener — nothing is upgraded after shutdown', async () => {
+  const httpServer = http.createServer(() => {});
+  const front = attachAcpFront(httpServer, { adapter: {}, agent: 'x', version: 't', log: () => {} });
+  const writes = [];
+  const fakeSocket = {
+    write: (s) => writes.push(String(s)),
+    end: (s) => writes.push(String(s ?? '')),
+    destroy() {},
+    setNoDelay() {},
+  };
+  const fakeReq = { url: '/acp', headers: { host: '127.0.0.1' } };
+  httpServer.emit('upgrade', fakeReq, fakeSocket); // not a WS upgrade → plain 400
+  assert.ok(writes.join('').includes('400'), 'pre-dispose the front answers upgrades');
+  front.dispose();
+  writes.length = 0;
+  httpServer.emit('upgrade', fakeReq, fakeSocket);
+  assert.equal(writes.length, 0, 'post-dispose the listener is gone — no bytes on the socket');
+  httpServer.close();
+});
+
+test('wire: a >125-byte control frame is a protocol error (RFC 6455 §5.5)', () => {
+  let closed = 0;
+  let texts = 0;
+  const decoder = createFrameDecoder({ onText: () => texts++, onClose: () => closed++ });
+  const payload = Buffer.alloc(126, 0x61);
+  const mask = Buffer.from([1, 2, 3, 4]);
+  const masked = Buffer.from(payload.map((b, i) => b ^ mask[i % 4]));
+  const frame = Buffer.concat([
+    Buffer.from([0x89, 0xfe]),        // FIN + PING, masked, len 126 (extended)
+    Buffer.from([0x00, 0x7e]),        // extended length = 126
+    mask,
+    masked,
+  ]);
+  decoder.push(frame);
+  assert.equal(closed, 1, 'the oversized ping must close with a protocol error');
+  assert.equal(texts, 0);
 });

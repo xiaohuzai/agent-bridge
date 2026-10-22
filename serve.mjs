@@ -198,6 +198,7 @@ export function adapterFor(b, { log = () => {} } = {}) {
         sandbox: b.sandbox || 'read-only',
         network: !!b.network,
         approval: b.approval || 'never',
+        env: { ...spec.env, ...b.env }, // entry env overrides the registry default
         log: wrappedLog,
       }),
     };

@@ -28,11 +28,12 @@ let adapter;
 let port;
 let logs;
 
-async function startServer({ token, corsOrigin, codexBin, bindAddress } = {}) {
+async function startServer({ token, corsOrigin, codexBin, bindAddress, env } = {}) {
   logs = [];
   // spawn() honors shebangs on Linux, so the fake script itself is the binary.
   adapter = new CodexAppServerAdapter({
     codexBin: codexBin || FAKE_CODEX,
+    ...(env ? { env } : {}),
     log: (m) => logs.push(m),
   });
   server = createBridgeServer({ adapter, agent: 'codex', version: 'test', token, corsOrigin, bindAddress, log: (m) => logs.push(m) });
@@ -569,4 +570,17 @@ test('malformed percent-encoding in path ids answers 400, not a 500', async () =
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'x' }),
   });
   assert.equal(r2.status, 400);
+});
+
+test('entry env rides into the codex child (silently dropped for codex entries until 2026-10-22)', async () => {
+  await stopServer();
+  await startServer({ env: { FAKE_ENV_PROBE: 'codex-env-ok' } });
+  const res = await post('/turns', { text: 'hi' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  sse.cancel();
+  assert.ok(
+    logs.some((l) => l.includes('FAKE_ENV:PROBE=codex-env-ok')),
+    `the entry env field must reach the codex child; logs: ${logs.join(' | ').slice(0, 300)}`,
+  );
 });

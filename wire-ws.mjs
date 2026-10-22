@@ -118,6 +118,7 @@ export function createFrameDecoder({ onText, onPing, onPong, onClose }) {
         if (!masked) return fail(1002);         // clients must mask
         if ((b0 & 0x70) !== 0) return fail(1002); // RSV bits: no extensions
         if (!fin || opcode === 0x0) return fail(1002); // no fragmentation
+        if (opcode >= 0x8 && len > 125) return fail(1002); // control frames are ≤125 bytes (RFC §5.5)
         if (buf.length < off + 4 + len) return; // wait for the full frame
         const mask = buf.subarray(off, off + 4);
         const payload = Buffer.allocUnsafe(len);

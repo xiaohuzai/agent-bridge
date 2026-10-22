@@ -37,8 +37,10 @@ export function attachAcpFront(server, { adapter, agent, version = '0.0.0', toke
   // peers — verified empirically), so the front owns every socket it
   // accepts and exposes dispose() for deterministic teardown.
   const connections = new Set();
-  server.on('upgrade', (req, socket) => {
+  let disposed = false;
+  const onUpgrade = (req, socket) => {
     try {
+      if (disposed) return rejectUpgrade(socket, 503, 'shutting down');
       const url = new URL(req.url, 'http://x');
       if (url.pathname !== '/acp') return rejectUpgrade(socket, 404, 'not found');
       if (!isWsUpgrade(req)) return rejectUpgrade(socket, 400, 'websocket upgrade required');
@@ -104,11 +106,16 @@ export function attachAcpFront(server, { adapter, agent, version = '0.0.0', toke
       log(`[acp-front] upgrade failed: ${e.message}`);
       try { socket.destroy(); } catch (_) {}
     }
-  });
+  };
+  server.on('upgrade', onUpgrade);
   return {
     path: '/acp',
     protocol: 'acp-v1',
     dispose: () => {
+      // Detach the listener too: a server that is still closing would
+      // otherwise accept one more upgrade after dispose.
+      disposed = true;
+      server.removeListener('upgrade', onUpgrade);
       for (const c of [...connections]) c.destroy();
       connections.clear();
     },

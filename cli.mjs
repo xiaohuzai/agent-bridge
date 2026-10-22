@@ -56,6 +56,10 @@ usage: agent-bridge [serve] [--config FILE] [--bind ADDR] | agent-bridge acp <na
     }
   }
   if (!args.mode) args.mode = 'serve'; // the default mode word
+  if (args.json && args.mode !== 'doctor') {
+    console.error('--json is a doctor-only flag (machine-readable report)');
+    process.exit(1);
+  }
   return args;
 }
 
