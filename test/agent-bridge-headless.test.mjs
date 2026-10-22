@@ -340,6 +340,7 @@ test('exhausted candidates list every attempt and the manual levers', async () =
   assert.match(err.data.message, /install zcode/);
 });
 
+
 // ─── model resolution / visibility (2026-10-22) ───────────────────────────────
 
 test('the model the CLI actually resolved is announced (never guessed from reply text)', async () => {
@@ -359,3 +360,4 @@ test('the account-plan dead end is translated into an actionable message', async
   assert.match(err.data.message, /--resume/, 'must name the continue-a-selected-session escape hatch');
   assert.match(err.data.message, /custom provider/, 'must name the other escape hatch');
 });
+
