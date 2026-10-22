@@ -158,6 +158,21 @@ export const HEADLESS_PROFILES = {
     onEvent(msg, turn, emit, finish) {
       const p = msg.payload || {};
       switch (msg.type) {
+        case 'turn.started': {
+          // The model the CLI ACTUALLY resolved — the only trustworthy source.
+          // A reply that "says" GLM proves nothing (models name themselves);
+          // this is the selection the provider will be charged for. Surfaced
+          // additively on the start event so clients can show it.
+          const sel = msg.payload?.intent?.modelSelection;
+          if (sel && typeof sel === 'object' && sel.modelId) {
+            turn.model = {
+              ...(sel.providerId ? { provider: sel.providerId } : {}),
+              model: sel.modelId,
+              ...(sel.options?.reasoningLevel ? { reasoningLevel: sel.options.reasoningLevel } : {}),
+            };
+          }
+          return;
+        }
         case 'model.streaming':
           if (p.kind === 'text_delta' && typeof p.delta === 'string' && p.delta) {
             turn.text += p.delta;
@@ -241,6 +256,22 @@ function emitUsage(u, turn, emit) {
     ...(typeof u.cacheWriteTokens === 'number' ? { cache_write_tokens: u.cacheWriteTokens } : {}),
   };
   emit({ type: 'usage', ...turn.usage });
+}
+
+/** Turn upstream stderr into an actionable message. The CLI's own wording for
+ * the account-plan dead end is just "Select a model before sending a message" —
+ * true but useless to a bridge operator, who cannot click anything. Observed
+ * live 2026-10-22 (zhipu account logged in, no custom provider visible). */
+function explainHeadlessExit(base, stderr) {
+  const text = String(stderr || '');
+  if (/Select a model before sending a message/i.test(text)) {
+    return base + ': the CLI has no auto-selectable model. '
+      + 'For ZCode: headless cannot pick an ACCOUNT-plan provider\'s model — '
+      + 'add a custom provider (headless orders them first), or start the session in the ZCode '
+      + 'app/CLI with the account model selected and continue it (--resume keeps its model).';
+  }
+  const tail = text.trim().split('\n').slice(-3).join(' | ');
+  return base + (tail ? `: ${tail}` : '');
 }
 
 /** The one-line human detail for a tool row: the same preference order v1
@@ -346,7 +377,7 @@ export class HeadlessCliAdapter {
 
     const startEvent = () => {
       if (!turn.sessionId) return;
-      emit({ type: 'start', sessionId: turn.sessionId, turnId: turn.turnId });
+      emit({ type: 'start', sessionId: turn.sessionId, turnId: turn.turnId, ...(turn.model ? { model: turn.model } : {}) });
     };
 
     const onLine = (line) => {
@@ -359,13 +390,26 @@ export class HeadlessCliAdapter {
       }
       if (!msg || typeof msg !== 'object') return;
       if (msg.turnId && !turn.turnId) turn.turnId = msg.turnId;
+      const hadSession = !!turn.sessionId;
       if (msg.sessionId && !turn.sessionId) {
         turn.sessionId = msg.sessionId;
-        this.sessions.set(turn.sessionId, turn);
-        // First boundary (session.updated / turn.started) — before any delta.
-        startEvent();
+        this.sessions.set(msg.sessionId, turn);
+        // First boundary (session.updated) — emit `start` NOW so the client
+        // learns the session id as early as possible (a disconnect needs it).
+        // The model is NOT known yet at this point: real ZCode sends
+        // session.updated before turn.started.
+        emit({ type: 'start', sessionId: turn.sessionId, turnId: turn.turnId });
       }
+      const modelBefore = turn.modelAnnounced;
       this.spec.onEvent(msg, turn, emit, finish);
+      // `turn.started` is where the CLI reveals the model it actually
+      // resolved. Announce it once, as a note, so a client can show "using X"
+      // without trusting the reply text (models name themselves unreliably).
+      if (!modelBefore && turn.model) {
+        turn.modelAnnounced = true;
+        emit({ type: 'note', text: `model: ${turn.model.model}${turn.model.provider ? ` (${turn.model.provider})` : ''}${turn.model.reasoningLevel ? ` · reasoning ${turn.model.reasoningLevel}` : ''}`, kind: 'model', model: turn.model });
+      }
+      if (hadSession) return;
     };
 
     try {
@@ -418,8 +462,7 @@ export class HeadlessCliAdapter {
       const tail = turn.stderr.trim().split('\n').slice(-3).join(' | ');
       finish({
         kind: 'error',
-        message: `${this.spec.name} exited (code=${code}${signal ? `, signal=${signal}` : ''}) before a result`
-          + (tail ? `: ${tail}` : ''),
+        message: explainHeadlessExit(`${this.spec.name} exited (code=${code}${signal ? `, signal=${signal}` : ''}) before a result`, turn.stderr + tail),
       });
     });
 

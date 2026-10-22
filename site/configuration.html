@@ -164,7 +164,7 @@
             <tr>
               <td>mode</td><td>string</td><td><span class="chip chip-enum">plan</span></td>
               <td><span class="chip chip-enum">plan</span> <span class="chip chip-enum">build</span> <span class="chip chip-enum">edit</span> <span class="chip chip-enum">guarded</span> <span class="chip chip-enum">yolo</span></td>
-              <td>仅 headless 智能体（zcode）。headless 回合没有审批卡，这个字段就是权限决定；默认 <code>plan</code> 只读，<code>yolo</code> 必须显式选择。</td>
+              <td>仅 headless 智能体（zcode）。headless 回合没有审批卡，这个字段就是权限决定；默认 <code>plan</code> 只读，<code>yolo</code> 必须显式选择。模型不由本字段决定：headless 回合用的是 ZCode <code>providerOrder</code> 的第一个供应商的 <code>modelOrder</code> 第一个模型，改 <code>~/.zcode/v2/provider_config.json</code>（关掉 ZCode 再改），账号类套餐不会被自动选中。</td>
             </tr>
             <tr class="grp"><td colspan="5">客户端门</td></tr>
             <tr>

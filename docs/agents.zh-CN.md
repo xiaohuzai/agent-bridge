@@ -228,6 +228,12 @@ FROM model_usage ORDER BY started_at DESC;
 - **工具调用**：`tool.updated` 的 `scheduled/started/result` → v1 `tool` 行，用 agent 自己的 `toolCallId` 配对；detail 优先取 `command` / `file_path` / `pattern`。
 - **Usage**：`inputTokens` / `outputTokens` / `cacheReadTokens` / `cacheWriteTokens` → `prompt_tokens` / `completion_tokens` / `cached_tokens` / `cache_write_tokens`。
 - **会话**：CLI 分配 `sess_…`；后续回合把它带回来，适配器会加 `--resume`。续接是真的续上下文（追问能复述上一轮原话），并且命中 provider 缓存（28.5K 输入的回合里 22,528 个缓存 token）。
+- **模型由 ZCode 选，不是桥选。** headless 回合跑的是 `~/.zcode/v2/provider_config.json` 里 **`providerOrder` 的第一个供应商 + 该供应商 `modelOrder` 的第一个模型**；桥不传模型参数，CLI 本身也没有（`--model` 会被拒）。改这个文件要先关掉 ZCode（运行中的 server 会用内存值覆盖），并让 `modelOrder` 与 `personalModelIds` 保持同一顺序——两者可能不同步，表现出来就是"排第一的没被选中"。
+- **`defaultModelSelection` 在这条路径上无效**（2026-10-22 实测：指向自定义供应商的模型、指向账号模型、带/不带 `options`、补上缺失的账号模型规则——每种写法都被忽略，排序照旧生效）。它是桌面 UI 会写的字段，`zcode -p` 根本不读。
+- **账号类供应商永远不会被自动选中。** 只登录智谱/bigmodel 套餐、把自定义供应商全部隐藏时，`zcode -p` 直接报 `Select a model before sending a message`，连新会话都建不起来。桥会把该错误翻译成两条可行出路。
+- **`--resume` 完全跳过模型解析**（CLI 里 `if (e.resume) return;`），所以续接一个在 app/TUI 里用账号模型创建的会话，就会一直用那个模型——这是在 headless 下使用账号套餐模型的受支持方式。
+- **每个回合都会报告实际使用的模型**：一个 `kind: "model"` 的 `note` 事件，带 `model: {provider, model, reasoningLevel}`，取自 CLI 自己的 `turn.started.intent.modelSelection`。回复文本里模型自报的名字不可信，以这个 note 为准。
+
 - **没有交互式审批。** headless 回合没有审批卡，CLI 自己 `-p` 的默认值还是 `yolo`。桥默认 `"mode": "plan"`（只读），条目可选 `build` / `edit` / `guarded` / `yolo`——**选 mode 就是权限决定**。要放宽请显式放宽。
 - **不支持图片。** CLI 唯一的附件面是本地文件（`--attach`），而桥从不把用户图片写盘；带图回合降级为一条提示（与 ACP 路径同一姿态）。
 - **成本/延迟**：每回合一个进程（CLI 启动约 2–4s）；新会话的 prompt 自带 CLI 约 28K token 的系统提示/工具。实测：PONG 12.7s、Read 工具回合 18.5s、续接回合 15.3s。

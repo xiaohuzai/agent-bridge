@@ -222,7 +222,7 @@ npm i -g @google/gemini-cli                                  <span class="tok-co
     { <span class="tok-key">"name"</span>: <span class="tok-str">"zcode"</span>,     <span class="tok-key">"port"</span>: <span class="tok-num">3954</span>, <span class="tok-key">"apiKey"</span>: <span class="tok-str">""</span>, <span class="tok-key">"mode"</span>: <span class="tok-str">"plan"</span> },
   ]
 }</code></pre>
-    <p class="prose">示例就是官方起步配置的全部七行：codex / claude / pi / gemini 开箱即跑；<strong>qoder</strong> 跑一次 <code>qoder</code> 登录即可（ACP 与 CLI 共享登录态）；<strong>dsh</strong> 存一次 DeepSeek key 即可（适配器随包内置）；<strong>zcode</strong> 复用桌面/CLI 登录态，headless 回合默认只读（<code>"mode": "plan"</code>）——用不到的行删掉。<a href="configuration.html">完整配置参考</a>列出每个字段的类型、默认值、可选取值，以及 codex 沙箱/审批的取舍指南（包括「想让 codex 少问多做」该配哪一行）。</p>
+    <p class="prose">示例就是官方起步配置的全部七行：codex / claude / pi / gemini 开箱即跑；<strong>qoder</strong> 跑一次 <code>qoder</code> 登录即可（ACP 与 CLI 共享登录态）；<strong>dsh</strong> 存一次 DeepSeek key 即可（适配器随包内置）；<strong>zcode</strong> 复用桌面/CLI 登录态，headless 回合默认只读（<code>"mode": "plan"</code>）——<strong>它每回合用的是 ZCode 自己排序里的第一个供应商的第一个模型</strong>（<code>providerOrder</code> → 该供应商的 <code>modelOrder</code>），桥不传模型也传不了；账号类套餐（如智谱）不会被自动选中，<code>defaultModelSelection</code> 在 headless 上无效。改顺序就是改 <code>~/.zcode/v2/provider_config.json</code>（先关 ZCode）。每回合会用一个 <code>note</code> 事件报告实际用的模型。——用不到的行删掉。<a href="configuration.html">完整配置参考</a>列出每个字段的类型、默认值、可选取值，以及 codex 沙箱/审批的取舍指南（包括「想让 codex 少问多做」该配哪一行）。</p>
   </section>
 </main>
 
