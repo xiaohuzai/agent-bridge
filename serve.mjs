@@ -155,7 +155,11 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
     // The native ZCode adapter's overrides are gone: zcode now drives the
     // official headless CLI, and a stale config would otherwise be ignored.
     for (const stale of ['serverCjs', 'nodeBin', 'agentCommand']) {
-      if (b[stale] !== undefined) errors.push(`${at}: "${stale}" belonged to the paused native zcode adapter — zcode now runs on its headless CLI (remove it; use "command"/"mode" if needed)`);
+      if (b[stale] !== undefined) {
+        errors.push(spec?.kind === 'headless'
+          ? `${at}: "${stale}" belonged to the paused native zcode adapter — zcode now runs on its headless CLI (remove it; use "command"/"mode" if needed)`
+          : `${at}: "${stale}" is not a valid field for "${name}"`);
+      }
     }
     if (b.network !== undefined && typeof b.network !== 'boolean') errors.push(`${at}: "network" must be a boolean (workspace-write network access)`);
     if (b.sandbox !== undefined && !SANDBOXES.includes(b.sandbox)) errors.push(`${at}: "sandbox" must be one of ${SANDBOXES.join(' | ')}`);

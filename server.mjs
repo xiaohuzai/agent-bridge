@@ -65,11 +65,43 @@
 // the POST /turns connection; the bridge notices the disconnect and
 // interrupts the agent turn server-side. Turns are live-only: there is no
 // replay of a turn you disconnected from.
+//
+// ─── adapter contract (everything server.mjs and the ACP front rely on) ────
+// Required:
+//   startTurn({text, sessionId?, images?, onEvent}) → {sessionId, turnId}
+//     — MAY resolve at admission (codex/headless) or only at the turn's end
+//     (v1 ACP shims keep the session/prompt rpc pending the whole turn);
+//     events flow through onEvent until a terminal done/aborted/error.
+//     done SHOULD carry `usage` — v1 clients read the standalone usage event,
+//     but the ACP front maps usage ONLY from the done event.
+//   interrupt(sessionId) — MUST return a Promise (the disconnect path chains
+//     .catch/.finally on it; a sync return crashed the daemon until 2026-10-22).
+//   respondApproval(requestId, choice) · stop() ·
+//   listSessions() → [{sessionId, busy}] (serves GET /sessions).
+// Optional:
+//   renameSession(sessionId, title) — absent ⇒ POST /threads/:id/title → 501.
+//   createSession() — the ACP front prefers a real, restart-surviving id.
+//   promptImage (boolean) — the ACP front advertises image support from it;
+//     undefined advertises true (agents that only degrade images must say false).
 
 import http from 'node:http';
+import crypto from 'node:crypto';
 
 const HEARTBEAT_MS = 15000;
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
+
+/** Constant-time bearer check: same string compare, no early bail-out. */
+function tokenOk(authHeader, token) {
+  const a = Buffer.from(String(authHeader || ''));
+  const b = Buffer.from(`Bearer ${token}`);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/** decodeURIComponent that answers null instead of throwing on bad input —
+ * a malformed id in the path is a client bug worth a 400, not a 500. */
+function safeDecode(s) {
+  try { return decodeURIComponent(s); } catch { return null; }
+}
 
 /** CORS for one request: reflect loopback origins (any port), honor the
  * '*' override, everyone else gets no ACAO header (the browser blocks them). */
@@ -109,8 +141,7 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
         return;
       }
       if (token) {
-        const auth = String(req.headers.authorization || '');
-        if (auth !== `Bearer ${token}`) {
+        if (!tokenOk(req.headers.authorization, token)) {
           res.writeHead(401, { 'Content-Type': 'application/json', ...cors });
           res.end(JSON.stringify({ ok: false, error: 'bad token' }));
           return;
@@ -124,7 +155,10 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
       }
       if (req.method === 'GET' && url.pathname === '/sessions') {
         res.writeHead(200, { 'Content-Type': 'application/json', ...cors });
-        res.end(JSON.stringify({ ok: true, sessions: adapter.listSessions() }));
+        // Guarded: listSessions is contract-required (see header) but a
+        // missing one must degrade to an empty list, never a 500.
+        const sessions = typeof adapter.listSessions === 'function' ? adapter.listSessions() : [];
+        res.end(JSON.stringify({ ok: true, sessions }));
         return;
       }
       if (req.method === 'POST' && url.pathname === '/turns') {
@@ -147,7 +181,12 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
         return;
       }
       if (req.method === 'POST' && url.pathname.startsWith('/approvals/')) {
-        const requestId = decodeURIComponent(url.pathname.slice('/approvals/'.length));
+        const requestId = safeDecode(url.pathname.slice('/approvals/'.length));
+        if (requestId === null) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
+          res.end(JSON.stringify({ ok: false, error: 'malformed requestId encoding' }));
+          return;
+        }
         const body = await readJson(req);
         const choice = body?.choice;
         if (!['once', 'always', 'deny'].includes(choice)) {
@@ -173,7 +212,12 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
       // name). Adapters without a rename channel answer 501 — the client
       // treats that as permanent, not an error to retry.
       if (req.method === 'POST' && url.pathname.startsWith('/threads/') && url.pathname.endsWith('/title')) {
-        const sessionId = decodeURIComponent(url.pathname.slice('/threads/'.length, -'/title'.length));
+        const sessionId = safeDecode(url.pathname.slice('/threads/'.length, -'/title'.length));
+        if (sessionId === null) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...cors });
+          res.end(JSON.stringify({ ok: false, error: 'malformed sessionId encoding' }));
+          return;
+        }
         const body = await readJson(req);
         const title = typeof body?.title === 'string' ? body.title.trim() : '';
         if (!sessionId || !title) {
@@ -238,12 +282,22 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
     // known when startTurn returns (first turn = client sent none), so it's
     // tracked on a mutable, not read from the request body alone.
     let liveSession = typeof body.sessionId === 'string' ? body.sessionId : null;
+    const interruptLive = () => {
+      if (!liveSession) return;
+      // Promise.resolve: the contract says interrupt is async, but a
+      // contract-violating sync return must never crash the daemon on the
+      // disconnect path (verified 2026-10-22: bare .catch() turned it into an
+      // uncaughtException — same lesson as the spawn 'error' event).
+      Promise.resolve(adapter.interrupt(liveSession))
+        .catch(() => {})
+        .finally(() => { try { res.destroy(); } catch (_) {} });
+    };
     res.on('close', () => {
       if (!finished && liveSession) {
         finished = true; // stop the hb timer; adapter interrupts below
         clearInterval(hb);
         log(`[bridge] client disconnected mid-turn — interrupting ${liveSession}`);
-        adapter.interrupt(liveSession).catch(() => {}).finally(() => { try { res.destroy(); } catch (_) {} });
+        interruptLive();
       }
     });
     const onEvent = (e) => {
@@ -252,7 +306,21 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
       // (both official ACP shims) keep the session/prompt rpc pending for the
       // whole turn, so a disconnect mid-turn must already know the session to
       // interrupt. Patch it here, not only after startTurn resolves.
-      if (e.type === 'start' && e.sessionId) liveSession = e.sessionId;
+      if (e.type === 'start' && e.sessionId) {
+        liveSession = e.sessionId;
+        // A HARD disconnect (socket died) can fire 'close' BEFORE the first
+        // start event lands — the close handler had no session to interrupt,
+        // and v1-style startTurn never resolves until turn end, so the
+        // post-admission check below never runs for them. Verified
+        // 2026-10-22: without this the turn ran to completion headless.
+        if (res.destroyed) {
+          finished = true;
+          clearInterval(hb);
+          log(`[bridge] client already gone when the session id landed — interrupting ${liveSession}`);
+          interruptLive();
+          return;
+        }
+      }
       ev(e);
       if (e.type === 'done' || e.type === 'aborted' || e.type === 'error') finish();
     };
@@ -269,7 +337,7 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
       if (res.destroyed && !finished && liveSession) {
         finished = true;
         clearInterval(hb);
-        adapter.interrupt(liveSession).catch(() => {});
+        Promise.resolve(adapter.interrupt(liveSession)).catch(() => {});
       }
     } catch (e) {
       onEvent({ type: 'error', message: e.message });

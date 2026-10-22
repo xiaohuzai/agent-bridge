@@ -17,9 +17,18 @@
 
 import { acceptUpgrade, isWsUpgrade, rejectUpgrade, wsText, wsPong, createFrameDecoder } from './wire-ws.mjs';
 import { createAcpFrontSession } from './acp-front.mjs';
+import crypto from 'node:crypto';
 
 const PING_MS = 15000;
 const MAX_OUTSTANDING_PINGS = 3;
+
+/** Same constant-time bearer check as server.mjs (kept local so the front
+ * stays decoupled from the v1 core's module). */
+function tokenOk(authHeader, token) {
+  const a = Buffer.from(String(authHeader || ''));
+  const b = Buffer.from(`Bearer ${token}`);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 export function attachAcpFront(server, { adapter, agent, version = '0.0.0', token, bindAddress = '127.0.0.1', log = () => {} }) {
   const loopbackBind = ['127.0.0.1', 'localhost', '::1'].includes(bindAddress);
@@ -40,8 +49,7 @@ export function attachAcpFront(server, { adapter, agent, version = '0.0.0', toke
         return rejectUpgrade(socket, 403, 'loopback only');
       }
       if (token) {
-        const auth = String(req.headers.authorization || '');
-        if (auth !== `Bearer ${token}`) return rejectUpgrade(socket, 401, 'bad token');
+        if (!tokenOk(req.headers.authorization, token)) return rejectUpgrade(socket, 401, 'bad token');
       }
       acceptUpgrade(req, socket);
       socket.setNoDelay(true);
