@@ -339,3 +339,23 @@ test('exhausted candidates list every attempt and the manual levers', async () =
   assert.match(err.data.message, /ZCODE_CLI/);
   assert.match(err.data.message, /install zcode/);
 });
+
+// ─── model resolution / visibility (2026-10-22) ───────────────────────────────
+
+test('the model the CLI actually resolved is announced (never guessed from reply text)', async () => {
+  const res = await post('/turns', { text: 'PONG' });
+  const sse = sseReader(res.body);
+  const note = await sse.readUntil((f) => f.data.type === 'note' && f.data.kind === 'model');
+  assert.deepEqual(note.data.model, { provider: 'provider_fake', model: 'model-fake-1', reasoningLevel: 'max' });
+  assert.match(note.data.text, /model-fake-1/);
+  await sse.readUntil((f) => f.data.type === 'done');
+});
+
+test('the account-plan dead end is translated into an actionable message', async () => {
+  const res = await post('/turns', { text: 'NOMODEL' });
+  const sse = sseReader(res.body);
+  const err = await sse.readUntil((f) => f.data.type === 'error');
+  assert.match(err.data.message, /no auto-selectable model/);
+  assert.match(err.data.message, /--resume/, 'must name the continue-a-selected-session escape hatch');
+  assert.match(err.data.message, /custom provider/, 'must name the other escape hatch');
+});

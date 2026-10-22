@@ -34,6 +34,13 @@ if (prompt.includes('FAIL')) {
   process.exit(2);
 }
 
+// The account-plan dead end observed live 2026-10-22: the CLI prints its own
+// terse message and exits without ever starting a turn.
+if (prompt.includes('NOMODEL')) {
+  process.stderr.write('Error: Select a model before sending a message (traceId: fake)\n');
+  process.exit(1);
+}
+
 const sessionId = resume || 'sess_fake_1';
 const turnId = 'turn_fake_1';
 let seq = 0;
@@ -55,7 +62,13 @@ const stream = (kind, extra = {}) => emit('model.streaming', { assistantMessageI
 async function main() {
   emit('session.updated', { hookEventName: 'SessionStart', source: 'startup' });
   emit('session.titleUpdated', { title: prompt.slice(0, 40), source: 'first_input' });
-  emit('turn.started', { turnNumber: resume ? 1 : 0, input: prompt, messageId: 'msg_fake_1' });
+  emit('turn.started', {
+    turnNumber: resume ? 1 : 0,
+    input: prompt,
+    messageId: 'msg_fake_1',
+    // The model the CLI resolved — the bridge reports it as a model note.
+    intent: { modelSelection: { providerId: 'provider_fake', modelId: 'model-fake-1', options: { reasoningLevel: 'max' } } },
+  });
 
   if (prompt.includes('SLOW')) {
     stream('start');
