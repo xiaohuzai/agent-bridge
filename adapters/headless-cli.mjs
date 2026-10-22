@@ -93,16 +93,22 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
     for (const root of dirs) {
       const cjs = join(root, 'ZCode', 'resources', 'glm', 'zcode.cjs');
       const exe = join(root, 'ZCode', 'ZCode.exe');
-      if (!existsSync(cjs) || !existsSync(exe)) continue;
+      if (!existsSync(cjs)) continue;
       const provider = join(root, 'ZCode', 'resources', 'config', 'provider', 'zcode-builtin.json');
+      const providerEnv = existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {};
+      // `bin` below already includes the bridge's own node first (see the
+      // nodeRuntime() helper) — same reason as macOS.
+      const node = nodeRuntime();
+      if (node) {
+        out.push({ bin: node, prefix: [cjs], envPatch: { ...providerEnv }, label: `${cjs} (desktop app bundle, node runtime)` });
+        continue;
+      }
+      if (!existsSync(exe)) continue;
       out.push({
         bin: exe,
         prefix: [cjs],
-        envPatch: {
-          ELECTRON_RUN_AS_NODE: '1',
-          ...(existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {}),
-        },
-        label: `${cjs} (desktop app bundle)`,
+        envPatch: { ELECTRON_RUN_AS_NODE: '1', ...providerEnv },
+        label: `${cjs} (desktop app bundle, Electron launcher)`,
       });
     }
     return out;
@@ -115,29 +121,28 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
       if (!existsSync(cjs)) continue;
       const provider = join(root, 'Resources', 'config', 'provider', 'zcode-builtin.json');
       const providerEnv = existsSync(provider) ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: provider } : {};
-      // A plain node runtime is preferred when the bundle ships one: the GUI
-      // binary works as a launcher (ELECTRON_RUN_AS_NODE=1) but the CLI STRIPS
-      // that variable from every child it spawns — `vPe()` deletes it for
-      // tool/Bash subprocesses (verified in the 3.16.2 bundle) — so each child
-      // re-launches the GUI app and macOS flashes a Terminal window per
-      // command. A real node binary never does that.
-      //
-      // The candidate MUST be proven to be node, not merely present: Electron
-      // ships `Frameworks/<App> Helper.app` binaries that are NOT node, and
-      // launching one fails `FATAL: Unable to find helper app` (2026-10-22).
-      // So each candidate is executed once with `--version` and accepted only
-      // if it answers like node.
-      const bundledNode = [
-        join(root, 'Resources', 'node'),
-        join(root, 'Resources', 'runtime', 'node'),
-      ].find((p) => existsSync(p) && isNodeBinary(p));
-      if (bundledNode) {
-        out.push({
-          bin: bundledNode,
-          prefix: [cjs],
-          envPatch: { ...providerEnv },
-          label: `${cjs} (desktop app bundle, bundled node runtime)`,
-        });
+      // ZERO-CONFIG node resolution, in preference order:
+      //   1. the node running THIS bridge (process.execPath) — always a real
+      //      node, needs no user setup;
+      //   2. a node shipped inside the app bundle;
+      //   3. a node on PATH;
+      //   4. the app's GUI binary as a launcher (ELECTRON_RUN_AS_NODE).
+      // Why node at all: the GUI launcher makes the CLI's own child spawns
+      // flash Terminal windows — the CLI strips ELECTRON_RUN_AS_NODE from
+      // tool/Bash subprocess envs (`vPe()` in the 3.16.2 bundle), so each child
+      // re-launches the GUI app. A real node has no such behavior.
+      // Every candidate is PROVEN by running `<node> <cjs> --version`: mere
+      // existence is not evidence (Electron's `Frameworks/<App> Helper.app`
+      // passes existsSync and then dies "Unable to find helper app", 2026-10-22).
+      const nodeCandidates = [
+        nodeRuntime(),
+        ...(platform === 'darwin'
+          ? [join(root, 'Resources', 'node'), join(root, 'Resources', 'runtime', 'node')].filter((p) => existsSync(p))
+          : []),
+      ].filter(Boolean);
+      const node = nodeCandidates.find((p) => runsZcodeCli(p, cjs));
+      if (node) {
+        out.push({ bin: node, prefix: [cjs], envPatch: { ...providerEnv }, label: `${cjs} (desktop app bundle, node runtime: ${node})` });
         continue;
       }
       if (!existsSync(gui)) continue;
@@ -145,7 +150,7 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
         bin: gui,
         prefix: [cjs],
         envPatch: { ELECTRON_RUN_AS_NODE: '1', ...providerEnv },
-        label: `${cjs} (desktop app bundle; GUI launcher — set ZCODE_CLI to a real node if Terminal windows pop up)`,
+        label: `${cjs} (desktop app bundle, Electron launcher)`,
       });
     }
     return out;
@@ -161,11 +166,32 @@ export function zcodeFallbackCandidates({ home = homedir(), programDirs, platfor
  * ship helper binaries (Frameworks/<App> Helper.app) that are NOT node and die
  * with "FATAL: Unable to find helper app" when asked to run a script
  * (2026-10-22: the adapter picked one and broke a working bridge). Ask it:
- * a node binary prints "v22.x.y" for --version within a second. */
+ * a node binary prints "v22.x.y" for --version within a few seconds. */
 function isNodeBinary(bin) {
   try {
-    const out = execFileSync(bin, ['--version'], { timeout: 3000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const out = execFileSync(bin, ['--version'], { timeout: 5000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     return /^v\d+\.\d+\.\d+/m.test(String(out || '').trim());
+  } catch (_) {
+    return false;
+  }
+}
+
+/** The strongest node candidate available without user setup: the interpreter
+ * running THIS bridge. It is a real node by construction. */
+function nodeRuntime() {
+  const p = process.execPath;
+  return p && isNodeBinary(p) ? p : null;
+}
+
+/** Prove a node candidate can actually drive the CLI: run `<node> <cjs> --version`
+ * and expect the CLI's own version (e.g. "0.17.0"). This catches both "not a
+ * node" and "node too old for this CLI" before a user ever sees a failure. */
+function runsZcodeCli(node, cjs) {
+  try {
+    const out = execFileSync(node, [cjs, '--version'], {
+      timeout: 20_000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return /\b\d+\.\d+\.\d+\b/.test(String(out || ''));
   } catch (_) {
     return false;
   }

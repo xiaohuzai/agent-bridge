@@ -281,11 +281,16 @@ test('zcodeFallbackCandidates: the desktop-app bundle shapes per platform', asyn
   };
   const t1 = mkdtempSync(join(tmpdir(), 'ab-zc-win'));
   mkApp(t1, { exeRel: 'ZCode/ZCode.exe', cjsRel: 'ZCode/resources/glm/zcode.cjs', providerRel: 'ZCode/resources/config/provider/zcode-builtin.json' });
+  // Windows follows the same zero-config rule: the bridge's own node runs the
+  // CLI (no Electron flag, no Terminal flashes), with the app's provider
+  // catalog pointed in.
+  writeFileSync(join(t1, 'ZCode', 'resources', 'glm', 'zcode.cjs'),
+    "if (process.argv.includes('--version')) { console.log('0.17.0'); }\n");
   const win = zcodeFallbackCandidates({ programDirs: [t1], platform: 'win32' });
   assert.equal(win.length, 1);
-  assert.match(win[0].bin, /ZCode\.exe$/);
+  assert.equal(win[0].bin, process.execPath, 'the bridge node runs the CLI — no user config');
   assert.match(win[0].prefix[0], /resources[\\/]glm[\\/]zcode\.cjs$/);
-  assert.equal(win[0].envPatch.ELECTRON_RUN_AS_NODE, '1', 'the .cjs bundle must run as Electron-as-Node');
+  assert.equal(win[0].envPatch.ELECTRON_RUN_AS_NODE, undefined, 'a real node needs no Electron flag');
   assert.match(win[0].envPatch.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE, /zcode-builtin\.json$/, 'the app-bundle CLI needs the app\'s provider catalog');
 
   const t2 = mkdtempSync(join(tmpdir(), 'ab-zc-mac'));
@@ -296,29 +301,27 @@ test('zcodeFallbackCandidates: the desktop-app bundle shapes per platform', asyn
   assert.match(mac[0].bin, /MacOS[\\/]ZCode$/);
   assert.equal(mac[0].envPatch.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE, undefined, 'no catalog file → no env patch for it');
 
-  // macOS: a bundled plain-node runtime is preferred over the GUI binary —
-  // the GUI launcher makes the CLI's own child spawns flash Terminal windows
-  // (the CLI strips ELECTRON_RUN_AS_NODE from tool subprocess envs).
+  // macOS: the bridge's OWN node is preferred (zero user setup) — the GUI
+  // launcher makes the CLI's child spawns flash Terminal windows, and a
+  // non-node "runtime" file would crash it.
   const t2b = mkdtempSync(join(tmpdir(), 'ab-zc-mac-node'));
   mkApp(t2b, { exeRel: 'MacOS/ZCode', cjsRel: 'Resources/glm/zcode.cjs', providerRel: null });
-  mkdirSync(join(t2b, 'Resources'), { recursive: true });
-  // A REAL node (symlinked), because the adapter proves a candidate is node by
-  // running `--version` — mere existence is not accepted (an Electron Helper
-  // binary passes existsSync and then dies "Unable to find helper app").
-  symlinkSync(process.execPath, join(t2b, 'Resources', 'node'));
+  // The fake CLI must answer `--version` — candidates are PROVEN by running
+  // `<node> <cjs> --version`, never by existence.
+  writeFileSync(join(t2b, 'Resources', 'glm', 'zcode.cjs'),
+    "if (process.argv.includes('--version')) { console.log('0.17.0'); }\n");
   const macNode = zcodeFallbackCandidates({ programDirs: [t2b], platform: 'darwin' });
   assert.equal(macNode.length, 1);
-  assert.match(macNode[0].bin, /Resources[\\/]node$/, 'must prefer the bundled node runtime');
+  assert.equal(macNode[0].bin, process.execPath, 'must use the node running the bridge — no user config');
   assert.equal(macNode[0].envPatch.ELECTRON_RUN_AS_NODE, undefined, 'a real node needs no Electron flag');
-  assert.match(macNode[0].label, /bundled node runtime/);
 
-  const t2c = mkdtempSync(join(tmpdir(), 'ab-zc-mac-fake'));
+  // A bundle whose CLI cannot run under any node falls back to the GUI launcher.
+  const t2c = mkdtempSync(join(tmpdir(), 'ab-zc-mac-broken'));
   mkApp(t2c, { exeRel: 'MacOS/ZCode', cjsRel: 'Resources/glm/zcode.cjs', providerRel: null });
-  mkdirSync(join(t2c, 'Resources'), { recursive: true });
-  writeFileSync(join(t2c, 'Resources', 'node'), '#!/bin/sh\nexit 1\n');
-  chmodSync(join(t2c, 'Resources', 'node'), 0o755);
-  const macFake = zcodeFallbackCandidates({ programDirs: [t2c], platform: 'darwin' });
-  assert.match(macFake[0].bin, /MacOS[\\/]ZCode$/, 'a non-node file must be rejected, falling back to the GUI launcher');
+  writeFileSync(join(t2c, 'Resources', 'glm', 'zcode.cjs'), 'process.exit(3);\n');
+  const macBroken = zcodeFallbackCandidates({ programDirs: [t2c], platform: 'darwin' });
+  assert.match(macBroken[0].bin, /MacOS[\\/]ZCode$/, 'unrunnable CLI → GUI launcher');
+  assert.equal(macBroken[0].envPatch.ELECTRON_RUN_AS_NODE, '1');
 
   const t3 = mkdtempSync(join(tmpdir(), 'ab-zc-lin'));
   mkdirSync(join(t3, '.zcode', 'server', 'bin'), { recursive: true });
