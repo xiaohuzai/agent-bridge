@@ -73,7 +73,15 @@ Known traps already paid for (do not rediscover):
 
 ## Git workflow & branch protection
 
-`main` is protected (mirroring the browsa repo): classic require-PR (0 approvals) + a ruleset (no deletion / no force-push / required check `Test` / PR thread resolution / extra approval for unattributed changes). Workflow: commit on `dev` → push → PR to `main` → wait for the `Test` check → squash merge.
+`main` is protected (mirroring the browsa repo): classic require-PR (0 approvals) + a ruleset (no deletion / no force-push / required check `Test` / PR thread resolution / extra approval for unattributed changes).
+
+**The workflow (owner ruling 2026-10-22)**: develop on `dev` → `git merge main` into dev **before opening the PR** → push dev → PR `dev` → `main` → wait for the `Test` check → squash merge → **`git rebase main` (or reset) so dev sits exactly on main again**. dev is a working branch that must never drift: it should equal main between tasks, and a PR is only ever opened from a dev that already contains main.
+
+Why this is written down (2026-10-22, paid for): when the PR was opened from a stale dev, GitHub reported `DIRTY` and the fix was to invent a `Merge main into dev` commit **per PR** — eleven of them accumulated, and the remote dev ended up 22 commits "ahead" of main with an identical tree. Cheap to avoid, confusing to explain. Rules that follow:
+- **Merge main into dev BEFORE opening the PR**, not after DIRTY appears.
+- After the squash merge, **fast-forward or reset dev onto the new main** — a squash-merged PR leaves dev's original commits behind, so a plain `git pull` is not enough.
+- A PR's diff must be reviewed by **file content** (`gh pr diff --name-only`, or reading the files from the target ref), never by `mergeStateStatus` alone: an empty-diff PR still shows `CLEAN` and a green `Test` (a real incident — PR #105 merged nothing).
+- When `github.com:443` is flaky in this environment, `api.github.com` stays reachable and the Git Data API works as a push channel; **verify every step there** (blob → tree `entries == 23` → commit parents → ref) because a malformed tree once wiped every file but `test/`.
 
 Traps already paid for:
 - **Commits MUST be authored with a GitHub-attributed email** or the ruleset's `require_extra_approval_for_unattributed_changes` blocks the merge with no useful error. Repo-local git config is set to `Billy <35189812+xiaohuzai@users.noreply.github.com>` — keep it.
