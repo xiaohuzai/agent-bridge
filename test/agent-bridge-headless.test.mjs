@@ -103,7 +103,7 @@ function spawnedArgs() {
 
 const PNG_1X1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
-test('headless happy path: start → deltas → usage → done (plan mode, no resume)', async () => {
+test('headless happy path: start → deltas → usage → done (default edit mode, no resume)', async () => {
   const res = await post('/turns', { text: 'PONG' });
   assert.equal(res.status, 200);
   const sse = sseReader(res.body);
@@ -120,7 +120,7 @@ test('headless happy path: start → deltas → usage → done (plan mode, no re
   assert.equal(usage.completion_tokens, 3);
   assert.equal(usage.cached_tokens, 0);
   const argv = spawnedArgs();
-  assert.equal(argv.mode, 'plan');
+  assert.equal(argv.mode, 'edit', 'headless default is edit: no approval card means build would stall and plan cannot write');
   assert.equal(argv.resume, null);
   assert.equal(argv.cwd, process.cwd());
   assert.ok(argv.args.includes('--output-format') && argv.args.includes('stream-json'));

@@ -236,7 +236,15 @@ Two gotchas: the Windows desktop and WSL keep **separate** `~/.zcode` trees — 
 - **macOS/Windows: no setup needed — the bridge runs the CLI on its own node.** The desktop bundle's `zcode.cjs` is executed by the node interpreter running agent-bridge (`process.execPath`), which is a real node by construction. This matters twice over: (a) the app's GUI binary makes the CLI's own child spawns flash Terminal windows — the CLI strips `ELECTRON_RUN_AS_NODE` from tool/Bash subprocess envs (`vPe()` in the 3.16.2 bundle), so every command re-launched the GUI app; (b) Electron helper binaries are NOT node (`FATAL: Unable to find helper app`). Every candidate is proven by actually running `<node> <cjs> --version`, and the GUI launcher is used only if none works. Overriding is possible (`ZCODE_CLI`, a full command line) but should never be necessary.
 - **Every turn reports the model it actually used** on a `note` event with `kind: "model"` and `model: {provider, model, reasoningLevel}`, taken from the CLI's own `turn.started.intent.modelSelection`. Model self-reports in the reply text are unreliable — trust the note.
 
-- **No interactive approvals.** A headless turn has no approval card, and the CLI's own `-p` default is `yolo`. The bridge defaults to `"mode": "plan"` (read-only) and exposes `build` / `edit` / `guarded` / `yolo` per entry — **choosing the mode IS the permission decision**. Loosen it deliberately.
+- **No interactive approvals — `mode` IS the permission decision.** A headless turn has no approval card, and the CLI's own `-p` default is `yolo`; the bridge defaults to **`edit`**. The five values differ in exactly two ways:
+  | mode | writes files | asks first? |
+  |---|---|---|
+  | `plan` | ❌ read-only | — |
+  | `edit` (default) | ✅ auto-applies | never |
+  | `build` | ✅ | **yes, pauses for approval — headless that never gets answered, so avoid it here** |
+  | `guarded` | ✅ (yolo-like) | only before recognised dangerous shell commands (`rm -rf`, `git reset --hard`, force push, `rsync --delete`) |
+  | `yolo` | ✅ | never, including dangerous commands |
+  `build` is for the interactive TUI, where a human can approve. For a chat client that mostly reads but may write docs, `edit` is the practical default; use `plan` to forbid writes entirely.
 - **No images.** The CLI's only attachment surface is local files (`--attach`), and the bridge never writes user images to disk; image turns degrade to a note (the same posture as the ACP path).
 - **Cost/latency**: one process per turn (~2–4s CLI boot); a fresh prompt carries the CLI's own ~28K-token system prompt/tools. Observed: PONG 12.7s, Read-tool turn 18.5s, resumed turn 15.3s.
 - The older native adapter (`adapters/zcode-server.mjs`, driving the desktop's stdio server) is **paused**: re-tested 2026-10-21, a bridge-spawned server registers a provider and then drops the client at turn start (`ZCode Protocol client is disposed`). The registry routes to the headless CLI; the native file is kept for reference.

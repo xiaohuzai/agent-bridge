@@ -217,8 +217,13 @@ function runsZcodeCli(node, cjs) {
 export const HEADLESS_PROFILES = {
   zcode: {
     name: 'zcode',
-    modes: ['build', 'edit', 'plan', 'yolo', 'guarded'],
-    defaultMode: 'plan',
+    modes: ['edit', 'plan', 'build', 'guarded', 'yolo'],
+    // 'edit', not 'plan': headless has NO approval card, so 'build' (which
+    // pauses for approval) can stall a turn and 'plan' cannot touch files at
+    // all. 'edit' auto-applies changes and is the practical default for a
+    // chat client that mostly reads but may write docs (owner decision
+    // 2026-10-22). Agents that must never write can still set "mode": "plan".
+    defaultMode: 'edit',
     command: ['zcode'],
     fallbackCandidates: zcodeFallbackCandidates,
     /** The argv for one turn. Placeholders are already substituted; this is
