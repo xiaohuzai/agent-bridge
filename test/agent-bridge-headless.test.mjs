@@ -296,6 +296,19 @@ test('zcodeFallbackCandidates: the desktop-app bundle shapes per platform', asyn
   assert.match(mac[0].bin, /MacOS[\\/]ZCode$/);
   assert.equal(mac[0].envPatch.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE, undefined, 'no catalog file → no env patch for it');
 
+  // macOS: a bundled plain-node runtime is preferred over the GUI binary —
+  // the GUI launcher makes the CLI's own child spawns flash Terminal windows
+  // (the CLI strips ELECTRON_RUN_AS_NODE from tool subprocess envs).
+  const t2b = mkdtempSync(join(tmpdir(), 'ab-zc-mac-node'));
+  mkApp(t2b, { exeRel: 'MacOS/ZCode', cjsRel: 'Resources/glm/zcode.cjs', providerRel: null });
+  mkdirSync(join(t2b, 'Resources'), { recursive: true });
+  writeFileSync(join(t2b, 'Resources', 'node'), 'x');
+  const macNode = zcodeFallbackCandidates({ programDirs: [t2b], platform: 'darwin' });
+  assert.equal(macNode.length, 1);
+  assert.match(macNode[0].bin, /Resources[\\/]node$/, 'must prefer the bundled node runtime');
+  assert.equal(macNode[0].envPatch.ELECTRON_RUN_AS_NODE, undefined, 'a real node needs no Electron flag');
+  assert.match(macNode[0].label, /bundled node runtime/);
+
   const t3 = mkdtempSync(join(tmpdir(), 'ab-zc-lin'));
   mkdirSync(join(t3, '.zcode', 'server', 'bin'), { recursive: true });
   writeFileSync(join(t3, '.zcode', 'server', 'bin', 'zcode'), '#!/bin/sh\n');

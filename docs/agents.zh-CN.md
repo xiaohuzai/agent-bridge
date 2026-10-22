@@ -232,6 +232,8 @@ FROM model_usage ORDER BY started_at DESC;
 - **`defaultModelSelection` 在这条路径上无效**（2026-10-22 实测：指向自定义供应商的模型、指向账号模型、带/不带 `options`、补上缺失的账号模型规则——每种写法都被忽略，排序照旧生效）。它是桌面 UI 会写的字段，`zcode -p` 根本不读。
 - **账号类供应商永远不会被自动选中。** 只登录智谱/bigmodel 套餐、把自定义供应商全部隐藏时，`zcode -p` 直接报 `Select a model before sending a message`，连新会话都建不起来。桥会把该错误翻译成两条可行出路。
 - **`--resume` 完全跳过模型解析**（CLI 里 `if (e.resume) return;`），所以续接一个在 app/TUI 里用账号模型创建的会话，就会一直用那个模型——这是在 headless 下使用账号套餐模型的受支持方式。
+- **macOS/Windows 会弹出 Terminal 窗口。** 桥用 app 自带的 `zcode.cjs` 配 `ELECTRON_RUN_AS_NODE=1` 在 app 二进制上运行，但 CLI **会把它从自己 spawn 的每个子进程 env 里删掉**（工具/Bash 子进程——3.16.2 bundle 里的 `vPe()`），于是每条命令都会重新拉起 GUI app，macOS 就闪一个终端窗口直到它退出。适配器因此优先选用 bundle 里的原生 node；如果你的包里没有，用 `ZCODE_CLI` 指向一个，它接受完整命令行：
+  `ZCODE_CLI="/usr/bin/env node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs"`（先 `ls /Applications/ZCode.app/Contents/Resources/node /Applications/ZCode.app/Contents/Frameworks` 看看有没有；PATH 上真实的 `node` 也可以）。
 - **每个回合都会报告实际使用的模型**：一个 `kind: "model"` 的 `note` 事件，带 `model: {provider, model, reasoningLevel}`，取自 CLI 自己的 `turn.started.intent.modelSelection`。回复文本里模型自报的名字不可信，以这个 note 为准。
 
 - **没有交互式审批。** headless 回合没有审批卡，CLI 自己 `-p` 的默认值还是 `yolo`。桥默认 `"mode": "plan"`（只读），条目可选 `build` / `edit` / `guarded` / `yolo`——**选 mode 就是权限决定**。要放宽请显式放宽。
