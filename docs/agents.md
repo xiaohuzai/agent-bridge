@@ -19,7 +19,7 @@ Verification status at a glance (honesty first — tell us what works or breaks,
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01 — real turns (streaming, shell tool + approval request, cancel) through native `gemini --acp` 0.62.0, driven by a mock Google GenAI backend; bridge-restart resume (`session/load` fallback) exercised live; usage rides on `_meta.quota.token_count` (mapped) |
 | qoder | `{ "name": "qoder", "port": 3953, "apiKey": "" }` | ⚠️ 2026-10-15 — handshake/capabilities + auth boundary live-verified (qoder-cli 1.1.71, unauthenticated: ACP v1, images + embeddedContext, loadSession; `session/new` → `-32000 Authentication required`); a real model turn awaits a credentialed machine |
 | dsh (DeepSeek Harness) | `{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ⚠️ 2026-10-09 — wire chain live-verified against dsh 0.2.0-rc.2 (spawn → ACP v1 handshake → session/new → prompt → clean auth-error SSE; the model call itself needs a credentialed machine); image path verified to the provider boundary 2026-10-10 (placeholder key; the image-answering turn awaits a credentialed machine) |
-| zcode | `{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "plan" }` | ✅ 2026-10-21 — real turns through the headless CLI (streaming deltas, tool rows, usage, `--resume` with provider cache; PONG + a Read-tool turn, driven through the bridge) |
+| zcode | `{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "edit" }` | ✅ 2026-10-21 — real turns through the headless CLI (streaming deltas, tool rows, usage, `--resume` with provider cache; PONG + a Read-tool turn, driven through the bridge) |
 | opencode / kimi / qwen etc. | not in the registry yet — add a line to `agents-registry.mjs` once verified (see below) | ❓ schema-level only |
 
 ---
@@ -161,10 +161,10 @@ Wire-verified 2026-10-15 (qoder-cli 1.1.71, container, unauthenticated — hands
 
 Native ACP — browsa/agent-bridge spawns the **openma ACP adapter** (`@openma/deepseek-harness-acp`, `command: ["dsh-acp"]`), a third-party ACP v1 stdio agent that **composes the dsh harness in-process** (Apache-2.0, CI, the most-installed third-party dsh-ACP adapter). The adapter shares `~/.dsh` with the dsh desktop/Web UI — same credential store, settings, presets, and session logs, so conversations started here show up in the desktop app's session list.
 
-**Install**:
+**Install**: nothing beyond agent-bridge itself — the adapter ships bundled as an optional dependency (`@openma/deepseek-harness-acp`, needs Node ≥ 22.15; a skipped/failed optional dep falls back silently, so if `dsh-acp` is missing, install it standalone):
 
 ```bash
-npm i -g @openma/deepseek-harness-acp
+npm i -g @openma/deepseek-harness-acp   # only when the bundled copy was skipped
 ```
 
 Credentials for the standalone adapter are API keys in the shared `~/.dsh` store: `dsh-acp login` (paste the key, hidden input), the dsh Web UI (Settings → Models), and the adapter's local browser sign-in page all write the same `~/.dsh/.credentials.yaml` (mode 600). Route/model selection rides the spawned process's own flags via the entry's `args` (see below); without args it uses the dsh product default, `deepseek-official`, which reads `refs.DEEPSEEK_API_KEY` from that store.
@@ -183,30 +183,23 @@ Live-verified 2026-10-09/10 (adapter 0.4.37 against dsh 0.2.0-rc.2): handshake a
 
 - **API key route (verified end-to-end)**: the product default `deepseek-official`. Save a key once — `dsh-acp login`, the dsh Web UI (Settings → Models), or `DEEPSEEK_API_KEY` in the bridge's launching environment — and run the entry without `args`.
 - **Account route**: dsh also knows `--provider deepseek-account`, and the desktop login's grants do live in the shared `~/.dsh` store — but every credential path the standalone adapter itself exposes is a key, and a bridge turn on this route has only ever been seen failing with the credential error. Treat it as unverified; the key route is the supported path.
-- `--model` / `--reasoning-effort` / `--permission-mode` ride the same `args` (the adapter's CLI flags).
+- `--provider` / `--model` / `--reasoning-effort` / `--permission-mode` ride the same `args` (the adapter's CLI flags).
 
 ## zcode
 
 ZCode exposes an official **headless CLI** — the external driver surface this bridge uses:
 
 ```bash
-zcode -p '<text>' --output-format stream-json --no-color --mode plan --cwd <dir> [--resume sess_…]
+zcode -p '<text>' --output-format stream-json --no-color --mode edit --cwd <dir> [--resume sess_…]
 ```
 
 The CLI is resolved in order: the entry's `command` (when it differs from the default `zcode`) > `ZCODE_CLI` env > `zcode` on PATH > the desktop app's bundled CLI — Linux `~/.zcode/server/bin/zcode` (a wrapper, spawned as-is), and on Windows/macOS `resources/glm/zcode.cjs` run on the app's own binary in `ELECTRON_RUN_AS_NODE` mode with `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` pointed at the app's provider catalog (both shapes verified live; the Windows desktop tree ships NO standalone CLI binary). An entry `command` equal to the default does NOT disable the fallbacks. agent-bridge runs **one process per turn** and translates the JSONL event stream into v1 — no PTY and no screen parsing.
 
 **Install & sign in**: open/install the ZCode desktop app once (or install the standalone CLI) and sign in once (`zcode login`, or via the desktop app). The CLI and the desktop share `~/.zcode` — login state, MCP servers, skills, hooks — so a bridge turn sees the same configuration a terminal `zcode` does.
 
-**Default model** (live-verified 2026-10-22, CLI 0.17.0): the bridge **never passes a model** — the CLI has no `--model` flag, and ZCode resolves its own default for every turn:
+**Default model** (live-verified 2026-10-22, CLI 0.17.0): the bridge **never passes a model** — the CLI has no `--model` flag. A headless turn runs the **first provider in `config.providerOrder` and that provider's first entry in `modelOrder`** (both in `~/.zcode/v2/provider_config.json`). `defaultModelSelection` — the field the desktop UI would write — is **ignored on the headless `-p` path** (verified: pointing it at a custom provider's model, an account model, with and without `options` — every variant lost to the ordering). Account-plan providers are never auto-selected: with only a logged-in zhipu/bigmodel plan and every custom provider hidden, `zcode -p` fails `Select a model before sending a message` — the bridge relays that with the two escapes (add a custom provider — headless orders them first — or start the session in the ZCode app/CLI with the account model and continue it here; `--resume` skips model resolution and keeps the session's model).
 
-1. `config.defaultModelSelection` in `~/.zcode/v2/provider_config.json` — `{ "providerId": …, "modelId": … }`; used as-is while that provider is available;
-2. otherwise — or when that provider is unavailable, e.g. signed out of the account plan — ZCode **silently falls back** to the first provider in `config.providerOrder` × its first entry in `modelOrder`. The turn does not fail (verified by pointing `defaultModelSelection` at a nonexistent provider: the turn completed on the first third-party provider).
-
-**Setting the default**: close ZCode and edit the file by hand. The current desktop UI cannot write this field — the installed build ships the persistence method with no control calling it, the settings entry 「设为默认连接」 is about SSH device connections, not models, and the TUI's `/model` only re-skins the current session. Example — make a signed-in Zhipu GLM plan the default:
-
-```json
-"defaultModelSelection": { "providerId": "account:bigmodel-individual-coding-plan", "modelId": "GLM-5.3-Flash" }
-```
+**Changing the default**: edit `providerOrder`/`modelOrder` in `~/.zcode/v2/provider_config.json` with ZCode closed (a running server rewrites the file from memory), and keep `modelOrder` identical to `personalModelIds` so the UI shows what will actually run (they can drift apart, which reads as "the first entry was skipped").
 
 To check what a turn actually used, ask the agent's own ledger — in `~/.zcode/cli/db/db.sqlite`:
 
@@ -220,7 +213,7 @@ Two gotchas: the Windows desktop and WSL keep **separate** `~/.zcode` trees — 
 **agents.json entry**:
 
 ```json
-{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "plan" }
+{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "edit" }
 ```
 
 **Behavior notes** (live-verified 2026-10-21 against CLI 0.17.0 / server 3.16.2, through the real bridge):

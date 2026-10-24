@@ -302,10 +302,16 @@ export async function startServe(cfg, { bind = '127.0.0.1', version = '1.0.0', l
     stop();
     throw e;
   }
+  // IPv6 literals need brackets in URLs (http://::1:3948 is not one), and the
+  // wildcard binds are not connectable — show loopback stand-ins for those.
+  const displayBind = bind === '0.0.0.0' ? '0.0.0.0 (all interfaces)'
+    : bind.includes(':') ? `[${bind}]` : bind;
+  const connectBind = bind === '0.0.0.0' ? '127.0.0.1' : bind === '::' ? '[::1]'
+    : bind.includes(':') ? `[${bind}]` : bind;
   return {
     banner: [
-      `agent-bridge serve: ${running.length} bridge${running.length === 1 ? '' : 's'} on http://${bind === '0.0.0.0' ? '0.0.0.0 (all interfaces)' : bind}`,
-      ...running.map((r) => `  ${r.name.padEnd(10)} :${r.port}  (${r.hasKey ? 'apiKey required' : 'no api key — loopback only'})${r.acp ? `  ·  acp: ws://${bind === '0.0.0.0' ? '127.0.0.1' : bind}:${r.port}/acp` : ''}`),
+      `agent-bridge serve: ${running.length} bridge${running.length === 1 ? '' : 's'} on http://${displayBind}`,
+      ...running.map((r) => `  ${r.name.padEnd(10)} :${r.port}  (${r.hasKey ? 'apiKey required' : 'no api key — loopback only'})${r.acp ? `  ·  acp: ws://${connectBind}:${r.port}/acp` : ''}`),
       ...(LOOPBACKS.includes(bind) ? [] : ['  WARNING   : non-loopback bind — every request must carry the apiKey, and traffic is plain HTTP until you put a TLS reverse proxy in front.']),
     ],
     adapters: running.map((r) => r.adapter),

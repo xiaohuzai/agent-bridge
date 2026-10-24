@@ -248,3 +248,21 @@ stdout 是 JSONL，每行一个 envelope：
 核对实际使用的模型：`~/.zcode/cli/db/db.sqlite` 的 `model_usage` 表
 （`provider_id` / `model_id` / `started_at`）。另：同默认模型的重复 headless 回合命中
 provider 前缀缓存（28K 输入实测 24.5K cached），固定成本大头被缓存抵掉。
+
+## 更正：defaultModelSelection 在 headless `-p` 路径上无效（2026-10-22 下午复测）
+
+上节上午的结论被同日下午更严密的复测**推翻**（#107 记录在案）：把 `defaultModelSelection`
+指向自定义供应商的模型、指向账号模型、带/不带 `options`、补上缺失的账号模型规则——
+每一种写法都被忽略，**`providerOrder` 首位 × 其 `modelOrder` 首位照旧获胜**。上午的
+"不存在提供商探测"只覆盖了回落分支，被误读成了确认——`zcode -p` 根本不读该字段。
+
+- headless 回合的模型 = `~/.zcode/v2/provider_config.json` 的 `providerOrder` 首位供应商
+  × 其 `modelOrder` 首位模型；改排序就是改这个文件（关掉 ZCode 再改），并让 `modelOrder`
+  与 `personalModelIds` 同序。
+- 账号类供应商永远不会被自动选中：只登录套餐且自定义供应商全隐藏时 `zcode -p` 报
+  `Select a model before sending a message`；出路是加一个自定义供应商，或在 app/TUI 里
+  用账号模型开好会话后 `--resume` 续接（`--resume` 完全跳过模型解析，沿用会话原模型）。
+- 每回合经 `turn.started.intent.modelSelection` 上报实际模型（v1 `note` 事件，kind "model"）；
+  账本仍是 `model_usage` 表。
+
+以 `docs/agents*.md` 的 zcode 节为准；本节保留作为事实演进的记录。

@@ -19,7 +19,7 @@ node cli.mjs serve            # 读 ./agents.json（或：serve --config FILE）
 | gemini | `{ "name": "gemini", "port": 3951, "apiKey": "" }` | ✅ 2026-10-01——原生 `gemini --acp` 0.62.0 真回合（流式、shell 工具+审批请求、cancel），由 mock Google GenAI 后端驱动；桥重启续会话（`session/load` 回退）实机已跑；usage 走响应的 `_meta.quota.token_count`（已映射） |
 | qoder | `{ "name": "qoder", "port": 3953, "apiKey": "" }` | ⚠️ 2026-10-15——握手/能力 + 鉴权边界实机验证（qoder-cli 1.1.71，未登录：ACP v1、图片 + embeddedContext、loadSession；`session/new` → `-32000 Authentication required`）；真实模型回合待有凭据的机器 |
 | dsh（DeepSeek Harness） | `{ "name": "dsh", "port": 3952, "apiKey": "", "cwd": "/your/project" }` | ⚠️ 2026-10-09——协议链对 dsh 0.2.0-rc.2 实机验证（spawn → ACP v1 握手 → session/new → prompt → 干净的鉴权错误 SSE；模型调用本身需有凭据的机器）；图片通路 2026-10-10 验到 provider 边界（占位 key，出图回答待有凭据机器） |
-| zcode | `{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "plan" }` | ✅ 2026-10-21——经官方 headless CLI 真回合（流式增量、工具行、usage、`--resume` 命中 provider 缓存；PONG + Read 工具回合，走真实桥） |
+| zcode | `{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "edit" }` | ✅ 2026-10-21——经官方 headless CLI 真回合（流式增量、工具行、usage、`--resume` 命中 provider 缓存；PONG + Read 工具回合，走真实桥） |
 | opencode / kimi / qwen 等 | 尚未进注册表——验证过后在 `agents-registry.mjs` 加一行（见下） | ❓ 仅 schema 级 |
 
 ---
@@ -160,10 +160,10 @@ pi                                      # 首次运行：选 provider / 登录
 
 原生 ACP——browsa/agent-bridge 拉起的是 **openma ACP 适配器**（`@openma/deepseek-harness-acp`，`command: ["dsh-acp"]`）：第三方 ACP v1 stdio agent，**进程内组装 dsh harness**（Apache-2.0、带 CI、第三方 dsh-ACP 适配器里装机量第一）。它与 dsh 桌面版/Web 共享 `~/.dsh`——同一凭据存储、设置、预设与会话日志，在这里开的会话会出现在桌面应用的会话列表里。
 
-**安装**：
+**安装**：装好 agent-bridge 本身就够了——适配器作为可选依赖随包分发（`@openma/deepseek-harness-acp`，需 Node ≥ 22.15；可选依赖安装失败会被静默跳过，若 `dsh-acp` 缺失再单独装）：
 
 ```bash
-npm i -g @openma/deepseek-harness-acp
+npm i -g @openma/deepseek-harness-acp   # 仅当内置副本被跳过时才需要
 ```
 
 standalone 适配器的凭据是共享 `~/.dsh` 存储里的 **API key**：`dsh-acp login`（贴 key，隐藏输入）、dsh Web UI（设置 → 模型）、适配器的本地浏览器登录页，三者写的都是同一个 `~/.dsh/.credentials.yaml`（mode 600）。路由/模型选择走被拉起进程自己的旗标，经条目的 `args` 传入；不带 args 用 dsh 产品默认 `deepseek-official`，读的就是该存储里的 `refs.DEEPSEEK_API_KEY`。
@@ -182,30 +182,23 @@ standalone 适配器的凭据是共享 `~/.dsh` 存储里的 **API key**：`dsh-
 
 - **API key 路由（端到端已验证）**：产品默认 `deepseek-official`。存一次 key——`dsh-acp login`、dsh Web UI（设置 → 模型）、或起桥环境里的 `DEEPSEEK_API_KEY`——条目不带 `args` 即可。
 - **账户路由**：dsh 本体也认 `--provider deepseek-account`，桌面登录的 grant 也确实在共享 `~/.dsh` 存储里——但 standalone 适配器自己暴露的每一条凭据通路都是 key，且经桥的账户路由回合至今只见凭据报错。按未验证对待；key 路由是受支持通路。
-- `--model` / `--reasoning-effort` / `--permission-mode` 走同一 `args`（适配器的 CLI 旗标）。
+- `--provider` / `--model` / `--reasoning-effort` / `--permission-mode` 走同一 `args`（适配器的 CLI 旗标）。
 
 ## zcode
 
 ZCode 提供官方 **headless CLI**——本桥走的就是这个对外驱动面：
 
 ```bash
-zcode -p '<text>' --output-format stream-json --no-color --mode plan --cwd <dir> [--resume sess_…]
+zcode -p '<text>' --output-format stream-json --no-color --mode edit --cwd <dir> [--resume sess_…]
 ```
 
 CLI 解析顺序:条目 `command`(与默认 `zcode` 不同时)> `ZCODE_CLI` 环境变量 > PATH 上的 `zcode` > 桌面版自带 CLI——Linux 是 `~/.zcode/server/bin/zcode`(sh 包装、直接 spawn);Windows/macOS 是 app 内 `resources/glm/zcode.cjs`,用 app 自己的二进制以 `ELECTRON_RUN_AS_NODE` 模式运行,并把 `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` 指向 app 的 provider 目录(两种形态均已实测;Windows 桌面树里**没有**独立的 CLI 可执行文件)。条目 `command` 写的就是默认值时不会禁用回落。agent-bridge **每回合起一个进程**,把 JSONL 事件流翻译成 v1——没有 PTY,也不解析屏幕。
 
 **安装与登录**：装/开一次 ZCode 桌面版（或装独立 CLI），登录一次（`zcode login`，或经桌面版）。CLI 与桌面共享 `~/.zcode`——登录态、MCP、skills、hooks——所以桥里的回合和终端里的 `zcode` 看到的是同一套配置。
 
-**默认模型**（2026-10-22 对 CLI 0.17.0 实机验证）：桥**从不传模型**——CLI 没有 `--model` 参数，每个回合的模型由 ZCode 按自己的配置解析：
+**默认模型**（2026-10-22 对 CLI 0.17.0 实机验证）：桥**从不传模型**——CLI 没有 `--model` 参数。headless 回合跑的是 `~/.zcode/v2/provider_config.json` 里 **`providerOrder` 的第一个供应商 × 该供应商 `modelOrder` 的第一个模型**。桌面 UI 会写的 `defaultModelSelection` 在 **headless `-p` 路径上被忽略**（实测：指向自定义供应商的模型、指向账号模型、带/不带 `options`——每种写法都输给排序）。账号类供应商永远不会被自动选中：只登录智谱/bigmodel 套餐、自定义供应商全部隐藏时，`zcode -p` 直接报 `Select a model before sending a message`——桥会把该错误翻译成两条可行出路（加一个自定义供应商——headless 按排序优先取它们；或在 ZCode app/CLI 里用账号模型开好会话再到这里续接——`--resume` 完全跳过模型解析，沿用会话原模型）。
 
-1. `~/.zcode/v2/provider_config.json` 里的 `config.defaultModelSelection`——`{ "providerId": …, "modelId": … }`；该提供商可用时按它走；
-2. 没设置、或该提供商不可用（比如没登录对应订阅）时，ZCode **静默回落**到 `config.providerOrder` 第一个提供商 × 它 `modelOrder` 的第一个模型——回合不会失败（实测：把 `defaultModelSelection` 指向一个不存在的提供商，回合正常完成并落在第一个第三方提供商上）。
-
-**设置默认**：关掉 ZCode 后手改这个文件。当前桌面版 UI 写不进这个字段——安装包里有持久化方法但没有任何界面调用它，设置页的「设为默认连接」是 SSH 设备连接、与模型无关，TUI 的 `/model` 只改当前会话。例：把已登录的智谱 GLM 订阅设为默认：
-
-```json
-"defaultModelSelection": { "providerId": "account:bigmodel-individual-coding-plan", "modelId": "GLM-5.3-Flash" }
-```
+**改默认模型**：关掉 ZCode 后改 `~/.zcode/v2/provider_config.json` 里的 `providerOrder`/`modelOrder`（运行中的 server 会用内存值覆盖文件），并让 `modelOrder` 与 `personalModelIds` 保持同一顺序——两者可能不同步，表现出来就是「排第一的没被选中」。
 
 想核对某回合实际用的模型，查 agent 自己的账本——`~/.zcode/cli/db/db.sqlite`：
 
@@ -219,7 +212,7 @@ FROM model_usage ORDER BY started_at DESC;
 **agents.json 条目**：
 
 ```json
-{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "plan" }
+{ "name": "zcode", "port": 3954, "apiKey": "", "mode": "edit" }
 ```
 
 **行为要点**（2026-10-21 对 CLI 0.17.0 / server 3.16.2 经真实桥实机验证）：

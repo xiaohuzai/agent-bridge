@@ -57,7 +57,7 @@
       <section id="modes">
         <p class="eyebrow">modes</p>
         <h2>模式与命令</h2>
-        <p>一条命令、两种模式，共用同一份配置文件：</p>
+        <p>一条命令、三种模式，共用同一份配置文件：</p>
         <table>
           <thead>
             <tr><th>命令</th><th>做什么</th></tr>
@@ -71,6 +71,10 @@
               <td><code>agent-bridge acp &lt;条目名&gt;</code></td>
               <td>把单个条目变成 stdio 上的 ACP 智能体，供编辑器 spawn。stdout 只走协议，日志走 stderr，不开端口。</td>
             </tr>
+            <tr>
+              <td><code>agent-bridge doctor</code></td>
+              <td>开聊前的预检：配置合法性、每个条目的智能体二进制在不在、端口占用（本桥已在该端口上则算通过）、非回环绑定的 apiKey 规则。每行 <code>FAIL</code> 自带修法；有失败退出码为 1。</td>
+            </tr>
           </tbody>
         </table>
         <p>CLI 旗标只有这些：</p>
@@ -81,12 +85,12 @@
           <tbody>
             <tr>
               <td><code>--config FILE</code></td>
-              <td>两者</td>
+              <td>三种模式</td>
               <td>配置文件路径，默认 <code>./agents.json</code>（相对启动目录）。</td>
             </tr>
             <tr>
               <td><code>--bind ADDR</code></td>
-              <td>仅 serve</td>
+              <td>serve / doctor</td>
               <td>监听地址，默认 <code>127.0.0.1</code>。绑定非回环地址时，所有条目必须填 <code>apiKey</code>，否则拒绝启动。在 acp 模式出现会被拒绝。</td>
             </tr>
             <tr>
@@ -95,8 +99,13 @@
               <td>等价于位置参数 <code>&lt;条目名&gt;</code>。</td>
             </tr>
             <tr>
+              <td><code>--json</code></td>
+              <td>仅 doctor</td>
+              <td>输出机器可读的报告（供 agent 驱动的安装流程）。</td>
+            </tr>
+            <tr>
               <td><code>--help</code> / <code>-h</code></td>
-              <td>两者</td>
+              <td>三种模式</td>
               <td>打印用法。</td>
             </tr>
           </tbody>
@@ -122,7 +131,7 @@
   ]
 }</code></pre>
         <p>官方起步配置（<code>agents.example.json</code>，两种安装方式都自带）就是上面这份七家全量；codex / claude / pi / gemini 开箱即跑，用不到的行删掉即可。<strong>qoder</strong> 跑一次 <code>qoder</code> 登录即可（ACP 与 CLI 共享登录态，或经条目 <code>env</code> 设 <code>QODER_PERSONAL_ACCESS_TOKEN</code>）。<strong>zcode</strong> 复用桌面/CLI 登录态，headless 回合没有审批卡，默认 <code>"mode": "edit"</code>（自动应用改动；要只读改成 <code>plan</code>）。模型不由桥决定，也不由 <code>defaultModelSelection</code> 决定（该字段在 headless <code>-p</code> 路径上被忽略，2026-10-22 实测）：每个回合跑的是 <code>~/.zcode/v2/provider_config.json</code> 里 <code>providerOrder</code> 的第一个供应商、再取它 <code>modelOrder</code> 的第一个模型。改顺序就是改这个文件（先关掉 ZCode，运行中的 server 会用内存值覆盖），并让 <code>modelOrder</code> 与 <code>personalModelIds</code> 同序，界面显示才与实际一致。账号类套餐（如智谱/bigmodel）永远不会被自动选中。每回合会用一个 <code>note</code> 事件报告实际模型。<code>name</code> 只能取注册表里的名字：<code>codex</code>、<code>claude</code>、<code>pi</code>、<code>gemini</code>、<code>qoder</code>、<code>dsh</code>、<code>zcode</code>——长尾智能体在 <code>agents-registry.mjs</code> 加一行即可，不用放宽配置校验。</p>
-        <p><strong>dsh</strong> 再存一次 DeepSeek key 即可（dsh Web UI 或 <code>dsh-acp login</code>，与桌面版/Web 共享同一凭据存储；适配器随包内置，默认命令 <code>dsh-acp</code>）。它默认跑在启动 serve 的目录，加 <code>cwd</code> 指到项目——dsh 的会话按它登记进 dsh 工作区、桌面/Web 会话列表直接可见。路由/模型旗标（<code>--model</code>、<code>--reasoning-effort</code>、<code>--permission-mode</code>）走 <code>args</code>；已验证的 key 路由不带 <code>args</code> 即可。</p>
+        <p><strong>dsh</strong> 再存一次 DeepSeek key 即可（dsh Web UI 或 <code>dsh-acp login</code>，与桌面版/Web 共享同一凭据存储；适配器随包内置，默认命令 <code>dsh-acp</code>）。它默认跑在启动 serve 的目录，加 <code>cwd</code> 指到项目——dsh 的会话按它登记进 dsh 工作区、桌面/Web 会话列表直接可见。路由/模型旗标（<code>--provider</code>、<code>--model</code>、<code>--reasoning-effort</code>、<code>--permission-mode</code>）走 <code>args</code>；已验证的 key 路由不带 <code>args</code> 即可。</p>
       </section>
 
       <!-- ============ fields ============ -->
@@ -349,7 +358,7 @@
           </thead>
           <tbody>
             <tr><td>请求体上限</td><td><code>16 MB</code></td><td>约束内联 base64 图片的体量；每回合 ≤18 张图。</td></tr>
-            <tr><td>图片数组上限</td><td><code>8</code> 张</td><td>同上。</td></tr>
+            <tr><td>图片数组上限</td><td><code>18</code> 张</td><td>同上。</td></tr>
             <tr><td>SSE 心跳</td><td><code>15 s</code></td><td>静默期发 <code>: ka</code> 注释帧保活。</td></tr>
             <tr><td>断连语义</td><td>断连 = 中断</td><td>客户端掉线即中断当前回合，不留无人看的长任务。</td></tr>
             <tr><td>回合回放</td><td>无</td><td>回合只直播；离开的回合不补发。</td></tr>

@@ -197,14 +197,17 @@ export class CodexAppServerAdapter {
   /** This child is gone: reject ITS pending rpcs and settle ITS turns. A turn
    * already admitted has no pending rpc tracking it — without this sweep it
    * would hang forever (no notifications can arrive from a dead child).
-   * Everything is matched by child identity so a late exit event can never
-   * touch a newer child's work. */
+   * Pending approvals die with the child too — #write is a no-op against a
+   * dead child, so answering one would report success to the client while
+   * nothing reaches the agent. Everything is matched by child identity so a
+   * late exit event can never touch a newer child's work. */
   #childDown(child, msg) {
     for (const [id, p] of this.pending) {
       if (p.child !== child) continue;
       this.pending.delete(id);
       p.reject(new Error(msg));
     }
+    this.approvals.clear();
     this.#settleTurns((t) => t.child === child, msg);
     if (this.child === child) {
       this.child = null;
@@ -218,6 +221,7 @@ export class CodexAppServerAdapter {
   #sweepStale(msg) {
     for (const [, p] of this.pending) p.reject(new Error(msg));
     this.pending.clear();
+    this.approvals.clear();
     this.#settleTurns(() => true, msg);
     this.threads.clear();
     if (this.child) {

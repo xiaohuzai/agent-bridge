@@ -166,7 +166,7 @@
     <ol class="steps">
       <li>
         <h3>Install</h3>
-        <p>Install the npm package globally — or clone the source and use <code>node cli.mjs</code> where this page says <code>agent-bridge</code> (zero dependencies, no build).</p>
+        <p>Install the npm package globally (Node ≥ 18) — or clone the source and use <code>node cli.mjs</code> where this page says <code>agent-bridge</code> (zero dependencies, no build).</p>
         <pre><code>npm i -g @xiaohuzai/agent-bridge</code></pre>
       </li>
       <li>
@@ -195,7 +195,7 @@ Point any wire-protocol client at these addresses.</code></pre>
     </ol>
     <div class="note">
       <p class="note-title">Install the agents themselves</p>
-      <p>The bridge installs nothing: set up codex, claude and gemini with one npm command each, pi via its own installer, qoder via one install script (run <code>qoder</code> once to log in), dsh by installing DeepSeek Harness (desktop app or CLI) and logging in, zcode by installing the ZCode desktop app or standalone CLI and logging in; then log in to each. The ACP adapters claude, pi and dsh run through (claude-agent-acp, pi-acp, the openma deepseek-harness-acp) ship bundled — nothing to install there. A bridge whose agent is missing still starts and answers <code>/health</code> — it fails on its first turn, with an install hint (including the exact command). ZCode turns need no model setting: the CLI resolves its own default (<code>defaultModelSelection</code> in <code>~/.zcode/v2/provider_config.json</code>, falling back to the provider/model ordering when that provider is unavailable) — set it once in that file and every bridge turn follows.</p>
+      <p>The bridge installs nothing: set up codex, claude and gemini (≥0.62) with one npm command each, pi (≥0.80.4) via its own installer, qoder via one install script (run <code>qoder</code> once to log in), dsh by installing DeepSeek Harness (desktop app or CLI) and logging in, zcode by installing the ZCode desktop app or standalone CLI and logging in; then log in to each. The ACP adapters claude, pi and dsh run through (claude-agent-acp, pi-acp, the openma deepseek-harness-acp) ship bundled — nothing to install there. A bridge whose agent is missing still starts and answers <code>/health</code> — it fails on its first turn, with an install hint (including the exact command). ZCode turns need no model setting on the bridge side: a headless turn runs the first provider in ZCode's own ordering and that provider's first model (<code>providerOrder</code> → its <code>modelOrder</code>), and <code>defaultModelSelection</code> is ignored on the headless path — change the ordering in <code>~/.zcode/v2/provider_config.json</code> (with ZCode closed). Every turn reports the model it actually used on a <code>note</code> event.</p>
       <pre><code>npm i -g @openai/codex                                       <span class="tok-com"># codex</span>
 npm i -g @anthropic-ai/claude-code                           <span class="tok-com"># claude</span>
 npm i -g @google/gemini-cli                                  <span class="tok-com"># gemini</span>
