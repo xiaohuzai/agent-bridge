@@ -88,10 +88,13 @@ export const KNOWN_AGENTS = {
   // system prompt.
   //
   // `mode` is the permission decision: a headless turn has no approval card,
-  // and the CLI's own -p default is yolo. This registry defaults to PLAN
-  // (read-only); set "mode": "build"|"edit"|"guarded"|"yolo" per entry to
-  // widen it deliberately. Images degrade to a note: the CLI only attaches
-  // local files (--attach), and the bridge never writes user images to disk.
+  // and the CLI's own -p default is yolo. This registry defaults to EDIT
+  // (auto-applies file changes — the practical default for a chat client;
+  // owner decision 2026-10-22): `build` pauses for an approval nobody can
+  // give headless, `plan` cannot touch files at all. Set "mode":
+  // "plan"|"build"|"guarded"|"yolo" per entry deliberately. Images degrade
+  // to a note: the CLI only attaches local files (--attach), and the bridge
+  // never writes user images to disk.
   // The CLI is not bundled — desktop installs carry it at
   // ~/.zcode/server/bin/zcode, which the adapter falls back to when `zcode`
   // is not on PATH.

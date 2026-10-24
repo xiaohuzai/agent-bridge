@@ -8,7 +8,7 @@
 
 新 front 是**加一扇门，不是改旧门**。具体保证，四条全是结构性的、不靠自觉：
 
-1. **路径隔离**：ACP 门只活在 `/acp` 一个路径上。v1 的四个端点（`/health` `/sessions` `/turns` `/approvals/:requestId`）路由、事件名、语义（disconnect=abort、start 先于 delta、15s 心跳）逐字不动。
+1. **路径隔离**：ACP 门只活在 `/acp` 一个路径上。v1 的全部端点（`/health` `/sessions` `/turns` `/approvals/:requestId` `/threads/:sessionId/title`——设计时四个，threads/title 是后来按 additive 规则加的第五个）路由、事件名、语义（disconnect=abort、start 先于 delta、15s 心跳）逐字不动。
 2. **配置 opt-in**：`"acp": true` 是新的可选字段，默认不开。不写它的配置文件行为与今天 100% 一致——包括已有的 `agents.json` 一字不改照常工作。
 3. **回归网**：现有全部测试（37 个，真实 HTTP server 驱动）就是 v1 契约测试；任何破坏 v1 的改动必然红。另加一个**契约钉死测试**：断言端点清单与 SSE 事件名集合，防止"顺手"改动。
 4. **入宪**：AGENTS.md Conventions 已写入「v1 FROZEN — additive-only」条款；重命名/删除/改事件语义必须走 v2，不允许在 v1 上发生。

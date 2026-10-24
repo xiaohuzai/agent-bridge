@@ -54,20 +54,20 @@ git clone https://github.com/xiaohuzai/agent-bridge && cd agent-bridge
 |---|---|---|
 | **codex** | `npm i -g @openai/codex`，然后三选一：`codex login`（ChatGPT 订阅）· `export OPENAI_API_KEY=…` · `~/.codex/config.toml` 配自定义 provider | ✅ 实机验证 |
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → 跑一次 `claude` 完成登录（官方 `claude-agent-acp` 壳已随包内置） | ✅ 实机验证 |
-| **pi** | pi 本体走官方自安装（≥0.98，或 `npm i -g @earendil-works/pi-coding-agent`）→ 跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置；pi 本体走不了 npm——安装器和 npm 包冲突） | ✅ 实机验证 |
+| **pi** | pi ≥ 0.80.4（Node ≥ 22）：官方自安装器，**或** `npm i -g @earendil-works/pi-coding-agent`——两条路线**二选一**（安装器的符号链接和 npm 包冲突报 `EEXIST`）→ 跑一次 `pi` 选 provider（`pi-acp` 壳已随包内置） | ✅ 实机验证 |
 | **gemini** | `npm i -g @google/gemini-cli` → 跑一次 `gemini` 完成登录（或环境变量鉴权：`GEMINI_API_KEY`，或经 `GOOGLE_GEMINI_BASE_URL` 接自定义网关） | ✅ 实机验证 |
 | **qoder** | 安装脚本 `curl -fsSL https://qoder.com/install | bash`（或旧法 `npm i -g @qoder-ai/qodercli`）→ 跑一次 `qoder` 完成登录（ACP 与 CLI 共享登录态），或环境变量 `QODER_PERSONAL_ACCESS_TOKEN` | ⚠️ 链路已验证（握手/能力/鉴权边界，qoder-cli 1.1.71）——真实模型回合待有凭据的机器 |
-| **dsh**（DeepSeek Harness） | `npm i -g @openma/deepseek-harness-acp`（openma ACP 适配器——进程内组装你安装的 dsh，token 级流式，会话/凭据与 dsh 桌面版/Web 共享）；key 走 dsh Web UI 或 `dsh-acp login` | ✅ 实机验证（适配器 0.4.37 对 dsh 0.2.0-rc.2） |
-| **zcode** | ZCode 桌面版（桥会自动找到它自带的 CLI——Linux `~/.zcode/server/bin/zcode`，Windows/macOS 用 app 内 `resources/glm/zcode.cjs` 跑在 app 运行时上；也可用 `ZCODE_CLI` 或条目 `command` 手动指定）或 PATH 上的独立 `zcode` CLI → 登录一次（`zcode login` / 桌面版）；headless 回合默认只读 `plan`——要写文件把 `"mode"` 设成 `build`/`edit` | ✅ 实机验证（headless stream-json，CLI 0.17.0：流式、工具行、usage、`--resume` + 缓存） |
+| **dsh**（DeepSeek Harness） | 装好 DeepSeek Harness（桌面版或 CLI）即可——openma ACP 适配器**随包内置**（进程内组装你的 dsh，token 级流式，会话/凭据与 dsh 桌面版/Web 共享）；仅当内置可选依赖被跳过时才 `npm i -g @openma/deepseek-harness-acp`（Node ≥ 22.15）；key 走 dsh Web UI 或 `dsh-acp login` | ✅ 实机验证（适配器 0.4.37 对 dsh 0.2.0-rc.2） |
+| **zcode** | ZCode 桌面版（桥会自动找到它自带的 CLI——Linux `~/.zcode/server/bin/zcode`，Windows/macOS 用 app 内 `resources/glm/zcode.cjs` 跑在 app 运行时上；也可用 `ZCODE_CLI` 或条目 `command` 手动指定）或 PATH 上的独立 `zcode` CLI → 登录一次（`zcode login` / 桌面版）；headless 回合默认 `edit`（自动应用改动——只读就设 `"mode": "plan"`；`build` 在 headless 下会卡住：它停下来等一个没人能给的批准） | ✅ 实机验证（headless stream-json，CLI 0.17.0：流式、工具行、usage、`--resume` + 缓存） |
 | 任何 ACP 智能体（opencode、kimi、qwen……） | 各自的 CLI + 登录 | ❓ 仅 schema 级 |
 
-ACP **壳**（`claude-agent-acp`、`pi-acp`）作为内置可选依赖随包分发——无状态胶水，无需单独安装；你自己维护的壳优先生效，壳始终跟你在用的 CLI 版本配对（内置副本只是零配置兜底）。agent **CLI 本体**刻意留在你自己手里：它们各自独立演进、自带状态，塞一份固定版本进 agent-bridge 会把终端写入的 CLI 状态（`~/.codex`、`~/.claude`）分叉成两套——桥启动的就是你已经在用、已经登录的那个 CLI。pi 本体额外走不了 npm（安装器冲突，见上表）。某个 agent 没装时，对应的桥照样会启动、`/health` 也正常，只有第一次对话才失败（带安装提示）。
+ACP **适配器**（`claude-agent-acp`、`pi-acp`、dsh 用的 openma `deepseek-harness-acp`）作为内置可选依赖随包分发——无状态胶水，无需单独安装；你自己维护的壳优先生效，壳始终跟你在用的 CLI 版本配对（内置副本只是零配置兜底）。agent **CLI 本体**刻意留在你自己手里：它们各自独立演进、自带状态，塞一份固定版本进 agent-bridge 会把终端写入的 CLI 状态（`~/.codex`、`~/.claude`）分叉成两套——桥启动的就是你已经在用、已经登录的那个 CLI。pi 本体有官方安装器与 npm 两条安装路线，两者互斥（冲突见上表）。某个 agent 没装时，对应的桥照样会启动、`/health` 也正常，只有第一次对话才失败（带安装提示）。
 
 各 agent 的详细安装、行为注意事项与故障排查：[docs/agents.zh-CN.md](./docs/agents.zh-CN.md)。
 
 ## 配置
 
-每个桥——单个还是多个——都是一份 JSON 配置里的一条；这是启动桥的唯一方式。文件名必须是 `agents.json`，放在你启动桥的目录下。**二选一**：
+每个桥——单个还是多个——都是一份 JSON 配置里的一条；这是启动桥的唯一方式。默认文件名是启动目录下的 `agents.json`（`--config` 可指向任意路径）。**二选一**：
 
 **复制起步配置。** `agents.example.json` 两种安装方式都自带；没有配置时直接跑一次 `agent-bridge serve`，它会打印出你机器上那条准确的 `cp` 命令：
 
@@ -91,14 +91,14 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
     { "name": "claude",    "port": 3949, "apiKey": "" },
     { "name": "pi",        "port": 3950, "apiKey": "" },
     { "name": "gemini",    "port": 3951, "apiKey": "" },
-    { "name": "qoder",     "port": 3953, "apiKey": "" },
     { "name": "dsh",       "port": 3952, "apiKey": "" },
-    { "name": "zcode",     "port": 3954, "apiKey": "", "mode": "edit" },
+    { "name": "qoder",     "port": 3953, "apiKey": "" },
+    { "name": "zcode",     "port": 3954, "apiKey": "", "mode": "edit" }
   ]
 }
 ```
 
-自带起步配置列全七个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、qoder 在 3953、zcode 在 3954。前四个开箱即跑，自己机器上不需要密码。**qoder** 跑一次 `qoder login` 即可（ACP 与 CLI 共享登录态），或经条目 `env` 设个人访问令牌。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**zcode** 复用 ZCode 桌面版/CLI 已有的登录态；headless 回合没有审批卡，所以 `mode` **就是**权限决定：`edit`（默认，自动应用改动——适合以问答为主、偶尔写文档的场景）、`plan`（只读）、`guarded`/`yolo` 放宽。**`build` 在 headless 下不要用**：它会停下来等批准，而没人能批准。**headless 回合用哪个模型，完全由 ZCode 的供应商排序决定：`providerOrder` 里的第一个供应商，再取它 `modelOrder` 里的第一个模型**——桥不传模型，也传不了。要改就改 `~/.zcode/v2/provider_config.json`（先关掉 ZCode，运行中的 server 会用内存里的值覆盖文件），并把 `modelOrder` 与 `personalModelIds` 写成同一个顺序，这样界面显示的就是实际会跑的。桌面 UI 会写的 `defaultModelSelection` 在 **headless `-p` 路径上被忽略**（2026-10-22 实测：该字段的各种写法全都不生效）；而**账号类供应商（如已登录的智谱/bigmodel 套餐）永远不会被自动选中**——把自定义供应商全部隐藏后，`zcode -p` 直接报 `Select a model before sending a message`。`--resume` 会完全跳过模型解析，所以续接一个用账号模型创建好的会话，就会一直用那个模型。每个回合都会用一个 `note` 事件（`kind: "model"`）报告它实际解析到的模型——以它为准，不要信回复文本。细节见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 zcode 一节。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
+自带起步配置列全七个已知名字——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951、dsh 在 3952、qoder 在 3953、zcode 在 3954。前四个开箱即跑，自己机器上不需要密码。**qoder** 跑一次 `qoder login` 即可（ACP 与 CLI 共享登录态），或经条目 `env` 设个人访问令牌。**dsh** 再存一次 DeepSeek key 即可（dsh Web UI 或 `dsh-acp login`，与桌面版/Web 共享同一凭据存储）；适配器随包内置、无需单独安装。**zcode** 复用 ZCode 桌面版/CLI 已有的登录态；headless 回合没有审批卡，所以 `mode` **就是**权限决定：`edit`（默认，自动应用改动——适合以问答为主、偶尔写文档的场景）、`plan`（只读）、`guarded`/`yolo` 放宽。**`build` 在 headless 下不要用**：它会停下来等批准，而没人能批准。**headless 回合用哪个模型，完全由 ZCode 的供应商排序决定：`providerOrder` 里的第一个供应商，再取它 `modelOrder` 里的第一个模型**——桥不传模型，也传不了。要改就改 `~/.zcode/v2/provider_config.json`（先关掉 ZCode，运行中的 server 会用内存里的值覆盖文件），并把 `modelOrder` 与 `personalModelIds` 写成同一个顺序，这样界面显示的就是实际会跑的。桌面 UI 会写的 `defaultModelSelection` 在 **headless `-p` 路径上被忽略**（2026-10-22 实测：该字段的各种写法全都不生效）；而**账号类供应商（如已登录的智谱/bigmodel 套餐）永远不会被自动选中**——把自定义供应商全部隐藏后，`zcode -p` 直接报 `Select a model before sending a message`。`--resume` 会完全跳过模型解析，所以续接一个用账号模型创建好的会话，就会一直用那个模型。每个回合都会用一个 `note` 事件（`kind: "model"`）报告它实际解析到的模型——以它为准，不要信回复文本。细节见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 zcode 一节。它跑在你启动 `serve` 的目录里，加 `"cwd"` 指到项目目录——这个目录还决定会话登记进哪个 dsh 工作区（以及桌面/Web 会话列表看不看得到）。路由/模型旗标（`--provider`、`--model`、`--reasoning-effort`、`--permission-mode`）走 `args`（如 `["--model", "deepseek-flash"]`）；已验证的 key 路由不带 `args` 就能跑——取值与取舍见 [docs/agents.zh-CN.md](./docs/agents.zh-CN.md) 的 dsh 一节。
 
 单个智能体就是同一份文件删到只剩一条，用不到的行删掉即可。等文件里填了真实的 `apiKey`，`chmod 600` 才开始有意义。
 
@@ -107,13 +107,14 @@ Windows 上 PowerShell 可直接跑这两行；`cmd` 里用 CLI 打印出的路�
 | `name` | 必须是注册表里的已知 agent——[`agents-registry.mjs`](./agents-registry.mjs)（当前：`codex`、`claude`、`pi`、`gemini`、`qoder`、`dsh`、`zcode`） |
 | `port` | serve 必填，每桥唯一（仅用于 `acp` 的条目可省略） |
 | `apiKey` | 留空/省略 = 无键（仅回环）；非回环绑定时必填 |
-| `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
+| `command` | 可选；覆盖默认启动命令——如 `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]`（codex 不适用——用 `codexBin`） |
 | `args` | 可选；**追加**到 agent 启动命令后的额外参数（仅 ACP 拉起的 agent）——如 dsh 的模型旗标 `["--model", "deepseek-flash"]`；`~` 不展开，请用绝对路径 |
 | `cwd` | 可选；不写就跑在你启动 `serve` 的目录（写 `"."` 等价）；`~` 与相对路径会自动解析 |
 | `env` | 可选 `{VAR: value}` 对象，合并进 daemon 环境后传给被 spawn 的 agent；条目 env 覆盖注册表默认 |
 | `mode` | 仅 headless agent（zcode）：`edit`（默认，自动应用改动）· `plan`（只读）· `build`（改前等批准——**headless 会卡住**，因为没有审批卡）· `guarded`（yolo + 危险 shell 命令前停一次）· `yolo`（全放开） |
 | `acp` | 可选；`true` 时此桥启用 ACP-over-WebSocket 门（见「三扇门」） |
-| `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | 可选，codex 相关调优（取值与取舍见下） |
+| `corsOrigin` | 可选；`"*"` 对非回环来源开放——显式开关，配 `apiKey` 一起用（默认：只回射回环来源，其余来源不带 CORS 头） |
+| `sandbox` · `approval` · `network` · `codexBin` · `codexHome` | 可选，codex 相关调优（取值与取舍见下） |
 
 每个字段的类型、默认值与**全部可选取值**，以及 codex 沙箱/审批的取舍（「审批卡太多怎么办」的配方），都整理在网站的[配置参考](https://xiaohuzai.github.io/agent-bridge/configuration.html)。
 
@@ -145,7 +146,7 @@ agent-bridge doctor --json   # 机器可读，供 agent 自动安装流程使用
 
 1. **装 Node 18+**（[nodejs.org](https://nodejs.org)），没有就先装。
 2. **拿到 agent-bridge**：`npm i -g @xiaohuzai/agent-bridge`——之后任意目录敲 `agent-bridge` 都行。（喜欢源码？clone 仓库改用 `node cli.mjs`，效果一样。）
-3. **建配置**：`agent-bridge` 需要在启动目录里有一个 `agents.json`。先跑一次 `agent-bridge serve`——没有配置时它会打印出你这次安装对应的复制命令——或者照[「配置」](#配置)一节手写那份 JSON。这份配置不用改——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951，自己机器上不需要密码（agent 本身要在第 4 步装）。
+3. **建配置**：`agent-bridge` 需要在启动目录里有一个 `agents.json`。先跑一次 `agent-bridge serve`——没有配置时它会打印出你这次安装对应的复制命令——或者照[「配置」](#配置)一节手写那份 JSON。这份配置不用改——codex 在 3948、claude 在 3949、pi 在 3950、gemini 在 3951，自己机器上不需要密码（agent 本身要在第 4 步装——ACP 适配器已随包内置）。
 4. **给你配置里的每个 agent 都装好并登录**——起步配置开了这些：
    - **codex**——`npm i -g @openai/codex`，然后 `codex login` 一次。
    - **claude**——`npm i -g @anthropic-ai/claude-code`，跑一次 `claude` 登录（它需要的 ACP 壳已随包内置）。
@@ -165,19 +166,20 @@ agent-bridge doctor --json   # 机器可读，供 agent 自动安装流程使用
    会看到：
 
    ```
-   agent-bridge serve: 6 bridges on http://127.0.0.1
+   agent-bridge serve: 7 bridges on http://127.0.0.1
      codex      :3948  (no api key — loopback only)
      claude     :3949  (no api key — loopback only)
      pi         :3950  (no api key — loopback only)
      gemini     :3951  (no api key — loopback only)
      dsh        :3952  (no api key — loopback only)
      qoder      :3953  (no api key — loopback only)
+     zcode      :3954  (no api key — loopback only)
    ```
 
 6. **连接 browsa**：在 browsa 的设置里添加一个 bridge provider，地址填 `http://127.0.0.1:3948`——就是上面 codex 那一行。自己机器上不需要 key。
 7. **开聊。** 在 browsa 里输入，回复实时流式到达；agent 要执行命令时 browsa 会弹出审批——once / always / deny 你说了算。
 
-那个终端窗口别关——关了 agent 就停了。想用其余几个？在 browsa 里每个 agent 加一个桥，分别指向 3949–3951。
+那个终端窗口别关——关了 agent 就停了。想用其余几个？在 browsa 里每个 agent 加一个桥，分别指向 3949–3954。
 
 ## 三扇门
 
@@ -219,7 +221,7 @@ ACP 门说的就是现成 ACP 客户端已经在说的话——客户端不需�
 
 ## 内置 HTTP API（v1）
 
-极简之门——四个端点、一套 SSE 事件词汇，刻意为之并已冻结。已经会说 ACP 的客户端请走上面的 ACP 门；其余所有人从这里开始。
+极简之门——五个端点、一套 SSE 事件词汇，刻意为之并已冻结。已经会说 ACP 的客户端请走上面的 ACP 门；其余所有人从这里开始。
 
 ```mermaid
 sequenceDiagram
@@ -321,7 +323,7 @@ async function turn(text, sessionId) {
 - **为多 agent 而生。** 一个守护进程、一份配置文件、N 个 agent——各自端口、各自 apiKey。第一代"单 CLI 配个网页 UI"的项目已经谢幕（归档的归档、弃养的弃养）；活下来的都是多 agent。
 - **审批是一等公民。** 权限请求带着 agent 自己的选项流向客户端，由客户端决定 once / always / deny。知名度最高的多 agent HTTP 桥在服务端替客户端自动回答"总是允许"——我们认为那是 bug，不是 feature。
 - **实机验证的适配器。** codex 走原生 app-server 协议，claude/pi 走 ACP 对接官方壳，gemini/qoder 走各自的原生 `--acp` 模式，dsh 走进程内组装它的 openma ACP 适配器——每一条协议事实都来自真实 agent，不是文档。
-- **零运行时依赖。** 一次 clone，一条命令。没有安装器、没有容器、没有数据库——仅两个无状态 ACP 壳作为内置可选依赖随包分发，agent CLI 本体留在你自己手里。
+- **零运行时依赖。** 一次 clone，一条命令。没有安装器、没有容器、没有数据库——仅三个 ACP 适配器包（claude-agent-acp、pi-acp、openma 的 dsh 适配器）作为内置可选依赖随包分发，agent CLI 本体留在你自己手里。
 - **两端都是 ACP。** 桥对 agent 说 ACP（stdio 适配器），对客户端也说 ACP（WebSocket / stdio 门）——这也是它有资格进入 ACP Registry 的原因（提交记录见 [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md)；编辑器里 `npx @xiaohuzai/agent-bridge acp claude` 即可拉起）。
 
 ## 部署到远程服务器
@@ -375,7 +377,7 @@ bridge.example.com {
 
 协议说明：
 
-- ACP adapter 协商 protocolVersion 1–2（官方壳 codex-acp、claude-agent-acp 与 pi-acp 都说 v1）。只实现 `session/load` 做 restore 的 agent（pi-acp）也能用：先试 `session/resume`，被拒自动回退 `session/load`。
+- ACP adapter 协商 protocolVersion 1–2（claude-agent-acp、pi-acp 与备选的 codex-acp 路线都说 v1）。只实现 `session/load` 做 restore 的 agent（pi-acp）也能用：先试 `session/resume`，被拒自动回退 `session/load`。
 - ACP-over-WebSocket 门遵循官方远程传输 RFD（状态 Active，尚未定稿）——规范落地后我们会做一次合规校准。
 
 ## 开发
@@ -385,7 +387,7 @@ npm test   # 真适配器 + 真 HTTP 服务 对阵 脚本化假 agent——无�
 node --test test/agent-bridge-acp.test.mjs   # 跑单个文件（别用 `node --test test/`——走 npm 脚本的 glob）
 ```
 
-布局一句话：[`server.mjs`](./server.mjs) 是 v1 HTTP+SSE 线协议（头注释即权威、已冻结的契约）· `serve.mjs`/`cli.mjs` 读配置、拉起服务 · [`adapters/`](./adapters/) 对接 agent（codex 原生 app-server、通用 ACP-stdio 适配器）· `acp-front*.mjs` + `wire-ws.mjs` 是可选的 ACP 门 · `test/` 放脚本化假 agent。
+布局一句话：[`server.mjs`](./server.mjs) 是 v1 HTTP+SSE 线协议（头注释即权威、已冻结的契约）· `serve.mjs`/`cli.mjs` 读配置、拉起服务 · [`adapters/`](./adapters/) 对接 agent（codex 原生 app-server、通用 ACP-stdio 适配器、驱动 zcode 的 headless-CLI 适配器）· `acp-front*.mjs` + `wire-ws.mjs` 是可选的 ACP 门 · `test/` 放脚本化假 agent。
 
 长尾 agent 接入只需在 [`agents-registry.mjs`](./agents-registry.mjs) 加一行（ACP agent 给个启动命令即可）。适配器开发只有一条铁律：协议事实必须从真 agent 实测捕获、记进适配器头注释——验证纪律、已踩过的坑和发版流程都在 [AGENTS.md](./AGENTS.md)。
 

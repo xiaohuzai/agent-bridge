@@ -12,7 +12,7 @@
 //   POST /turns               body {text, sessionId?, images?} → SSE stream:
 //       images: optional array of strings — https:// URLs or data: URLs
 //       (base64). They ride through to the agent as image inputs; the JSON
-//       body cap (4MB) bounds their total size.
+//       body cap (16MB) bounds their total size.
 //       data: {"type":"start","sessionId":"…","turnId":"…"}
 //       data: {"type":"delta","text":"…"}
 //       data: {"type":"note","text":"…"}          ← the agent's INTERIM message

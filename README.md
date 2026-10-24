@@ -54,20 +54,20 @@ Just trying it out? `npx @xiaohuzai/agent-bridge serve` runs without installing.
 |---|---|---|
 | **codex** | `npm i -g @openai/codex`, then any ONE of: `codex login` (ChatGPT subscription) · `export OPENAI_API_KEY=…` · custom provider in `~/.codex/config.toml` | ✅ live-verified |
 | **claude code** | `npm i -g @anthropic-ai/claude-code` → run `claude` once to log in (the official `claude-agent-acp` shim ships bundled) | ✅ live-verified |
-| **pi** | pi itself via its own installer (≥0.98, or `npm i -g @earendil-works/pi-coding-agent`) → run `pi` once to pick a provider (the `pi-acp` shim ships bundled; pi itself can't come from npm — its installer collides with the npm package) | ✅ live-verified |
+| **pi** | pi ≥ 0.80.4 (Node ≥ 22) via its own installer **or** `npm i -g @earendil-works/pi-coding-agent` — pick ONE route (the installer's symlink and the npm package collide with `EEXIST`) → run `pi` once to pick a provider (the `pi-acp` shim ships bundled) | ✅ live-verified |
 | **gemini** | `npm i -g @google/gemini-cli` → run `gemini` once to log in (or env auth: `GEMINI_API_KEY`, or a custom gateway via `GOOGLE_GEMINI_BASE_URL`) | ✅ live-verified |
 | **qoder** | install script `curl -fsSL https://qoder.com/install | bash` (or legacy `npm i -g @qoder-ai/qodercli`) → run `qoder login` once (ACP shares the CLI's login state), or env auth `QODER_PERSONAL_ACCESS_TOKEN` | ⚠️ wire-verified (handshake/capabilities/auth boundary, qoder-cli 1.1.71) — a real model turn awaits a credentialed machine |
-| **dsh** (DeepSeek Harness) | `npm i -g @openma/deepseek-harness-acp` (the openma ACP adapter — composes your installed dsh in-process, token-level streaming, sessions/credentials shared with the dsh desktop/Web UI); key via the dsh Web UI or `dsh-acp login` | ✅ live-verified (adapter 0.4.37 on dsh 0.2.0-rc.2) |
-| **zcode** | the ZCode desktop app (the bridge auto-finds its bundled CLI — Linux `~/.zcode/server/bin/zcode`, Windows/macOS `resources/glm/zcode.cjs` run on the app runtime; `ZCODE_CLI` or the entry's `command` pin it manually) or the `zcode` CLI on PATH → sign in once (`zcode login` / the desktop app); headless turns default to read-only `plan` — set `"mode": "build"`/`"edit"` to allow writes | ✅ live-verified (headless stream-json, CLI 0.17.0: streaming, tool rows, usage, `--resume` + cache) |
+| **dsh** (DeepSeek Harness) | install DeepSeek Harness (desktop app or CLI) — the openma ACP adapter ships **bundled** with agent-bridge (composes your dsh in-process, token-level streaming, sessions/credentials shared with the dsh desktop/Web UI); `npm i -g @openma/deepseek-harness-acp` only if the bundled optional dep was skipped (Node ≥ 22.15); key via the dsh Web UI or `dsh-acp login` | ✅ live-verified (adapter 0.4.37 on dsh 0.2.0-rc.2) |
+| **zcode** | the ZCode desktop app (the bridge auto-finds its bundled CLI — Linux `~/.zcode/server/bin/zcode`, Windows/macOS `resources/glm/zcode.cjs` run on the app runtime; `ZCODE_CLI` or the entry's `command` pin it manually) or the `zcode` CLI on PATH → sign in once (`zcode login` / the desktop app); headless turns default to `edit` (auto-applies changes — use `"mode": "plan"` for read-only; `build` stalls headless: it waits for an approval nobody can give) | ✅ live-verified (headless stream-json, CLI 0.17.0: streaming, tool rows, usage, `--resume` + cache) |
 | any ACP agent (opencode, kimi, qwen, …) | that agent's own CLI + login | ❓ schema-level |
 
-The ACP **shims** (`claude-agent-acp`, `pi-acp`) ship as bundled optional dependencies — stateless glue, nothing to install for them; if you maintain your own shim install it wins, so the shim stays paired with the CLI version you actually run (the bundled copy is the zero-config fallback). The agent **CLIs** themselves stay YOUR installs, on purpose: they are versioned independently and stateful, and a pinned copy inside agent-bridge would fork the very CLI state (`~/.codex`, `~/.claude`) your terminal writes — the bridge spawns the same CLI you already use and log into. pi's runtime additionally cannot come from npm at all (installer collision, above). A bridge whose agent is missing still starts and answers `/health`; it fails on its first turn, with an install hint.
+The ACP **adapters** (`claude-agent-acp`, `pi-acp`, and the openma `deepseek-harness-acp` for dsh) ship as bundled optional dependencies — stateless glue, nothing to install for them; if you maintain your own shim install it wins, so the shim stays paired with the CLI version you actually run (the bundled copy is the zero-config fallback). The agent **CLIs** themselves stay YOUR installs, on purpose: they are versioned independently and stateful, and a pinned copy inside agent-bridge would fork the very CLI state (`~/.codex`, `~/.claude`) your terminal writes — the bridge spawns the same CLI you already use and log into. pi additionally has two install routes (its own installer or npm) that collide with each other — pick one. A bridge whose agent is missing still starts and answers `/health`; it fails on its first turn, with an install hint.
 
 Per-agent details, behavior notes and troubleshooting: [docs/agents.md](./docs/agents.md).
 
 ## Configure
 
-Every bridge — single or many — is an entry in one JSON config file; that is the only way to start the bridge. It must be named `agents.json` and live in the directory you start the bridge from. Pick **one** of the two ways:
+Every bridge — single or many — is an entry in one JSON config file; that is the only way to start the bridge. By default it is `agents.json` in the directory you start the bridge from (`--config` points at any path). Pick **one** of the two ways:
 
 **Copy the shipped starter.** `agents.example.json` ships with both installs, and running `agent-bridge serve` with no config prints the exact `cp` line for your machine:
 
@@ -91,14 +91,14 @@ On Windows, PowerShell runs both lines as-is; in `cmd`, use the path the CLI pri
     { "name": "claude",    "port": 3949, "apiKey": "" },
     { "name": "pi",        "port": 3950, "apiKey": "" },
     { "name": "gemini",    "port": 3951, "apiKey": "" },
-    { "name": "qoder",     "port": 3953, "apiKey": "" },
     { "name": "dsh",       "port": 3952, "apiKey": "" },
-    { "name": "zcode",     "port": 3954, "apiKey": "", "mode": "edit" },
+    { "name": "qoder",     "port": 3953, "apiKey": "" },
+    { "name": "zcode",     "port": 3954, "apiKey": "", "mode": "edit" }
   ]
 }
 ```
 
-The shipped starter lists seven known agents — codex on 3948, claude on 3949, pi on 3950, gemini on 3951, dsh on 3952, qoder on 3953, zcode on 3954. codex / claude / pi / gemini run as-is, no key needed on your own machine. **qoder** needs `qoder login` once (the ACP door shares the CLI's login state), or a personal access token via the entry's `env`. **dsh** needs a DeepSeek key saved once (dsh Web UI or `dsh-acp login` — the same credential store the desktop/Web UI use); the adapter ships bundled, no separate install. **zcode** reuses the login your ZCode desktop app/CLI already has; its headless turns have no approval card, so `mode` **is** the permission decision: `edit` (the default — applies changes without asking, which is what a chat client mostly reading but sometimes writing docs needs), `plan` (read-only), `guarded`/`yolo` for wider permissions. `build` is the one to avoid headless: it pauses for approval, and nobody can answer. **Which model a headless turn runs is decided entirely by ZCode's provider ordering: the first provider in `providerOrder`, then the first model in that provider's `modelOrder`** — the bridge never passes a model and cannot. Edit `~/.zcode/v2/provider_config.json` (with ZCode closed — a running server overwrites it from memory) to change it, and keep `modelOrder`/`personalModelIds` identical so the UI shows what will actually run. `defaultModelSelection`, the field the desktop UI would set, is **ignored on the headless `-p` path** (verified live 2026-10-22: every variant of that edit was ignored), and an **account-plan provider (e.g. a logged-in zhipu/bigmodel plan) is never auto-selected** — with no custom provider visible, `zcode -p` fails `Select a model before sending a message`. `--resume` skips model resolution entirely, so continuing a session created with an account model keeps that model. Each turn reports the model it actually resolved on a `note` event (`kind: "model"`) — trust that, not the reply text. Details: [docs/agents.md](./docs/agents.md#zcode). It works in the directory you start `serve` from; add `"cwd"` to point it at a project — that directory also decides which dsh workspace the sessions register into (and whether the desktop/Web session list shows them). Route/model flags (`--model`, `--reasoning-effort`, `--permission-mode`) ride `args` (e.g. `["--model", "deepseek-flash"]`); dsh's verified key route needs no `args` at all — values and trade-offs in the dsh section of [docs/agents.md](./docs/agents.md).
+The shipped starter lists seven known agents — codex on 3948, claude on 3949, pi on 3950, gemini on 3951, dsh on 3952, qoder on 3953, zcode on 3954. codex / claude / pi / gemini run as-is, no key needed on your own machine. **qoder** needs `qoder login` once (the ACP door shares the CLI's login state), or a personal access token via the entry's `env`. **dsh** needs a DeepSeek key saved once (dsh Web UI or `dsh-acp login` — the same credential store the desktop/Web UI use); the adapter ships bundled, no separate install. **zcode** reuses the login your ZCode desktop app/CLI already has; its headless turns have no approval card, so `mode` **is** the permission decision: `edit` (the default — applies changes without asking, which is what a chat client mostly reading but sometimes writing docs needs), `plan` (read-only), `guarded`/`yolo` for wider permissions. `build` is the one to avoid headless: it pauses for approval, and nobody can answer. **Which model a headless turn runs is decided entirely by ZCode's provider ordering: the first provider in `providerOrder`, then the first model in that provider's `modelOrder`** — the bridge never passes a model and cannot. Edit `~/.zcode/v2/provider_config.json` (with ZCode closed — a running server overwrites it from memory) to change it, and keep `modelOrder`/`personalModelIds` identical so the UI shows what will actually run. `defaultModelSelection`, the field the desktop UI would set, is **ignored on the headless `-p` path** (verified live 2026-10-22: every variant of that edit was ignored), and an **account-plan provider (e.g. a logged-in zhipu/bigmodel plan) is never auto-selected** — with no custom provider visible, `zcode -p` fails `Select a model before sending a message`. `--resume` skips model resolution entirely, so continuing a session created with an account model keeps that model. Each turn reports the model it actually resolved on a `note` event (`kind: "model"`) — trust that, not the reply text. Details: [docs/agents.md](./docs/agents.md#zcode). It works in the directory you start `serve` from; add `"cwd"` to point it at a project — that directory also decides which dsh workspace the sessions register into (and whether the desktop/Web session list shows them). Route/model flags (`--provider`, `--model`, `--reasoning-effort`, `--permission-mode`) ride `args` (e.g. `["--model", "deepseek-flash"]`); dsh's verified key route needs no `args` at all — values and trade-offs in the dsh section of [docs/agents.md](./docs/agents.md).
 
 A single agent is the same file pruned to one entry — delete the rows you don't use. `chmod 600` starts to matter once a real `apiKey` goes in the file.
 
@@ -107,13 +107,14 @@ A single agent is the same file pruned to one entry — delete the rows you don'
 | `name` | must be a known agent — registry in [`agents-registry.mjs`](./agents-registry.mjs) (today: `codex`, `claude`, `pi`, `gemini`, `qoder`, `dsh`, `zcode`) |
 | `port` | required for serve, unique per bridge (may be omitted for entries used only via `acp`) |
 | `apiKey` | `""` / omitted = keyless (loopback only); required when binding non-loopback |
-| `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` |
+| `command` | optional; overrides the default spawn — e.g. `["npx", "-y", "@agentclientprotocol/claude-agent-acp"]` (not for codex — use `codexBin`) |
 | `args` | optional; extra argv **appended** to the agent's spawn command (ACP-spawned agents only) — e.g. dsh's model flag `["--model", "deepseek-flash"]`; `~` is not expanded, use absolute paths |
 | `cwd` | optional; omit it and the agent runs in the directory you start `serve` from (writing `"."` is the same thing); `~` and relative paths are resolved |
 | `env` | optional `{VAR: value}` object merged over the daemon's environment for the spawned agent; entry env overrides any registry default |
 | `mode` | headless agents only (zcode): `edit` (default — auto-applies changes) · `plan` (read-only) · `build` (pauses for approval — **stalls headless**: there is no approval card) · `guarded` (yolo + pauses on dangerous shell commands) · `yolo` (everything allowed) |
 | `acp` | optional; `true` opts this bridge into the ACP-over-WebSocket door (see Three ways to connect) |
-| `sandbox` · `approval` · `network` · `codexBin` · `codexHome` · `corsOrigin` | optional, codex-specific tuning (values and trade-offs below) |
+| `corsOrigin` | optional; `"*"` opens the bridge to non-loopback origins — explicit opt-in, pair it with an `apiKey` (default: loopback origins are reflected, others get no CORS header) |
+| `sandbox` · `approval` · `network` · `codexBin` · `codexHome` | optional, codex-specific tuning (values and trade-offs below) |
 
 Type, default and **every allowed value** per field — plus the codex sandbox/approval trade-offs (the recipe for "too many approval cards") — live on the website's [configuration reference](https://xiaohuzai.github.io/agent-bridge/en/configuration.html).
 
@@ -165,19 +166,20 @@ New here? The whole journey is about five minutes:
    You'll see:
 
    ```
-   agent-bridge serve: 6 bridges on http://127.0.0.1
+   agent-bridge serve: 7 bridges on http://127.0.0.1
      codex      :3948  (no api key — loopback only)
      claude     :3949  (no api key — loopback only)
      pi         :3950  (no api key — loopback only)
      gemini     :3951  (no api key — loopback only)
      dsh        :3952  (no api key — loopback only)
      qoder      :3953  (no api key — loopback only)
+     zcode      :3954  (no api key — loopback only)
    ```
 
 6. **Connect browsa**: in browsa's settings, add a bridge provider and point it at `http://127.0.0.1:3948` — that's the codex line above. No key needed on your own machine.
 7. **Chat.** Type in browsa; the reply streams back live. When the agent wants to run a command, browsa shows the approval — once / always / deny is your call.
 
-Keep that terminal window open — closing it stops the agents. Want the other agents too? Add one bridge per agent in browsa, pointing at ports 3949–3951.
+Keep that terminal window open — closing it stops the agents. Want the other agents too? Add one bridge per agent in browsa, pointing at ports 3949–3954.
 
 ## Three ways to connect
 
@@ -219,7 +221,7 @@ The ACP doors are what off-the-shelf ACP clients already speak — no agent-brid
 
 ## The built-in HTTP API (v1)
 
-The minimal door — four endpoints and one SSE event vocabulary, deliberate and frozen. Clients that already speak ACP use the ACP doors above; everyone else starts here.
+The minimal door — five endpoints and one SSE event vocabulary, deliberate and frozen. Clients that already speak ACP use the ACP doors above; everyone else starts here.
 
 ```mermaid
 sequenceDiagram
@@ -321,7 +323,7 @@ The authoritative contract — edge rules like first-turn session assignment and
 - **Multi-agent by design.** One daemon, one config file, N agents — each on its own port with its own key. The first wave of "a web UI for one CLI" projects is gone (archived, sunset); what survived is multi-agent.
 - **Approvals are first-class.** Permission requests stream to the client with the agent's own options, and the client decides once / always / deny. The best-known multi-agent HTTP bridge answers "always allow" server-side on the client's behalf — we think that's a bug, not a feature.
 - **Live-verified adapters.** codex runs on its native app-server protocol; claude/pi through ACP against the official shims; gemini/qoder through their native `--acp` modes; dsh through the openma ACP adapter that composes it in-process. Every protocol fact was captured from real agents, not from docs.
-- **Zero runtime dependencies.** One clone, one command. No installer, no container, no database — only the two stateless ACP shims ship as bundled optional dependencies; the agent CLIs stay yours.
+- **Zero runtime dependencies.** One clone, one command. No installer, no container, no database — only the ACP adapter packages (`claude-agent-acp`, `pi-acp`, the openma dsh adapter) ship as bundled optional dependencies; the agent CLIs stay yours.
 - **ACP on both ends.** The bridge speaks ACP toward agents (stdio adapters) and toward clients (WebSocket / stdio fronts) — which is also what qualifies it for the ACP Registry (submission record: [docs/acp-registry.zh-CN.md](./docs/acp-registry.zh-CN.md); editors spawn it directly via `npx @xiaohuzai/agent-bridge acp claude`).
 
 ## Run it on a remote server
@@ -375,7 +377,7 @@ Turns are live-only (all doors):
 
 Protocol notes:
 
-- The ACP adapter negotiates protocolVersion 1–2 (the official shims — codex-acp, claude-agent-acp — and pi-acp all speak v1). Agents that only implement `session/load` for restore (pi-acp) are handled: `session/resume` is tried first, `session/load` is the automatic fallback.
+- The ACP adapter negotiates protocolVersion 1–2 (claude-agent-acp, pi-acp — and the alternative codex-acp route — all speak v1). Agents that only implement `session/load` for restore (pi-acp) are handled: `session/resume` is tried first, `session/load` is the automatic fallback.
 - The ACP-over-WebSocket front follows the official remote-transport RFD, which is still Active (not final); when it lands we'll make a compliance pass.
 
 ## Development
@@ -385,7 +387,7 @@ npm test   # real adapter + real HTTP server vs scripted fake agents — no inst
 node --test test/agent-bridge-acp.test.mjs   # one file (never `node --test test/` — go through the npm glob)
 ```
 
-Layout in one breath: [`server.mjs`](./server.mjs) is the v1 HTTP+SSE wire (its header comment is the authoritative, frozen contract) · `serve.mjs`/`cli.mjs` load the config and boot · [`adapters/`](./adapters/) speak toward agents (codex's native app-server, a generic ACP-stdio adapter) · `acp-front*.mjs` + `wire-ws.mjs` are the opt-in ACP doors · `test/` holds the scripted fake agents.
+Layout in one breath: [`server.mjs`](./server.mjs) is the v1 HTTP+SSE wire (its header comment is the authoritative, frozen contract) · `serve.mjs`/`cli.mjs` load the config and boot · [`adapters/`](./adapters/) speak toward agents (codex's native app-server, a generic ACP-stdio adapter, and a headless-CLI adapter driving zcode) · `acp-front*.mjs` + `wire-ws.mjs` are the opt-in ACP doors · `test/` holds the scripted fake agents.
 
 Adding a long-tail agent is one line in [`agents-registry.mjs`](./agents-registry.mjs) (ACP agents just need a spawn command). One rule governs adapter work: protocol facts are captured live from real agents and recorded in the adapter's header comment — [AGENTS.md](./AGENTS.md) has the verification discipline, the traps already paid for, and the release flow.
 

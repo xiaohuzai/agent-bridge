@@ -406,7 +406,7 @@ export class HeadlessCliAdapter {
     if (Array.isArray(images) && images.length) {
       onEvent({
         type: 'note',
-        text: `（注：${images.length} 张图片未随附——headless CLI 只接受本地文件 --attach，bridge 不把图片写盘。）`,
+        text: `[agent-bridge: ${images.length} image(s) omitted — the headless CLI only attaches local files, and the bridge never writes user images to disk]`,
       });
     }
 
@@ -476,7 +476,6 @@ export class HeadlessCliAdapter {
       }
       if (!msg || typeof msg !== 'object') return;
       if (msg.turnId && !turn.turnId) turn.turnId = msg.turnId;
-      const hadSession = !!turn.sessionId;
       if (msg.sessionId && !turn.sessionId) {
         turn.sessionId = msg.sessionId;
         this.sessions.set(msg.sessionId, turn);
@@ -495,7 +494,6 @@ export class HeadlessCliAdapter {
         turn.modelAnnounced = true;
         emit({ type: 'note', text: `model: ${turn.model.model}${turn.model.provider ? ` (${turn.model.provider})` : ''}${turn.model.reasoningLevel ? ` · reasoning ${turn.model.reasoningLevel}` : ''}`, kind: 'model', model: turn.model });
       }
-      if (hadSession) return;
     };
 
     try {

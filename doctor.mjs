@@ -74,9 +74,10 @@ function portFree(port, bind) {
  * parsed body when it looks like our health object ({ok:true,…}), else null;
  * any failure (refused, timeout, non-JSON) degrades to {status: 0, json: null}. */
 function probeHealth(port, bind, token) {
-  // The health probe connects to the bind address itself; 0.0.0.0 is not a
-  // connectable host — loopback stands in for it (same mapping the banner uses).
-  const host = bind === '0.0.0.0' ? '127.0.0.1' : bind;
+  // The health probe connects to the bind address itself; the wildcard binds
+  // are not connectable hosts — loopback stands in for them (same mapping the
+  // banner uses).
+  const host = bind === '0.0.0.0' ? '127.0.0.1' : bind === '::' ? '::1' : bind;
   return new Promise((resolveProbe) => {
     const req = http.get({
       host, port, path: '/health',
@@ -93,6 +94,11 @@ function probeHealth(port, bind, token) {
     });
     req.on('timeout', () => req.destroy());
     req.on('error', () => resolveProbe({ status: 0, json: null }));
+    // req.destroy() on an oversized body fires 'close' WITHOUT 'error' or the
+    // response 'end' (a foreign server answering with a huge page would
+    // otherwise hang doctor forever). resolveProbe is idempotent, so this
+    // guard never races the normal paths.
+    req.on('close', () => resolveProbe({ status: 0, json: null }));
   });
 }
 

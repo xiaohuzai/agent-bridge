@@ -183,7 +183,7 @@ test('images degrade to an honest note instead of being dropped silently', async
   const res = await post('/turns', { text: 'PONG', images: [PNG_1X1] });
   const sse = sseReader(res.body);
   const note = await sse.readUntil((f) => f.data.type === 'note');
-  assert.match(note.data.text, /1 张图片/);
+  assert.match(note.data.text, /1 image\(s\) omitted/);
   const done = await sse.readUntil((f) => f.data.type === 'done');
   assert.equal(done.data.full, 'PONG');
 });
