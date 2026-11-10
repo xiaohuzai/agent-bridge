@@ -107,6 +107,7 @@ Traps already paid for:
 - Pending JSON-RPC sweeps go through `adapters/pending-rpcs.mjs` (`rejectPendingForChild` / `rejectAllPending`) — child identity is the rule, so a late exit can never reject a newer child's calls. Tests: `agent-bridge-pending-rpcs`.
 - The npm tarball is pinned by `test/agent-bridge-package.test.mjs`: every runtime module must ship, tests must not, and the paused native zcode adapter (`adapters/zcode-server.mjs`) is excluded via `adapters/.npmignore` — zcode itself runs on the headless CLI path.
 - `validateConfig` rejects kind-specific fields on the wrong adapter (sandbox/approval/network/codexBin/codexHome → codex; args/transcriptFix/workspaceRegister/claudeProjectsDir → ACP; mode → headless) instead of silently ignoring them. Tests: `agent-bridge-serve`.
+- The v1 turn lifecycle lives in `turn-stream.mjs` (`createTurnStream`) behind a `wire` seam; server.mjs owns only SSE/HTTP plumbing. Disconnect races are unit-tested in `agent-bridge-turn-stream` — the close listener stays on the response, never the request.
 
 ## Roadmap (dual-door strategy — owner decision 2026-09-08)
 
