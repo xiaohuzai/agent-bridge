@@ -102,6 +102,7 @@ Traps already paid for:
 
 - All adapters build the v1 `usage` object through `adapters/usage.mjs` (`v1Usage`) — one wire shape: the frozen top-level `cached_tokens` plus a nested `prompt_tokens_details.cached_tokens` additive alias. Tests: `agent-bridge-usage`.
 - Every JSONL stdio path frames through `jsonl-lines.mjs` (`createLineSplitter`) — one place for chunk reassembly, CRLF, split multibyte decoding, and the headless exit-tail `flush()`. Tests: `agent-bridge-jsonl-lines`.
+- Headless spawn resolution is `headlessAttempts()` (`adapters/headless-cli.mjs`); the adapter and `doctor` consume the SAME list. A `command` equal to the profile default must NOT disable `ZCODE_CLI` or the desktop-install fallbacks. Tests: `agent-bridge-headless-attempts`.
 
 ## Roadmap (dual-door strategy — owner decision 2026-09-08)
 

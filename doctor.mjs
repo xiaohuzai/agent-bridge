@@ -27,12 +27,12 @@
 
 import http from 'node:http';
 import { createServer } from 'node:net';
-import { accessSync, constants, existsSync } from 'node:fs';
+import { accessSync, constants } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { loadConfig, configPermissionsWarning, missingConfigHint, LOOPBACKS } from './serve.mjs';
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 import { agentPath } from './adapters/agent-env.mjs';
-import { HEADLESS_PROFILES } from './adapters/headless-cli.mjs';
+import { headlessAttempts } from './adapters/headless-cli.mjs';
 
 const HEALTH_TIMEOUT_MS = 1500;
 const HEALTH_BODY_CAP = 4096;
@@ -102,25 +102,29 @@ function probeHealth(port, bind, token) {
   });
 }
 
-/** The spawn command a bridge entry will use — mirrors adapterFor's
- * resolution (explicit override > registry default > headless fallback
- * install) as a static check. */
-function resolveCommandOf(b) {
-  const spec = KNOWN_AGENTS[b.name];
-  const isCodex = spec.kind === 'codex';
-  const cmd = isCodex ? (b.codexBin || 'codex') : (b.command || spec.command)[0];
-  const overridden = isCodex ? b.codexBin !== undefined : b.command !== undefined;
-  let found = findOnPath(cmd);
-  if (!found && spec.kind === 'headless' && !overridden) {
-    // Desktop-bundled CLIs (ZCode) are not on PATH; the adapter walks the
-    // same platform candidates (Linux ~/.zcode/server/bin/zcode, the
-    // Windows/macOS app bundle run as Electron-as-Node) — doctor checks the
-    // same places so its verdict can never disagree with a spawn.
-    for (const c of (HEADLESS_PROFILES[spec.profile]?.fallbackCandidates?.() || [])) {
-      if (existsSync(c.bin)) { found = c.bin; break; }
+/** The spawn command a bridge entry will use — the SAME resolution the
+ * adapter runs, not a mirror of it. Headless entries consume
+ * headlessAttempts() (explicit command > ZCODE_CLI > PATH > desktop
+ * fallbacks), so doctor cannot pass a case a spawn would fail, or fail one
+ * it would pass. */
+export function resolveCommandOf(b, { spec = KNOWN_AGENTS[b.name], find = findOnPath } = {}) {
+  if (spec.kind === 'headless') {
+    const attempts = headlessAttempts({ command: b.command ?? null, spec, env: b.env });
+    for (const att of attempts) {
+      // A shell line is the user's explicit escape hatch (quoted paths with
+      // spaces); it cannot be statically verified, so treat it as resolved.
+      if (att.shellLine) return { cmd: att.label, overridden: true, found: att.label };
+      const found = find(att.bin);
+      if (found) return { cmd: att.bin, overridden: !!b.command, found };
     }
+    return { cmd: attempts[0]?.bin || spec.command[0], overridden: !!b.command, found: null };
   }
-  return { cmd, overridden, found };
+  if (spec.kind === 'codex') {
+    const cmd = b.codexBin || 'codex';
+    return { cmd, overridden: b.codexBin !== undefined, found: find(cmd) };
+  }
+  const cmd = (b.command || spec.command)[0];
+  return { cmd, overridden: b.command !== undefined, found: find(cmd) };
 }
 
 /** Run every check. Returns {ok, checks} WITHOUT printing — cli.mjs owns the
