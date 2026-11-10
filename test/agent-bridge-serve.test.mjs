@@ -51,9 +51,9 @@ test('validateConfig: all problems reported at once, with the fix hint', () => {
     () => validateConfig({ bridges: [
       { name: 'nope', port: 1, apiKey: 'k' },                       // unknown agent
       { name: 'codex', port: 3949, apiKey: 'k', command: ['x'] },   // command on codex
-      { name: 'codex', port: 3950, apiKey: 'k' },                   // dup name
+      { name: 'codex', port: 3950, apiKey: 'k', sandbox: 'yolo' },  // dup name + bad sandbox value
       { name: 'claude', port: 3949, apiKey: 'k' },                  // dup port (with codex above)
-      { name: 'claude', port: 70000, apiKey: 'k', sandbox: 'yolo' }, // bad port + bad sandbox
+      { name: 'claude', port: 70000, apiKey: 'k', sandbox: 'yolo' }, // bad port + kind gate
       { name: 'pi', port: 3951, apiKey: 'k', env: 'FOO=bar' }       // env must be an object
     ] }),
     (e) => /unknown agent "nope".*known agents: codex, claude, pi, gemini, qoder, dsh, zcode/s.test(e.message)
@@ -62,11 +62,25 @@ test('validateConfig: all problems reported at once, with the fix hint', () => {
       && /duplicate port 3949/.test(e.message)
       && /"port" must be an integer/.test(e.message)
       && /"sandbox" must be one of/.test(e.message)
+      && /"sandbox" only applies to the codex native adapter/.test(e.message)
       && /"env" must be an object of strings/.test(e.message)
   );
   // env itself must not be the trigger above — valid shapes pass untouched
   const ok = validateConfig({ bridges: [{ name: 'claude', port: 1, apiKey: 'k', env: { FOO: 'bar' } }] });
   assert.deepEqual(ok.bridges[0].env, { FOO: 'bar' });
+});
+
+test('validateConfig: kind-specific fields are rejected on the wrong adapter', () => {
+  assert.throws(
+    () => validateConfig({ bridges: [
+      { name: 'claude', port: 1, apiKey: 'k', sandbox: 'workspace-write' },
+      { name: 'codex', port: 2, apiKey: 'k', transcriptFix: 'claude' },
+      { name: 'pi', port: 3, apiKey: 'k', network: true },
+    ] }),
+    (e) => /"sandbox" only applies to the codex native adapter/.test(e.message)
+      && /"transcriptFix" only applies to ACP-spawned agents/.test(e.message)
+      && /"network" only applies to the codex native adapter/.test(e.message),
+  );
 });
 
 test('adapterFor: entry env overrides the registry default (which presets none)', () => {

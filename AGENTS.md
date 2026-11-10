@@ -106,6 +106,7 @@ Traps already paid for:
 - One live turn per session in every long-lived adapter (codex / ACP / headless): `interrupt(sessionId)` is keyed by the session, so a second turn must be refused, never overwrite the lookup. Tests: `agent-bridge-headless` (busy-session case).
 - Pending JSON-RPC sweeps go through `adapters/pending-rpcs.mjs` (`rejectPendingForChild` / `rejectAllPending`) — child identity is the rule, so a late exit can never reject a newer child's calls. Tests: `agent-bridge-pending-rpcs`.
 - The npm tarball is pinned by `test/agent-bridge-package.test.mjs`: every runtime module must ship, tests must not, and the paused native zcode adapter (`adapters/zcode-server.mjs`) is excluded via `adapters/.npmignore` — zcode itself runs on the headless CLI path.
+- `validateConfig` rejects kind-specific fields on the wrong adapter (sandbox/approval/network/codexBin/codexHome → codex; args/transcriptFix/workspaceRegister/claudeProjectsDir → ACP; mode → headless) instead of silently ignoring them. Tests: `agent-bridge-serve`.
 
 ## Roadmap (dual-door strategy — owner decision 2026-09-08)
 
