@@ -16,17 +16,20 @@ import { resolveCommandOf } from '../doctor.mjs';
 
 const NO_ZCODE_CLI = { ZCODE_CLI: '' };
 const FALLBACK = { bin: '/opt/fake/fake-cli', prefix: [], envPatch: {}, label: 'desktop fallback' };
-const spec = {
-  kind: 'headless',
-  name: 'fake',
+// Registry entry (name → kind/profile) vs profile spec (spawn rule). Doctor
+// must hop from the former to the latter; passing the registry entry straight
+// to headlessAttempts was the bug this test file now pins.
+const spec = { kind: 'headless', name: 'fake', profile: 'fake', command: ['fake-cli'] };
+const profile = {
   command: ['fake-cli'],
   fallbackCandidates: () => [FALLBACK],
 };
+const profiles = { fake: profile };
 
 test('an explicit non-default command is the only attempt', () => {
   const attempts = headlessAttempts({
     command: ['other-cli', '--flag'],
-    spec,
+    spec: profile,
     env: { ZCODE_CLI: '/usr/bin/env node /opt/cli.js' },
   });
   assert.deepEqual(attempts, [
@@ -37,7 +40,7 @@ test('an explicit non-default command is the only attempt', () => {
 test('a command EQUAL to the profile default keeps ZCODE_CLI and fallbacks', () => {
   const attempts = headlessAttempts({
     command: ['fake-cli'],
-    spec,
+    spec: profile,
     env: { ZCODE_CLI: '/usr/bin/env node /opt/cli.js' },
   });
   assert.deepEqual(attempts.map((a) => a.label), [
@@ -50,14 +53,14 @@ test('a command EQUAL to the profile default keeps ZCODE_CLI and fallbacks', () 
 test('ZCODE_CLI is trimmed and rides as a shell line', () => {
   const [first] = headlessAttempts({
     command: null,
-    spec,
+    spec: profile,
     env: { ZCODE_CLI: '  /usr/bin/env node /opt/cli.js  ' },
   });
   assert.equal(first.shellLine, '/usr/bin/env node /opt/cli.js');
 });
 
 test('no command and no ZCODE_CLI → PATH then desktop fallback', () => {
-  const attempts = headlessAttempts({ command: null, spec, env: NO_ZCODE_CLI });
+  const attempts = headlessAttempts({ command: null, spec: profile, env: NO_ZCODE_CLI });
   assert.deepEqual(attempts.map((a) => a.label), ['fake-cli (PATH)', 'desktop fallback']);
 });
 
@@ -65,6 +68,7 @@ test('doctor resolves the same fallback the adapter would spawn', () => {
   const b = { name: 'fake', command: ['fake-cli'], env: NO_ZCODE_CLI };
   const r = resolveCommandOf(b, {
     spec,
+    profiles,
     find: (bin) => (bin === FALLBACK.bin ? FALLBACK.bin : null),
   });
   assert.equal(r.found, FALLBACK.bin,
@@ -77,6 +81,7 @@ test('doctor does NOT walk fallbacks for an explicit non-default command', () =>
   const asked = [];
   const r = resolveCommandOf(b, {
     spec,
+    profiles,
     find: (bin) => { asked.push(bin); return null; },
   });
   assert.deepEqual(asked, ['other-cli']);
@@ -86,6 +91,6 @@ test('doctor does NOT walk fallbacks for an explicit non-default command', () =>
 
 test('doctor treats a set ZCODE_CLI as resolved (user escape hatch)', () => {
   const b = { name: 'fake', env: { ZCODE_CLI: '/usr/bin/env node /opt/cli.js' } };
-  const r = resolveCommandOf(b, { spec, find: () => null });
+  const r = resolveCommandOf(b, { spec, profiles, find: () => null });
   assert.equal(r.found, 'ZCODE_CLI=/usr/bin/env node /opt/cli.js');
 });

@@ -32,7 +32,7 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { loadConfig, configPermissionsWarning, missingConfigHint, LOOPBACKS } from './serve.mjs';
 import { KNOWN_AGENTS, knownAgentNames } from './agents-registry.mjs';
 import { agentPath } from './adapters/agent-env.mjs';
-import { headlessAttempts } from './adapters/headless-cli.mjs';
+import { HEADLESS_PROFILES, headlessAttempts } from './adapters/headless-cli.mjs';
 
 const HEALTH_TIMEOUT_MS = 1500;
 const HEALTH_BODY_CAP = 4096;
@@ -107,9 +107,14 @@ function probeHealth(port, bind, token) {
  * headlessAttempts() (explicit command > ZCODE_CLI > PATH > desktop
  * fallbacks), so doctor cannot pass a case a spawn would fail, or fail one
  * it would pass. */
-export function resolveCommandOf(b, { spec = KNOWN_AGENTS[b.name], find = findOnPath } = {}) {
+export function resolveCommandOf(b, { spec = KNOWN_AGENTS[b.name], profiles = HEADLESS_PROFILES, find = findOnPath } = {}) {
   if (spec.kind === 'headless') {
-    const attempts = headlessAttempts({ command: b.command ?? null, spec, env: b.env });
+    // The registry entry names the profile; the spawn rule (command, argsFor,
+    // fallbackCandidates) lives in HEADLESS_PROFILES. Passing the registry
+    // entry here silently dropped the desktop-install fallbacks.
+    const profile = profiles[spec.profile];
+    if (!profile) return { cmd: spec.command?.[0], overridden: !!b.command, found: null };
+    const attempts = headlessAttempts({ command: b.command ?? null, spec: profile, env: b.env });
     for (const att of attempts) {
       // A shell line is the user's explicit escape hatch (quoted paths with
       // spaces); it cannot be statically verified, so treat it as resolved.
