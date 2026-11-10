@@ -105,6 +105,7 @@ Traps already paid for:
 - Headless spawn resolution is `headlessAttempts()` (`adapters/headless-cli.mjs`); the adapter and `doctor` consume the SAME list. A `command` equal to the profile default must NOT disable `ZCODE_CLI` or the desktop-install fallbacks. Tests: `agent-bridge-headless-attempts`.
 - One live turn per session in every long-lived adapter (codex / ACP / headless): `interrupt(sessionId)` is keyed by the session, so a second turn must be refused, never overwrite the lookup. Tests: `agent-bridge-headless` (busy-session case).
 - Pending JSON-RPC sweeps go through `adapters/pending-rpcs.mjs` (`rejectPendingForChild` / `rejectAllPending`) — child identity is the rule, so a late exit can never reject a newer child's calls. Tests: `agent-bridge-pending-rpcs`.
+- The npm tarball is pinned by `test/agent-bridge-package.test.mjs`: every runtime module must ship, tests must not, and the paused native zcode adapter (`adapters/zcode-server.mjs`) is excluded via `adapters/.npmignore` — zcode itself runs on the headless CLI path.
 
 ## Roadmap (dual-door strategy — owner decision 2026-09-08)
 
