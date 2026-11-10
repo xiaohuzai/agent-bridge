@@ -32,6 +32,7 @@ test('the tarball carries every runtime module and drops the paused native adapt
     'agents-registry.mjs',
     'adapters/usage.mjs',
     'adapters/pending-rpcs.mjs',
+    'adapters/jsonl-rpc.mjs',
     'adapters/headless-cli.mjs',
     'adapters/codex-app-server.mjs',
     'adapters/acp-stdio.mjs',

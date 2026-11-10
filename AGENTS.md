@@ -108,6 +108,7 @@ Traps already paid for:
 - The npm tarball is pinned by `test/agent-bridge-package.test.mjs`: every runtime module must ship, tests must not, and the paused native zcode adapter (`adapters/zcode-server.mjs`) is excluded via `adapters/.npmignore` — zcode itself runs on the headless CLI path.
 - `validateConfig` rejects kind-specific fields on the wrong adapter (sandbox/approval/network/codexBin/codexHome → codex; args/transcriptFix/workspaceRegister/claudeProjectsDir → ACP; mode → headless) instead of silently ignoring them. Tests: `agent-bridge-serve`.
 - The v1 turn lifecycle lives in `turn-stream.mjs` (`createTurnStream`) behind a `wire` seam; server.mjs owns only SSE/HTTP plumbing. Disconnect races are unit-tested in `agent-bridge-turn-stream` — the close listener stays on the response, never the request.
+- The two long-lived JSONL adapters (codex app-server, ACP stdio) get spawn / single-flight lock / rpc table / child-down sweep from `adapters/jsonl-rpc.mjs`; protocol dispatch stays in the adapter (`onFrame`, `onDown`, `handshake`). Tests: `agent-bridge-jsonl-rpc` plus the adapter integration suites.
 
 ## Roadmap (dual-door strategy — owner decision 2026-09-08)
 

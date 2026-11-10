@@ -69,14 +69,10 @@
 // _meta (airOnlyMeta) and still `return null`s completed agentMessages, so
 // the boundary work would land in OUR ACP adapter anyway with worse signal.
 
-import { spawn } from 'node:child_process';
-import { agentSpawnEnv } from './agent-env.mjs';
 import { v1Usage } from './usage.mjs';
-import { createLineSplitter } from '../jsonl-lines.mjs';
-import { rejectPendingForChild, rejectAllPending } from './pending-rpcs.mjs';
+import { createJsonlRpc } from './jsonl-rpc.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
-const RPC_TIMEOUT_MS = 30000;
 
 /** Build a v1 `tool` event. `id` (additive on the wire) is the agent's own
  * tool-call id — clients pair a call's started/completed updates on it,
@@ -126,108 +122,40 @@ export class CodexAppServerAdapter {
     log = () => {},
   } = {}) {
     this.opts = { codexBin, codexHome, cwd, sandbox, network, approval, env, log };
-    this.child = null;
-    this.ready = false;
-    this.starting = null;          // in-flight spawn+initialize (serialization lock)
-    this.nextId = 1;
-    this.pending = new Map();      // rpc id → {resolve, reject}
     this.threads = new Map();      // sessionId(threadId) → {turnId, items, curMsg, sawDelta, usage, events}
     this.approvals = new Map();    // approval requestId → {method, params}
-    this.lines = createLineSplitter((line) => this.#onLine(line));
-    this.closed = false;
+    this.link = createJsonlRpc({
+      command: [codexBin, 'app-server'],
+      cwd,
+      // CODEX_HOME and the entry's own env override the daemon env; the
+      // bundled shim PATH is appended underneath (adapters/agent-env.mjs).
+      env: { ...(codexHome ? { CODEX_HOME: codexHome } : {}), ...env },
+      label: 'codex',
+      description: 'codex app-server',
+      notFound: (bin) => `codex CLI not found: '${bin}' — install it with: npm i -g @openai/codex, or pass --codex-bin /path/to/codex`,
+      startFailed: (bin, err) => `failed to start codex '${bin}': ${err.message}`,
+      log,
+      onFrame: (j) => this.#onFrame(j),
+      onDown: ({ child, all, message }) => {
+        this.approvals.clear();
+        this.#settleTurns((t) => all || t.child === child, message);
+        if (all) this.threads.clear();
+      },
+      handshake: async (link) => {
+        await link.rpc('initialize', {
+          clientInfo: { name: 'agent-bridge', title: 'agent-bridge', version: '1.0.0' },
+        }, INIT_TIMEOUT_MS);
+      },
+    });
   }
 
   /** Spawn the app-server child (if needed) and run the initialize handshake. */
   async ensureChild() {
-    if (this.child && this.child.exitCode === null && this.ready) return;
-    if (this.closed) throw new Error('bridge adapter already stopped');
-    // Serialize spawn+initialize: two concurrent first-turns (e.g. two
-    // sessions opened at once on a fresh bridge) would each run this body and
-    // the second would overwrite this.child, orphaning the first child.
-    if (!this.starting) this.starting = this.#startChild().finally(() => { this.starting = null; });
-    await this.starting;
+    await this.link.ensure();
   }
 
-  async #startChild() {
-    const { codexBin, codexHome, log } = this.opts;
-    // A respawn only starts once the previous child is gone or unusable —
-    // whatever it left behind is stale by definition. Settle it BEFORE the
-    // fresh child so nothing can hang on a dead process, and kill the
-    // half-dead one (e.g. an initialize that timed out) instead of leaking it.
-    this.#sweepStale('codex app-server restarted');
-    // env: the system PATH first, this package's bundled ACP shim dirs
-    // APPENDED after it (adapters/agent-env.mjs); CODEX_HOME and the entry's
-    // own env ({VAR: value} — e.g. OPENAI_API_KEY for config.toml providers)
-    // override on top.
-    const env = agentSpawnEnv({ ...(codexHome ? { CODEX_HOME: codexHome } : {}), ...this.opts.env });
-    const child = spawn(codexBin, ['app-server'], {
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      // Windows: npm-installed CLIs are .cmd shims — spawn() throws EINVAL on
-      // them without a shell (Node ≥18.20). 'app-server' carries no spaces or
-      // metacharacters, so shell join is safe; a --codex-bin path containing
-      // spaces must be quoted by the caller on Windows.
-      shell: process.platform === 'win32',
-      windowsHide: true,
-    });
-    this.child = child;
-    this.ready = false;
-    child.stdout.on('data', (d) => this.#onData(String(d)));
-    child.stderr.on('data', (d) => log(`[codex stderr] ${String(d).slice(0, 300)}`));
-    child.on('exit', (code) => {
-      log(`[codex] app-server exited (code=${code})`);
-      this.#childDown(child, `codex app-server exited (code=${code})`);
-    });
-    // A spawn failure (ENOENT: codex not installed, EACCES: not executable)
-    // surfaces as an async 'error' event — WITHOUT a listener Node turns it
-    // into an uncaughtException that kills the whole bridge (first-run trap:
-    // /health looks fine, the first turn kills the daemon). Reject the
-    // in-flight rpcs with an install hint (server.mjs relays it as the
-    // turn's SSE error event) and null the child so a later turn can retry.
-    child.on('error', (err) => {
-      const msg = err.code === 'ENOENT'
-        ? `codex CLI not found: '${codexBin}' — install it with: npm i -g @openai/codex, or pass --codex-bin /path/to/codex`
-        : `failed to start codex '${codexBin}': ${err.message}`;
-      log(`[codex] ${msg}`);
-      this.#childDown(child, msg);
-    });
-    await this.rpc('initialize', {
-      clientInfo: { name: 'agent-bridge', title: 'agent-bridge', version: '1.0.0' },
-    }, INIT_TIMEOUT_MS);
-    this.ready = true;
-  }
-
-  /** This child is gone: reject ITS pending rpcs and settle ITS turns. A turn
-   * already admitted has no pending rpc tracking it — without this sweep it
-   * would hang forever (no notifications can arrive from a dead child).
-   * Pending approvals die with the child too — #write is a no-op against a
-   * dead child, so answering one would report success to the client while
-   * nothing reaches the agent. Everything is matched by child identity so a
-   * late exit event can never touch a newer child's work. */
-  #childDown(child, msg) {
-    rejectPendingForChild(this.pending, child, msg);
-    this.approvals.clear();
-    this.#settleTurns((t) => t.child === child, msg);
-    if (this.child === child) {
-      this.child = null;
-      this.ready = false;
-    }
-  }
-
-  /** Respawn hygiene: anything still unsettled belongs to the child being
-   * replaced — error it out and forget it. Threads are re-adopted later via
-   * thread/resume (the agent keeps its own persistence). */
-  #sweepStale(msg) {
-    rejectAllPending(this.pending, msg);
-    this.approvals.clear();
-    this.#settleTurns(() => true, msg);
-    this.threads.clear();
-    if (this.child) {
-      try { this.child.kill('SIGKILL'); } catch (_) {}
-      this.child = null;
-    }
-    this.ready = false;
-  }
+  /** The live app-server child (tests kill it to exercise the death path). */
+  get child() { return this.link.child; }
 
   #settleTurns(match, msg) {
     for (const [, t] of this.threads) {
@@ -235,18 +163,6 @@ export class CodexAppServerAdapter {
       t.finished = true;
       t.events?.({ type: 'error', message: `${msg} mid-turn` });
     }
-  }
-
-  #onData(chunk) {
-    this.lines.push(chunk);
-  }
-
-  #onLine(raw) {
-    const line = raw.trim();
-    if (!line) return;
-    let j;
-    try { j = JSON.parse(line); } catch { return; }
-    this.#onFrame(j);
   }
 
   #onFrame(j) {
@@ -269,15 +185,15 @@ export class CodexAppServerAdapter {
       } else {
         // e.g. item/tool/requestUserInput, mcpServer/elicitation/request —
         // not modeled in v1; refuse so the turn can proceed.
-        this.#write({ jsonrpc: '2.0', id: j.id, error: { code: -32601, message: `agent-bridge: ${j.method} not supported` } });
+        this.link.write({ jsonrpc: '2.0', id: j.id, error: { code: -32601, message: `agent-bridge: ${j.method} not supported` } });
       }
       return;
     }
     // response to one of our rpcs
     if (j.id !== undefined) {
-      const p = this.pending.get(j.id);
+      const p = this.link.pending.get(j.id);
       if (!p) return;
-      this.pending.delete(j.id);
+      this.link.pending.delete(j.id);
       j.error ? p.reject(new Error(`${j.error.message || JSON.stringify(j.error)}`)) : p.resolve(j.result);
       return;
     }
@@ -468,25 +384,8 @@ export class CodexAppServerAdapter {
     }
   }
 
-  #write(obj) {
-    try { this.child?.stdin?.write(JSON.stringify(obj) + '\n'); } catch (_) {}
-  }
-
-  rpc(method, params, timeoutMs = RPC_TIMEOUT_MS) {
-    const id = this.nextId++;
-    const frame = { jsonrpc: '2.0', id, method, params };
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`codex rpc timeout: ${method}`));
-      }, timeoutMs);
-      this.pending.set(id, {
-        resolve: (v) => { clearTimeout(timer); resolve(v); },
-        reject: (e) => { clearTimeout(timer); reject(e); },
-        child: this.child,
-      });
-      this.#write(frame);
-    });
+  rpc(method, params, timeoutMs) {
+    return this.link.rpc(method, params, timeoutMs);
   }
 
   /** Run one agent turn. Resolves as soon as the turn is ADMITTED (turn id
@@ -530,7 +429,7 @@ export class CodexAppServerAdapter {
       turnId: null, awaitingTurnStart: true, sawDelta: false,
       deltaItems: new Set(), itemIds: new Set(), items: [], curMsg: null,
       thinking: false, thinkingText: '',
-      usage: null, finished: false, events: onEvent, child: this.child,
+      usage: null, finished: false, events: onEvent, child: this.link.child,
     };
     this.threads.set(threadId, entry);
     // Emit start BEFORE turn/start: the sessionId is already known here, and
@@ -614,7 +513,7 @@ export class CodexAppServerAdapter {
     } else {
       decision = v2 ? 'accept' : 'approved';
     }
-    this.#write({ jsonrpc: '2.0', id: entry.id, result: { decision } });
+    this.link.write({ jsonrpc: '2.0', id: entry.id, result: { decision } });
   }
 
   /** Known sessions for GET /sessions: lets a client recover session ids
@@ -627,9 +526,6 @@ export class CodexAppServerAdapter {
   }
 
   stop() {
-    this.closed = true;
-    try { this.child?.stdin?.end(); } catch (_) {} // stdin EOF → codex exits even if the kill races
-    try { this.child?.kill('SIGKILL'); } catch (_) {} // TerminateProcess on Windows
-    this.child = null;
+    this.link.stop();
   }
 }
