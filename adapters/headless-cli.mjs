@@ -67,6 +67,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { agentSpawnEnv } from './agent-env.mjs';
 import { v1Usage } from './usage.mjs';
+import { createLineSplitter } from '../jsonl-lines.mjs';
 
 const ADMISSION_TIMEOUT_MS = 15_000;
 const KILL_GRACE_MS = 1_500;
@@ -516,17 +517,9 @@ export class HeadlessCliAdapter {
     }
 
     const child = turn.child;
-    let buf = '';
+    const lines = createLineSplitter(onLine);
     child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => {
-      buf += chunk;
-      let idx;
-      while ((idx = buf.indexOf('\n')) !== -1) {
-        const line = buf.slice(0, idx);
-        buf = buf.slice(idx + 1);
-        onLine(line);
-      }
-    });
+    child.stdout.on('data', (chunk) => lines.push(chunk));
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk) => {
       turn.stderr = (turn.stderr + chunk).slice(-STDERR_TAIL_BYTES);
@@ -535,8 +528,7 @@ export class HeadlessCliAdapter {
       }
     });
     child.on('exit', (code, signal) => {
-      if (buf.trim()) onLine(buf);
-      buf = '';
+      lines.flush();
       this.turns.delete(turn);
       if (turn.sessionId && this.sessions.get(turn.sessionId) === turn) this.sessions.delete(turn.sessionId);
       if (turn.settled) return;

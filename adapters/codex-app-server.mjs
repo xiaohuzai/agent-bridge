@@ -72,6 +72,7 @@
 import { spawn } from 'node:child_process';
 import { agentSpawnEnv } from './agent-env.mjs';
 import { v1Usage } from './usage.mjs';
+import { createLineSplitter } from '../jsonl-lines.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
@@ -131,7 +132,7 @@ export class CodexAppServerAdapter {
     this.pending = new Map();      // rpc id → {resolve, reject}
     this.threads = new Map();      // sessionId(threadId) → {turnId, items, curMsg, sawDelta, usage, events}
     this.approvals = new Map();    // approval requestId → {method, params}
-    this.buf = '';
+    this.lines = createLineSplitter((line) => this.#onLine(line));
     this.closed = false;
   }
 
@@ -241,16 +242,15 @@ export class CodexAppServerAdapter {
   }
 
   #onData(chunk) {
-    this.buf += chunk;
-    let idx;
-    while ((idx = this.buf.indexOf('\n')) !== -1) {
-      const line = this.buf.slice(0, idx).trim();
-      this.buf = this.buf.slice(idx + 1);
-      if (!line) continue;
-      let j;
-      try { j = JSON.parse(line); } catch { continue; }
-      this.#onFrame(j);
-    }
+    this.lines.push(chunk);
+  }
+
+  #onLine(raw) {
+    const line = raw.trim();
+    if (!line) return;
+    let j;
+    try { j = JSON.parse(line); } catch { return; }
+    this.#onFrame(j);
   }
 
   #onFrame(j) {

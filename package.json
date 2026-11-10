@@ -13,6 +13,7 @@
     "serve.mjs",
     "doctor.mjs",
     "wire-ws.mjs",
+    "jsonl-lines.mjs",
     "acp-front.mjs",
     "acp-front-ws.mjs",
     "acp-front-stdio.mjs",

@@ -101,6 +101,7 @@ Traps already paid for:
 - Security posture: loopback bind by default; `--bind` opts into non-loopback and every config entry then REQUIRES `apiKey` (the CLI refuses to start otherwise); the `Host` header allowlist (DNS-rebinding guard) applies only to loopback binds — remote binds are hostname-legit and gated by the token; CORS reflects loopback origins only (`corsOrigin: "*"` per entry is the explicit opt-in, to be paired with api keys). The bridge speaks plain HTTP — TLS belongs in a reverse proxy (server.mjs sends `X-Accel-Buffering: no` so SSE streams unbuffered behind nginx/caddy).
 
 - All adapters build the v1 `usage` object through `adapters/usage.mjs` (`v1Usage`) — one wire shape: the frozen top-level `cached_tokens` plus a nested `prompt_tokens_details.cached_tokens` additive alias. Tests: `agent-bridge-usage`.
+- Every JSONL stdio path frames through `jsonl-lines.mjs` (`createLineSplitter`) — one place for chunk reassembly, CRLF, split multibyte decoding, and the headless exit-tail `flush()`. Tests: `agent-bridge-jsonl-lines`.
 
 ## Roadmap (dual-door strategy — owner decision 2026-09-08)
 
