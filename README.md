@@ -261,7 +261,8 @@ curl -N -X POST http://127.0.0.1:3948/turns -H 'Content-Type: application/json' 
 # data: {"type":"tool","name":"command","detail":"npm test"}
 # data: {"type":"done","full":"…","usage":{"prompt_tokens":N,"completion_tokens":M,"cached_tokens":K,"cache_write_tokens":W}}
 #       (cached_tokens/cache_write_tokens are optional additive fields;
-#        prompt_tokens is the full prompt total, cached_tokens a subset)
+#        prompt_tokens is the full prompt total, cached_tokens a subset;
+#        prompt_tokens_details.cached_tokens is an additive alias of cached_tokens)
 
 # continue a conversation — same sessionId, never resend history
 curl -N -X POST http://127.0.0.1:3948/turns -H 'Content-Type: application/json' \

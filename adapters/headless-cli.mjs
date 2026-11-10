@@ -66,6 +66,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { agentSpawnEnv } from './agent-env.mjs';
+import { v1Usage } from './usage.mjs';
 
 const ADMISSION_TIMEOUT_MS = 15_000;
 const KILL_GRACE_MS = 1_500;
@@ -335,12 +336,12 @@ function emitUsage(u, turn, emit) {
   const key = `${u.inputTokens}/${u.outputTokens}/${u.cacheReadTokens ?? 0}/${u.cacheWriteTokens ?? 0}`;
   if (turn.lastUsageKey === key) return; // turn.completed and result repeat it
   turn.lastUsageKey = key;
-  turn.usage = {
-    prompt_tokens: u.inputTokens,
-    completion_tokens: u.outputTokens,
-    ...(typeof u.cacheReadTokens === 'number' ? { cached_tokens: u.cacheReadTokens } : {}),
-    ...(typeof u.cacheWriteTokens === 'number' ? { cache_write_tokens: u.cacheWriteTokens } : {}),
-  };
+  turn.usage = v1Usage({
+    promptTokens: u.inputTokens,
+    completionTokens: u.outputTokens,
+    cachedTokens: u.cacheReadTokens,
+    cacheWriteTokens: u.cacheWriteTokens,
+  });
   emit({ type: 'usage', ...turn.usage });
 }
 

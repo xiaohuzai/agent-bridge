@@ -142,6 +142,7 @@ import { realpathSync } from 'node:fs';
 import { registerSessionInWorkspace } from './dsh-workspace.mjs';
 import { rewriteClaudeEntrypoint } from './claude-transcript-fix.mjs';
 import { agentSpawnEnv } from './agent-env.mjs';
+import { v1Usage } from './usage.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
@@ -176,13 +177,12 @@ export function mapAcpUsage(u) {
   const total = u.totalTokens ?? u.total_tokens;
   const inclusive = typeof total === 'number'
     && input + cachedRead + cachedWrite > total - output;
-  const usage = {
-    prompt_tokens: inclusive ? input : input + cachedRead + cachedWrite,
-    completion_tokens: output,
-  };
-  if (cachedRead > 0) usage.prompt_tokens_details = { cached_tokens: cachedRead };
-  if (cachedWrite > 0) usage.cache_write_tokens = cachedWrite;
-  return usage;
+  return v1Usage({
+    promptTokens: inclusive ? input : input + cachedRead + cachedWrite,
+    completionTokens: output,
+    cachedTokens: cachedRead > 0 ? cachedRead : undefined,
+    cacheWriteTokens: cachedWrite > 0 ? cachedWrite : undefined,
+  });
 }
 
 export class AcpStdioAdapter {

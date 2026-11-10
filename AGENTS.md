@@ -100,6 +100,8 @@ Traps already paid for:
 - The `16MB` request-body cap is deliberate (bounds inline base64 images); `images` arrays are capped at 18 (2026-10 owner-approved relax from 4MB/8 — browsa now fetches up to a full 18-image 小红书 note per attach; a pure validation relaxation, old clients unaffected, so the v1 freeze holds).
 - Security posture: loopback bind by default; `--bind` opts into non-loopback and every config entry then REQUIRES `apiKey` (the CLI refuses to start otherwise); the `Host` header allowlist (DNS-rebinding guard) applies only to loopback binds — remote binds are hostname-legit and gated by the token; CORS reflects loopback origins only (`corsOrigin: "*"` per entry is the explicit opt-in, to be paired with api keys). The bridge speaks plain HTTP — TLS belongs in a reverse proxy (server.mjs sends `X-Accel-Buffering: no` so SSE streams unbuffered behind nginx/caddy).
 
+- All adapters build the v1 `usage` object through `adapters/usage.mjs` (`v1Usage`) — one wire shape: the frozen top-level `cached_tokens` plus a nested `prompt_tokens_details.cached_tokens` additive alias. Tests: `agent-bridge-usage`.
+
 ## Roadmap (dual-door strategy — owner decision 2026-09-08)
 
 Adoption strategy: the goal is broad third-party adoption. v1 stays the built-in minimal door for browsa-style clients (FROZEN — see Conventions); the PUBLIC door is ACP. The adapters already speak ACP toward agents; the fronts below let ACP clients speak it toward the bridge — third parties adopt the bridge without ever learning v1. Design draft: `docs/design-acp-front.zh-CN.md`.

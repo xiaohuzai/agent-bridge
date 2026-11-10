@@ -71,6 +71,7 @@
 
 import { spawn } from 'node:child_process';
 import { agentSpawnEnv } from './agent-env.mjs';
+import { v1Usage } from './usage.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
@@ -385,12 +386,14 @@ export class CodexAppServerAdapter {
           // Codex's inputTokens is the WHOLE prompt (cached tokens included);
           // cachedInputTokens/cacheWriteInputTokens are subsets. Forward them
           // as cache telemetry without inflating prompt_tokens.
-          const u = { prompt_tokens: last.inputTokens ?? 0, completion_tokens: last.outputTokens ?? 0 };
           const cached = last.cachedInputTokens ?? last.cached_input_tokens ?? 0;
           const cacheWrite = last.cacheWriteInputTokens ?? last.cache_write_input_tokens ?? 0;
-          if (cached > 0) u.prompt_tokens_details = { cached_tokens: cached };
-          if (cacheWrite > 0) u.cache_write_tokens = cacheWrite;
-          t.usage = u;
+          t.usage = v1Usage({
+            promptTokens: last.inputTokens ?? 0,
+            completionTokens: last.outputTokens ?? 0,
+            cachedTokens: cached > 0 ? cached : undefined,
+            cacheWriteTokens: cacheWrite > 0 ? cacheWrite : undefined,
+          });
         }
         break;
       }

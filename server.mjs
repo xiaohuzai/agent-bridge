@@ -30,7 +30,10 @@
 //       data: {"type":"usage","prompt_tokens":N,"completion_tokens":M,
 //              "cached_tokens":K,"cache_write_tokens":W}
 //             (cache fields are optional/additive; prompt_tokens is the FULL
-//              prompt total and cached_tokens is a subset of it)
+//              prompt total and cached_tokens is a subset of it. Additive
+//              2026-11-10: prompt_tokens_details.cached_tokens is an alias of
+//              the top-level cached_tokens — adapters that shipped the nested
+//              OpenAI shape keep it, and clients may read either spelling.)
 //       data: {"type":"done","full":"…"}          ← turn finished normally
 //             (additive: optional "stopReason" — the raw ACP stopReason,
 //             e.g. 'refusal' — may appear on done events; v1 clients that

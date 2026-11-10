@@ -135,6 +135,8 @@ test('resume: the client session id rides --resume and cache usage is mapped', a
   assert.equal(done.data.full, 'PONG');
   const usage = sse.frames.find((f) => f.data.type === 'usage').data;
   assert.equal(usage.cached_tokens, 40);
+  assert.equal(usage.prompt_tokens_details.cached_tokens, 40,
+    'nested alias keeps clients that shipped the OpenAI shape working');
   assert.equal(spawnedArgs().resume, 'sess_fake_9');
 });
 
