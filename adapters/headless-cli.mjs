@@ -436,6 +436,15 @@ export class HeadlessCliAdapter {
    * id lands the safer a mid-turn abort is. */
   async startTurn({ text, sessionId, images, onEvent }) {
     if (this.stopped) throw new Error('headless adapter already stopped');
+    // One live turn per session, same rule as codex/ACP. The sessionId is the
+    // interrupt() lookup key, so letting a second turn overwrite it would make
+    // a disconnect on the first turn kill the second one.
+    if (sessionId) {
+      const live = this.sessions.get(sessionId);
+      if (live && !live.settled) {
+        throw new Error(`${this.spec.name}: a turn is already in flight for this session`);
+      }
+    }
     if (Array.isArray(images) && images.length) {
       onEvent({
         type: 'note',

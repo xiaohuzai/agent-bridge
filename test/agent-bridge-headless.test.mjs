@@ -140,6 +140,41 @@ test('resume: the client session id rides --resume and cache usage is mapped', a
   assert.equal(spawnedArgs().resume, 'sess_fake_9');
 });
 
+test('a second turn on a busy session is refused — interrupt cannot hijack the new turn', async () => {
+  // Headless is one process per turn, and interrupt() looks the turn up by
+  // sessionId. Without a busy gate the second turn overwrites that lookup, so
+  // a disconnect on turn 1 would kill turn 2. codex and ACP already refuse;
+  // this pins parity.
+  const res1 = await post('/turns', { text: 'SLOW', sessionId: 'sess_busy' });
+  const sse1 = sseReader(res1.body);
+  await sse1.readUntil((f) => f.data.type === 'start');
+
+  const res2 = await post('/turns', { text: 'PONG', sessionId: 'sess_busy' });
+  const sse2 = sseReader(res2.body);
+  const err = await sse2.readUntil((f) => f.data.type === 'error', 2000);
+  assert.match(err.data.message, /already in flight/);
+  sse2.cancel();
+
+  // The busy turn is still the one interrupt() targets.
+  await adapter.interrupt('sess_busy');
+  const aborted = await sse1.readUntil((f) => f.data.type === 'aborted', 3000);
+  assert.equal(aborted.data.type, 'aborted');
+  sse1.cancel();
+});
+
+test('a settled session accepts the next turn', async () => {
+  const first = await post('/turns', { text: 'PONG', sessionId: 'sess_after' });
+  const s1 = sseReader(first.body);
+  await s1.readUntil((f) => f.data.type === 'done');
+  s1.cancel();
+
+  const second = await post('/turns', { text: 'PONG', sessionId: 'sess_after' });
+  const s2 = sseReader(second.body);
+  const done = await s2.readUntil((f) => f.data.type === 'done', 5000);
+  assert.equal(done.data.full, 'PONG');
+  s2.cancel();
+});
+
 test('tool.updated maps to paired v1 tool rows carrying the call id', async () => {
   const res = await post('/turns', { text: 'TOOL' });
   const sse = sseReader(res.body);
