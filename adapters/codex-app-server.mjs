@@ -73,6 +73,7 @@ import { spawn } from 'node:child_process';
 import { agentSpawnEnv } from './agent-env.mjs';
 import { v1Usage } from './usage.mjs';
 import { createLineSplitter } from '../jsonl-lines.mjs';
+import { rejectPendingForChild, rejectAllPending } from './pending-rpcs.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
@@ -204,11 +205,7 @@ export class CodexAppServerAdapter {
    * nothing reaches the agent. Everything is matched by child identity so a
    * late exit event can never touch a newer child's work. */
   #childDown(child, msg) {
-    for (const [id, p] of this.pending) {
-      if (p.child !== child) continue;
-      this.pending.delete(id);
-      p.reject(new Error(msg));
-    }
+    rejectPendingForChild(this.pending, child, msg);
     this.approvals.clear();
     this.#settleTurns((t) => t.child === child, msg);
     if (this.child === child) {
@@ -221,8 +218,7 @@ export class CodexAppServerAdapter {
    * replaced — error it out and forget it. Threads are re-adopted later via
    * thread/resume (the agent keeps its own persistence). */
   #sweepStale(msg) {
-    for (const [, p] of this.pending) p.reject(new Error(msg));
-    this.pending.clear();
+    rejectAllPending(this.pending, msg);
     this.approvals.clear();
     this.#settleTurns(() => true, msg);
     this.threads.clear();

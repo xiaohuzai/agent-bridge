@@ -144,6 +144,7 @@ import { rewriteClaudeEntrypoint } from './claude-transcript-fix.mjs';
 import { agentSpawnEnv } from './agent-env.mjs';
 import { v1Usage } from './usage.mjs';
 import { createLineSplitter } from '../jsonl-lines.mjs';
+import { rejectPendingForChild, rejectAllPending } from './pending-rpcs.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
@@ -300,11 +301,7 @@ export class AcpStdioAdapter {
    * the client's stream — hanging forever. Everything is matched by child
    * identity so a late exit event can never touch a newer child's work. */
   #childDown(child, msg) {
-    for (const [id, p] of this.pending) {
-      if (p.child !== child) continue;
-      this.pending.delete(id);
-      p.reject(new Error(msg));
-    }
+    rejectPendingForChild(this.pending, child, msg);
     this.permHold = [];
     this.#settleTurns((t) => t.child === child, msg);
     if (this.child === child) {
@@ -317,8 +314,7 @@ export class AcpStdioAdapter {
    * replaced — error it out and forget it. Sessions are re-adopted later via
    * the agent's own persistence (session/resume → session/load). */
   #sweepStale(msg) {
-    for (const [, p] of this.pending) p.reject(new Error(msg));
-    this.pending.clear();
+    rejectAllPending(this.pending, msg);
     this.permHold = [];
     this.#settleTurns(() => true, msg);
     this.sessions.clear();

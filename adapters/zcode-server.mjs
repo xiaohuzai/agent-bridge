@@ -84,6 +84,7 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { agentSpawnEnv } from './agent-env.mjs';
 import { v1Usage } from './usage.mjs';
+import { rejectPendingForChild, rejectAllPending } from './pending-rpcs.mjs';
 
 const INIT_TIMEOUT_MS = 30_000;     // server boot + services init (measured 1.5–4s)
 const RPC_TIMEOUT_MS = 30_000;
@@ -752,11 +753,7 @@ export class ZcodeServerAdapter {
   #childDown(child, msg) {
     const w = this.initWaiter;
     if (w) { this.initWaiter = null; w.reject(new Error(msg)); }
-    for (const [id, p] of this.pending) {
-      if (p.child !== child) continue;
-      this.pending.delete(id);
-      p.reject(new Error(msg));
-    }
+    rejectPendingForChild(this.pending, child, msg);
     for (const [, entry] of this.sessions) {
       if (entry.child !== child || entry.finished) continue;
       entry.finished = true;
@@ -766,8 +763,7 @@ export class ZcodeServerAdapter {
   }
 
   #sweepStale(msg) {
-    for (const [, p] of this.pending) p.reject(new Error(msg));
-    this.pending.clear();
+    rejectAllPending(this.pending, msg);
     for (const [, entry] of this.sessions) {
       if (entry.finished) continue;
       entry.finished = true;
