@@ -1,0 +1,5 @@
+# The native ZCode desktop-server adapter is PAUSED: the registry routes zcode
+# to the official headless CLI (adapters/headless-cli.mjs), and no production
+# module imports this file. Keep it in the repo and its test suite as a
+# reference capture, but out of the published tarball.
+zcode-server.mjs

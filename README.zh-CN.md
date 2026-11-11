@@ -261,7 +261,8 @@ curl -N -X POST http://127.0.0.1:3948/turns -H 'Content-Type: application/json' 
 # data: {"type":"tool","name":"command","detail":"npm test"}
 # data: {"type":"done","full":"…","usage":{"prompt_tokens":N,"completion_tokens":M,"cached_tokens":K,"cache_write_tokens":W}}
 #       （cached_tokens/cache_write_tokens 为可选增量字段；
-#         prompt_tokens 是完整 prompt 总数，cached_tokens 是其中命中缓存的子集）
+#         prompt_tokens 是完整 prompt 总数，cached_tokens 是其中命中缓存的子集；
+#         prompt_tokens_details.cached_tokens 是 cached_tokens 的增量别名）
 
 # 继续对话——同一个 sessionId，绝不重发历史
 curl -N -X POST http://127.0.0.1:3948/turns -H 'Content-Type: application/json' \

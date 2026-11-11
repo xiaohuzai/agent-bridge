@@ -50,14 +50,17 @@ afterEach(() => {
 
 test('registers a session into the workspace whose path matches the entry cwd', () => {
   process.env.DSH_HOME = dshHome;
-  seedWithWorkspaces([{ id: 'w1', path: cwd, title: 'proj', sessionIds: [] }]);
+  // dsh canonicalizes workspace paths through fs.realpath before comparing;
+  // seed the canonical spelling so the test does not depend on tmpdir() being
+  // symlink-free (macOS: /var → /private/var).
+  seedWithWorkspaces([{ id: 'w1', path: realpathSync(cwd), title: 'proj', sessionIds: [] }]);
   registerSessionInWorkspace(cwd, 'sess-1', (m) => logs.push(m));
   assert.deepEqual(readDoc().tables.workspaces.w1.sessionIds, ['sess-1']);
 });
 
 test('newest session lands first and registration is idempotent', () => {
   process.env.DSH_HOME = dshHome;
-  seedWithWorkspaces([{ id: 'w1', path: cwd, title: 'proj', sessionIds: ['sess-old'] }]);
+  seedWithWorkspaces([{ id: 'w1', path: realpathSync(cwd), title: 'proj', sessionIds: ['sess-old'] }]);
   registerSessionInWorkspace(cwd, 'sess-new', () => {});
   registerSessionInWorkspace(cwd, 'sess-new', () => {}); // second sweep: no duplicate
   assert.deepEqual(readDoc().tables.workspaces.w1.sessionIds, ['sess-new', 'sess-old']);

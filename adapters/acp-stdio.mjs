@@ -137,11 +137,11 @@
 // as {type:'image', data, mimeType} for data: URLs, {type:'image', uri}
 // otherwise). Undeclared-image turns degrade to text with a note.
 
-import { spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { registerSessionInWorkspace } from './dsh-workspace.mjs';
 import { rewriteClaudeEntrypoint } from './claude-transcript-fix.mjs';
-import { agentSpawnEnv } from './agent-env.mjs';
+import { v1Usage } from './usage.mjs';
+import { createJsonlRpc } from './jsonl-rpc.mjs';
 
 const INIT_TIMEOUT_MS = 15000;
 const RPC_TIMEOUT_MS = 30000;
@@ -176,13 +176,12 @@ export function mapAcpUsage(u) {
   const total = u.totalTokens ?? u.total_tokens;
   const inclusive = typeof total === 'number'
     && input + cachedRead + cachedWrite > total - output;
-  const usage = {
-    prompt_tokens: inclusive ? input : input + cachedRead + cachedWrite,
-    completion_tokens: output,
-  };
-  if (cachedRead > 0) usage.prompt_tokens_details = { cached_tokens: cachedRead };
-  if (cachedWrite > 0) usage.cache_write_tokens = cachedWrite;
-  return usage;
+  return v1Usage({
+    promptTokens: inclusive ? input : input + cachedRead + cachedWrite,
+    completionTokens: output,
+    cachedTokens: cachedRead > 0 ? cachedRead : undefined,
+    cacheWriteTokens: cachedWrite > 0 ? cachedWrite : undefined,
+  });
 }
 
 export class AcpStdioAdapter {
@@ -211,122 +210,61 @@ export class AcpStdioAdapter {
     // workspaceRegister: 'dsh' → register newly created sessions into the dsh
     // workspace registry so the desktop/Web UI lists them (see dsh-workspace.mjs)
     this.opts = { command, args, cwd, env, transcriptFix, workspaceRegister, claudeProjectsDir, installHint, log };
-    this.child = null;
-    this.ready = false;
-    this.starting = null;         // in-flight spawn+initialize (serialization lock)
-    this.nextId = 1;
-    this.pending = new Map();     // rpc id → {resolve, reject, child}
     this.sessions = new Map();    // ACP sessionId → turn state
     this.permissions = new Map(); // permission request id → {sessionId, options, id}
     this.permHold = [];           // request_permission frames HELD while another is outstanding — qoder
                                   // pipelines one per parallel tool call (live 2026-10-15: two in one
                                   // chunk), and clients that render a single approval card per surface
                                   // (browsa's removeAgentCards) would orphan the earlier one
-    this.buf = '';
-    this.closed = false;
     this.rpcMethods = new Map(); // rpc id → method (for error-response logging)
     this.seenLogs = new Set();   // once-per-kind diagnostics (reset per child)
+    this.link = createJsonlRpc({
+      command,
+      args: args || [],
+      cwd,
+      // Entry/registry env rides over the daemon's inherited environment,
+      // with the bundled ACP shims' bin dir APPENDED to PATH
+      // (adapters/agent-env.mjs; a user-installed shim wins).
+      env,
+      label: 'acp',
+      description: 'acp agent',
+      notFound: (bin) => `agent command not found: '${bin}' — install it with: ${installHint || 'see README → Supported agents'}, or pass an existing command after 'acp --'`,
+      startFailed: (bin, err) => `failed to start agent '${bin}': ${err.message}`,
+      log,
+      onFrame: (j) => this.#onFrame(j),
+      onDown: ({ child, all, message }) => {
+        this.permHold = [];
+        this.#settleTurns((t) => all || t.child === child, message);
+        if (all) this.sessions.clear();
+      },
+      onRpcCall: (id, method) => { if (method) this.rpcMethods.set(id, method); },
+      onRpcSettled: (id) => { this.rpcMethods.delete(id); },
+      handshake: async (link) => {
+        const res = await link.rpc('initialize', {
+          protocolVersion: REQUESTED_ACP_VERSION,
+          clientCapabilities: {},
+        }, INIT_TIMEOUT_MS);
+        const version = res?.protocolVersion;
+        if (version !== 1 && version !== 2) {
+          throw new Error(`acp agent speaks protocolVersion ${JSON.stringify(version)}, bridge supports 1–2`);
+        }
+        this.acpVersion = version;
+        // promptCapabilities lives under agentCapabilities on the official
+        // shims and under capabilities on the older Zed shim — read both.
+        this.promptImage = !!(res?.agentCapabilities?.promptCapabilities?.image ?? res?.capabilities?.promptCapabilities?.image);
+        const info = res?.agentInfo || {};
+        log(`[acp] agent ${info.name || '?'} v${info.version || '?'} — ACP v${version}, images: ${this.promptImage ? 'yes' : 'no'}`);
+        this.seenLogs.clear();
+      },
+    });
   }
 
   async ensureChild() {
-    if (this.child && this.child.exitCode === null && this.ready) return;
-    if (this.closed) throw new Error('bridge adapter already stopped');
-    // Serialize spawn+initialize: two concurrent first-turns would otherwise
-    // each spawn a child (the second overwrites this.child, orphaning the
-    // first) — same discipline as the codex adapter.
-    if (!this.starting) this.starting = this.#startChild().finally(() => { this.starting = null; });
-    await this.starting;
+    await this.link.ensure();
   }
 
-  async #startChild() {
-    const { command, log } = this.opts;
-    // A respawn only starts once the previous child is gone or unusable —
-    // whatever it left behind is stale by definition. Settle it BEFORE the
-    // fresh child so nothing can hang on a dead process, and kill the
-    // half-dead one (e.g. an initialize that timed out) instead of leaking it.
-    this.#sweepStale('acp agent process restarted');
-    const child = spawn(command[0], [...command.slice(1), ...(this.opts.args || [])], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      // Entry/registry env rides over the daemon's inherited environment —
-      // e.g. the claude entry's CLAUDE_CODE_ENTRYPOINT (see agents-registry) —
-      // with the bundled ACP shims' (optionalDependencies) bin dir APPENDED
-      // to the PATH (adapters/agent-env.mjs; a user-installed shim wins).
-      env: agentSpawnEnv(this.opts.env),
-      // Windows: npm-installed CLI shims are .cmd — spawn needs a shell there.
-      shell: process.platform === 'win32',
-      windowsHide: true,
-    });
-    this.child = child;
-    this.ready = false;
-    child.stdout.on('data', (d) => this.#onData(String(d)));
-    child.stderr.on('data', (d) => log(`[acp stderr] ${String(d).slice(0, 300)}`));
-    child.on('exit', (code) => {
-      log(`[acp] agent exited (code=${code})`);
-      this.#childDown(child, `acp agent exited (code=${code})`);
-    });
-    // A spawn failure (agent command not installed / typo'd) arrives as an
-    // async 'error' event — without a listener it is an uncaughtException
-    // that kills the whole bridge. Reject the in-flight rpcs with an install
-    // hint (relayed as the turn's SSE error) and allow a later retry.
-    child.on('error', (err) => {
-      const msg = err.code === 'ENOENT'
-        ? `agent command not found: '${command[0]}' — install it with: ${this.opts.installHint || 'see README → Supported agents'}, or pass an existing command after 'acp --'`
-        : `failed to start agent '${command[0]}': ${err.message}`;
-      log(`[acp] ${msg}`);
-      this.#childDown(child, msg);
-    });
-    const res = await this.rpc('initialize', {
-      protocolVersion: REQUESTED_ACP_VERSION,
-      clientCapabilities: {},
-    }, INIT_TIMEOUT_MS);
-    const version = res?.protocolVersion;
-    if (version !== 1 && version !== 2) {
-      throw new Error(`acp agent speaks protocolVersion ${JSON.stringify(version)}, bridge supports 1–2`);
-    }
-    this.acpVersion = version;
-    // promptCapabilities lives under agentCapabilities on the official shims
-    // and under capabilities on the older Zed shim — read both.
-    this.promptImage = !!(res?.agentCapabilities?.promptCapabilities?.image ?? res?.capabilities?.promptCapabilities?.image);
-    const info = res?.agentInfo || {};
-    this.opts.log(`[acp] agent ${info.name || '?'} v${info.version || '?'} — ACP v${version}, images: ${this.promptImage ? 'yes' : 'no'}`);
-    this.ready = true;
-    this.seenLogs.clear();
-  }
-
-  /** This child is gone: reject ITS pending rpcs and settle ITS turns. An
-   * admitted turn has NO pending rpc tracking it in v2 (session/prompt is a
-   * mere ack), so without this sweep a dead agent would leave the turn — and
-   * the client's stream — hanging forever. Everything is matched by child
-   * identity so a late exit event can never touch a newer child's work. */
-  #childDown(child, msg) {
-    for (const [id, p] of this.pending) {
-      if (p.child !== child) continue;
-      this.pending.delete(id);
-      p.reject(new Error(msg));
-    }
-    this.permHold = [];
-    this.#settleTurns((t) => t.child === child, msg);
-    if (this.child === child) {
-      this.child = null;
-      this.ready = false;
-    }
-  }
-
-  /** Respawn hygiene: anything still unsettled belongs to the child being
-   * replaced — error it out and forget it. Sessions are re-adopted later via
-   * the agent's own persistence (session/resume → session/load). */
-  #sweepStale(msg) {
-    for (const [, p] of this.pending) p.reject(new Error(msg));
-    this.pending.clear();
-    this.permHold = [];
-    this.#settleTurns(() => true, msg);
-    this.sessions.clear();
-    if (this.child) {
-      try { this.child.kill('SIGKILL'); } catch (_) {}
-      this.child = null;
-    }
-    this.ready = false;
-  }
+  /** The live agent child (tests kill it to exercise the death path). */
+  get child() { return this.link.child; }
 
   #settleTurns(match, msg) {
     for (const [, t] of this.sessions) {
@@ -334,19 +272,6 @@ export class AcpStdioAdapter {
       t.finished = true;
       t.promptInFlight = false;
       t.events?.({ type: 'error', message: `${msg} mid-turn` });
-    }
-  }
-
-  #onData(chunk) {
-    this.buf += chunk;
-    let idx;
-    while ((idx = this.buf.indexOf('\n')) !== -1) {
-      const line = this.buf.slice(0, idx).trim();
-      this.buf = this.buf.slice(idx + 1);
-      if (!line) continue;
-      let j;
-      try { j = JSON.parse(line); } catch { continue; }
-      this.#onFrame(j);
     }
   }
 
@@ -371,15 +296,15 @@ export class AcpStdioAdapter {
           this.seenLogs.add(`r:${j.method}`);
           this.opts.log(`[acp] refusing unsupported request: ${j.method}`);
         }
-        this.#write({ jsonrpc: '2.0', id: j.id, error: { code: -32601, message: `agent-bridge: ${j.method} not supported` } });
+        this.link.write({ jsonrpc: '2.0', id: j.id, error: { code: -32601, message: `agent-bridge: ${j.method} not supported` } });
       }
       return;
     }
     // response to our rpc
     if (j.id !== undefined) {
-      const p = this.pending.get(j.id);
+      const p = this.link.pending.get(j.id);
       if (!p) return;
-      this.pending.delete(j.id);
+      this.link.pending.delete(j.id);
       if (j.error) this.opts.log(`[acp] rpc error (${this.rpcMethods.get(j.id) || `id ${j.id}`}): ${j.error.message || JSON.stringify(j.error).slice(0, 200)}`);
       this.rpcMethods.delete(j.id);
       j.error ? p.reject(new Error(j.error.message || JSON.stringify(j.error))) : p.resolve(j.result);
@@ -455,29 +380,8 @@ export class AcpStdioAdapter {
     }
   }
 
-  #write(obj) {
-    try { this.child?.stdin?.write(JSON.stringify(obj) + '\n'); } catch (_) {}
-  }
-
-  rpc(method, params, timeoutMs = RPC_TIMEOUT_MS) {
-    const id = this.nextId++;
-    if (method) this.rpcMethods.set(id, method);
-    return new Promise((resolve, reject) => {
-      // timeoutMs <= 0 means "no timer": a v1 session/prompt rpc stays
-      // pending for the WHOLE turn (its response IS the completion), so a
-      // fixed timeout would kill every long turn.
-      const timer = timeoutMs > 0 ? setTimeout(() => {
-        this.pending.delete(id);
-        this.rpcMethods.delete(id);
-        reject(new Error(`acp rpc timeout: ${method}`));
-      }, timeoutMs) : null;
-      this.pending.set(id, {
-        resolve: (v) => { if (timer) clearTimeout(timer); this.rpcMethods.delete(id); resolve(v); },
-        reject: (e) => { if (timer) clearTimeout(timer); this.rpcMethods.delete(id); reject(e); },
-        child: this.child,
-      });
-      this.#write({ jsonrpc: '2.0', id, method, params });
-    });
+  rpc(method, params, timeoutMs) {
+    return this.link.rpc(method, params, timeoutMs);
   }
 
   async #ensureSession(sessionId) {
@@ -515,7 +419,7 @@ export class AcpStdioAdapter {
     await this.ensureChild();
     const sid = await this.#ensureSession(undefined);
     if (!this.sessions.has(sid)) {
-      this.sessions.set(sid, { sessionId: sid, full: '', finished: true, promptInFlight: false, events: null, child: this.child });
+      this.sessions.set(sid, { sessionId: sid, full: '', finished: true, promptInFlight: false, events: null, child: this.link.child });
     }
     return sid;
   }
@@ -537,7 +441,7 @@ export class AcpStdioAdapter {
     if (dropped) blocks.push({ type: 'text', text: `\n[agent-bridge: ${dropped} image(s) omitted — this agent does not advertise image input]` });
     const entry = {
       sessionId: sid, full: '', thinking: false, usage: null, finished: false,
-      promptInFlight: true, events: onEvent, child: this.child,
+      promptInFlight: true, events: onEvent, child: this.link.child,
     };
     // transcriptFix: on any terminal event, flip claude's sdk-* entrypoint
     // stamp so the session stays listed in claude's /resume picker
@@ -623,14 +527,14 @@ export class AcpStdioAdapter {
     for (const [reqId, p] of this.permissions) {
       if (p.sessionId !== sessionId) continue;
       this.permissions.delete(reqId);
-      this.#write({ jsonrpc: '2.0', id: p.id, result: { outcome: { outcome: 'cancelled' } } });
+      this.link.write({ jsonrpc: '2.0', id: p.id, result: { outcome: { outcome: 'cancelled' } } });
     }
     // Held (never yet surfaced) permission frames of this session must be
     // answered too — the agent awaits them even though the client never saw them.
     const stillHeld = [];
     for (const j of this.permHold) {
       if (j.params?.sessionId && j.params.sessionId !== sessionId) { stillHeld.push(j); continue; }
-      this.#write({ jsonrpc: '2.0', id: j.id, result: { outcome: { outcome: 'cancelled' } } });
+      this.link.write({ jsonrpc: '2.0', id: j.id, result: { outcome: { outcome: 'cancelled' } } });
     }
     this.permHold = stillHeld;
     try {
@@ -662,7 +566,7 @@ export class AcpStdioAdapter {
     const kind = choice === 'deny' ? (byKind('reject_once') || byKind('reject_always')) : choice === 'always' ? (byKind('allow_always') || byKind('allow_once')) : (byKind('allow_once') || byKind('allow_always'));
     const optionId = kind?.optionId ?? entry.options[0]?.optionId;
     if (!optionId) throw new Error('acp permission request had no options');
-    this.#write({ jsonrpc: '2.0', id: entry.id, result: { outcome: { outcome: 'selected', optionId } } });
+    this.link.write({ jsonrpc: '2.0', id: entry.id, result: { outcome: { outcome: 'selected', optionId } } });
     this.opts.log(`[acp] permission id=${requestId} answered ${choice} → "${optionId}"`);
     // Release the next pipelined permission request, if any.
     const next = this.permHold.shift();
@@ -677,10 +581,7 @@ export class AcpStdioAdapter {
   }
 
   stop() {
-    this.closed = true;
     this.permHold = [];
-    try { this.child?.stdin?.end(); } catch (_) {}
-    try { this.child?.kill('SIGKILL'); } catch (_) {}
-    this.child = null;
+    this.link.stop();
   }
 }

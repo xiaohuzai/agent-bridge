@@ -30,7 +30,10 @@
 //       data: {"type":"usage","prompt_tokens":N,"completion_tokens":M,
 //              "cached_tokens":K,"cache_write_tokens":W}
 //             (cache fields are optional/additive; prompt_tokens is the FULL
-//              prompt total and cached_tokens is a subset of it)
+//              prompt total and cached_tokens is a subset of it. Additive
+//              2026-11-10: prompt_tokens_details.cached_tokens is an alias of
+//              the top-level cached_tokens — adapters that shipped the nested
+//              OpenAI shape keep it, and clients may read either spelling.)
 //       data: {"type":"done","full":"…"}          ← turn finished normally
 //             (additive: optional "stopReason" — the raw ACP stopReason,
 //             e.g. 'refusal' — may appear on done events; v1 clients that
@@ -86,6 +89,7 @@
 
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { createTurnStream } from './turn-stream.mjs';
 
 const HEARTBEAT_MS = 15000;
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
@@ -264,84 +268,22 @@ export function createBridgeServer({ adapter, agent, version, token, corsOrigin 
       'X-Accel-Buffering': 'no',
       ...cors,
     });
-    const ev = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch (_) {} };
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      clearInterval(hb);
-      try { res.end(); } catch (_) {}
-    };
-    // Keepalives during silent agent stretches; also defeats buffering.
-    const hb = setInterval(() => { try { res.write(': ka\n\n'); } catch (_) {} }, HEARTBEAT_MS);
-    // Client disconnect (tab closed / panel closed / process death) = abort:
-    // interrupt the agent turn so it never keeps running headless. MUST
-    // listen on the RESPONSE stream: req 'close' fires as soon as the request
-    // message is fully consumed (Node >=16 semantics) — an immediate false
-    // abort that swallows the whole turn. The session id may only become
-    // known when startTurn returns (first turn = client sent none), so it's
-    // tracked on a mutable, not read from the request body alone.
-    let liveSession = typeof body.sessionId === 'string' ? body.sessionId : null;
-    const interruptLive = () => {
-      if (!liveSession) return;
-      // Promise.resolve: the contract says interrupt is async, but a
-      // contract-violating sync return must never crash the daemon on the
-      // disconnect path (verified 2026-10-22: bare .catch() turned it into an
-      // uncaughtException — same lesson as the spawn 'error' event).
-      Promise.resolve(adapter.interrupt(liveSession))
-        .catch(() => {})
-        .finally(() => { try { res.destroy(); } catch (_) {} });
-    };
-    res.on('close', () => {
-      if (!finished && liveSession) {
-        finished = true; // stop the hb timer; adapter interrupts below
-        clearInterval(hb);
-        log(`[bridge] client disconnected mid-turn — interrupting ${liveSession}`);
-        interruptLive();
-      }
-    });
-    const onEvent = (e) => {
-      if (finished) return;
-      // The session id can arrive BEFORE startTurn returns — v1-style agents
-      // (both official ACP shims) keep the session/prompt rpc pending for the
-      // whole turn, so a disconnect mid-turn must already know the session to
-      // interrupt. Patch it here, not only after startTurn resolves.
-      if (e.type === 'start' && e.sessionId) {
-        liveSession = e.sessionId;
-        // A HARD disconnect (socket died) can fire 'close' BEFORE the first
-        // start event lands — the close handler had no session to interrupt,
-        // and v1-style startTurn never resolves until turn end, so the
-        // post-admission check below never runs for them. Verified
-        // 2026-10-22: without this the turn ran to completion headless.
-        if (res.destroyed) {
-          finished = true;
-          clearInterval(hb);
-          log(`[bridge] client already gone when the session id landed — interrupting ${liveSession}`);
-          interruptLive();
-          return;
-        }
-      }
-      ev(e);
-      if (e.type === 'done' || e.type === 'aborted' || e.type === 'error') finish();
-    };
-    try {
-      const { sessionId: sid } = await adapter.startTurn({
-        text: body.text,
-        sessionId: liveSession,
-        images: Array.isArray(body.images) ? body.images : undefined,
-        onEvent,
-      });
-      liveSession = sid || liveSession;
-      // The client may have aborted while the turn was being admitted —
-      // the close handler ran with liveSession still null. Interrupt now.
-      if (res.destroyed && !finished && liveSession) {
-        finished = true;
-        clearInterval(hb);
-        Promise.resolve(adapter.interrupt(liveSession)).catch(() => {});
-      }
-    } catch (e) {
-      onEvent({ type: 'error', message: e.message });
-    }
+    await createTurnStream({
+      adapter,
+      text: body.text,
+      sessionId: body.sessionId,
+      images: Array.isArray(body.images) ? body.images : undefined,
+      heartbeatMs: HEARTBEAT_MS,
+      log,
+      wire: {
+        write: (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch (_) {} },
+        comment: (text) => { try { res.write(`${text}\n\n`); } catch (_) {} },
+        end: () => { try { res.end(); } catch (_) {} },
+        destroy: () => { try { res.destroy(); } catch (_) {} },
+        isDestroyed: () => res.destroyed,
+        onClose: (cb) => res.on('close', cb),
+      },
+    }).run();
   }
 
   return server;

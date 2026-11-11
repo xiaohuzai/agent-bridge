@@ -258,6 +258,7 @@ test('v1 usage: ACP cache read/write are forwarded (exclusive input)', async () 
   assert.deepEqual(done.data.usage, {
     prompt_tokens: 120, // fresh 20 + cache read 80 + cache write 20
     completion_tokens: 10,
+    cached_tokens: 80,  // frozen top-level contract key
     prompt_tokens_details: { cached_tokens: 80 },
     cache_write_tokens: 20,
   });
@@ -268,12 +269,12 @@ test('mapAcpUsage: gemini-style inclusive input is not double-counted', () => {
   // gemini-cli maps promptTokenCount (INCLUSIVE) + cachedContentTokenCount.
   assert.deepEqual(
     mapAcpUsage({ totalTokens: 120, inputTokens: 100, cachedReadTokens: 80, outputTokens: 20 }),
-    { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 80 } },
+    { prompt_tokens: 100, completion_tokens: 20, cached_tokens: 80, prompt_tokens_details: { cached_tokens: 80 } },
   );
   // claude/codex/opencode: fresh input + separate cache counters.
   assert.deepEqual(
     mapAcpUsage({ totalTokens: 130, inputTokens: 20, cachedReadTokens: 80, cachedWriteTokens: 20, outputTokens: 10 }),
-    { prompt_tokens: 120, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 80 }, cache_write_tokens: 20 },
+    { prompt_tokens: 120, completion_tokens: 10, cached_tokens: 80, prompt_tokens_details: { cached_tokens: 80 }, cache_write_tokens: 20 },
   );
 });
 

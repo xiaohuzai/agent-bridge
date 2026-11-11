@@ -14,6 +14,7 @@
 //     stop the adapter, exit 0
 
 import { createAcpFrontSession } from './acp-front.mjs';
+import { createLineSplitter } from './jsonl-lines.mjs';
 
 export function runAcpStdio({ adapter, agent, version = '0.0.0', log = () => {}, input = process.stdin, output = process.stdout }) {
   let exiting = false;
@@ -58,17 +59,12 @@ export function runAcpStdio({ adapter, agent, version = '0.0.0', log = () => {},
     onClosed: () => {},
   });
 
-  let buf = '';
-  input.setEncoding?.('utf8');
-  input.on('data', (d) => {
-    buf += d;
-    let idx;
-    while ((idx = buf.indexOf('\n')) !== -1) {
-      const line = buf.slice(0, idx).trim();
-      buf = buf.slice(idx + 1);
-      if (line) session.handleMessage(line);
-    }
+  const lines = createLineSplitter((line) => {
+    const msg = line.trim();
+    if (msg) session.handleMessage(msg);
   });
+  input.setEncoding?.('utf8');
+  input.on('data', (d) => lines.push(d));
   input.on('end', () => shutdown('stdin ended'));
   input.on('error', () => shutdown('stdin error'));
 

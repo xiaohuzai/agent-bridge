@@ -66,6 +66,8 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { agentSpawnEnv } from './agent-env.mjs';
+import { v1Usage } from './usage.mjs';
+import { createLineSplitter } from '../jsonl-lines.mjs';
 
 const ADMISSION_TIMEOUT_MS = 15_000;
 const KILL_GRACE_MS = 1_500;
@@ -327,6 +329,37 @@ export const HEADLESS_PROFILES = {
   },
 };
 
+/** The ordered spawn attempts for a headless entry — the ONE resolution rule.
+ *
+ * Explicit `command` wins, EXCEPT a command equal to the profile default:
+ * copying `["zcode"]` into an entry must not silently disable ZCODE_CLI and
+ * the desktop-install fallbacks (the adapter and doctor used to disagree on
+ * exactly that case). `env` is the entry's env; the daemon env and bundled
+ * PATH ride underneath it (agentSpawnEnv).
+ *
+ * Pure except for reading process.env and the fallback probe; doctor consumes
+ * the same list so its verdict cannot drift from what a spawn would try.
+ */
+export function headlessAttempts({ command = null, spec, env = process.env } = {}) {
+  if (!spec) throw new Error('headlessAttempts: spec required');
+  const cmd = Array.isArray(command) && command.length ? command : null;
+  const isDefault = cmd !== null && JSON.stringify(cmd) === JSON.stringify(spec.command);
+  if (cmd !== null && !isDefault) {
+    return [{ bin: cmd[0], prefix: cmd.slice(1), envPatch: {}, label: `command ${cmd.join(' ')}` }];
+  }
+  const attempts = [];
+  const mergedEnv = agentSpawnEnv(env);
+  if (mergedEnv.ZCODE_CLI) {
+    // A command LINE, not just a path: the escape hatch for desktop bundles
+    // without a plain node binary, e.g. "/usr/bin/env node …/zcode.cjs". The
+    // adapter runs it through a shell so quoted paths with spaces survive.
+    attempts.push({ shellLine: mergedEnv.ZCODE_CLI.trim(), label: `ZCODE_CLI=${mergedEnv.ZCODE_CLI}` });
+  }
+  attempts.push({ bin: spec.command[0], prefix: spec.command.slice(1), envPatch: {}, label: `${spec.command[0]} (PATH)` });
+  for (const c of (spec.fallbackCandidates?.() || [])) attempts.push(c);
+  return attempts;
+}
+
 /** v1 usage event fields — prompt_tokens is the FULL prompt, cached_tokens a
  * subset (server.mjs contract). */
 function emitUsage(u, turn, emit) {
@@ -335,12 +368,12 @@ function emitUsage(u, turn, emit) {
   const key = `${u.inputTokens}/${u.outputTokens}/${u.cacheReadTokens ?? 0}/${u.cacheWriteTokens ?? 0}`;
   if (turn.lastUsageKey === key) return; // turn.completed and result repeat it
   turn.lastUsageKey = key;
-  turn.usage = {
-    prompt_tokens: u.inputTokens,
-    completion_tokens: u.outputTokens,
-    ...(typeof u.cacheReadTokens === 'number' ? { cached_tokens: u.cacheReadTokens } : {}),
-    ...(typeof u.cacheWriteTokens === 'number' ? { cache_write_tokens: u.cacheWriteTokens } : {}),
-  };
+  turn.usage = v1Usage({
+    promptTokens: u.inputTokens,
+    completionTokens: u.outputTokens,
+    cachedTokens: u.cacheReadTokens,
+    cacheWriteTokens: u.cacheWriteTokens,
+  });
   emit({ type: 'usage', ...turn.usage });
 }
 
@@ -403,6 +436,15 @@ export class HeadlessCliAdapter {
    * id lands the safer a mid-turn abort is. */
   async startTurn({ text, sessionId, images, onEvent }) {
     if (this.stopped) throw new Error('headless adapter already stopped');
+    // One live turn per session, same rule as codex/ACP. The sessionId is the
+    // interrupt() lookup key, so letting a second turn overwrite it would make
+    // a disconnect on the first turn kill the second one.
+    if (sessionId) {
+      const live = this.sessions.get(sessionId);
+      if (live && !live.settled) {
+        throw new Error(`${this.spec.name}: a turn is already in flight for this session`);
+      }
+    }
     if (Array.isArray(images) && images.length) {
       onEvent({
         type: 'note',
@@ -515,17 +557,9 @@ export class HeadlessCliAdapter {
     }
 
     const child = turn.child;
-    let buf = '';
+    const lines = createLineSplitter(onLine);
     child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => {
-      buf += chunk;
-      let idx;
-      while ((idx = buf.indexOf('\n')) !== -1) {
-        const line = buf.slice(0, idx);
-        buf = buf.slice(idx + 1);
-        onLine(line);
-      }
-    });
+    child.stdout.on('data', (chunk) => lines.push(chunk));
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk) => {
       turn.stderr = (turn.stderr + chunk).slice(-STDERR_TAIL_BYTES);
@@ -534,8 +568,7 @@ export class HeadlessCliAdapter {
       }
     });
     child.on('exit', (code, signal) => {
-      if (buf.trim()) onLine(buf);
-      buf = '';
+      lines.flush();
       this.turns.delete(turn);
       if (turn.sessionId && this.sessions.get(turn.sessionId) === turn) this.sessions.delete(turn.sessionId);
       if (turn.settled) return;
@@ -591,25 +624,10 @@ export class HeadlessCliAdapter {
       throw err;
     }
     const argv = this.spec.argsFor({ text, mode: this.mode, cwd: this.cwd, sessionId });
-    const isDefault = JSON.stringify(this.command) === JSON.stringify(this.spec.command);
-    const explicit = this.command !== null && !isDefault;
-    const attempts = [];
-    if (explicit) {
-      attempts.push({ bin: this.command[0], prefix: this.command.slice(1), envPatch: {}, label: `command ${this.command.join(' ')}` });
-    } else {
-      const mergedEnv = agentSpawnEnv(this.env);
-      if (mergedEnv.ZCODE_CLI) {
-        // A command LINE, not just a path: the escape hatch for platforms
-        // where the desktop bundle has no plain node binary is
-        // `ZCODE_CLI="/usr/bin/env node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs"`.
-        // Runs through `sh -c` so QUOTED paths with spaces survive (a naive
-        // whitespace split breaks "/Applications/ZCode.app/…"); the user owns
-        // this value, so shell semantics are what they expect.
-        attempts.push({ shellLine: mergedEnv.ZCODE_CLI.trim(), label: `ZCODE_CLI=${mergedEnv.ZCODE_CLI}` });
-      }
-      attempts.push({ bin: this.spec.command[0], prefix: this.spec.command.slice(1), envPatch: {}, label: `${this.spec.command[0]} (PATH)` });
-      for (const c of (this.spec.fallbackCandidates?.() || [])) attempts.push(c);
-    }
+    // Resolution lives in headlessAttempts so doctor checks the SAME list:
+    // an explicit command wins, but a command equal to the profile default
+    // keeps ZCODE_CLI and the desktop-install fallbacks alive.
+    const attempts = headlessAttempts({ command: this.command, spec: this.spec, env: this.env });
     const tryOnce = (att) => new Promise((resolve, reject) => {
       const useShell = !!att.shellLine || (process.platform === 'win32' && !/\.exe$/i.test(att.bin));
       const child = att.shellLine

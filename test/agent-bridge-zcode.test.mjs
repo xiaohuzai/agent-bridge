@@ -130,6 +130,7 @@ test('zcode happy path: handshake → start → streamed deltas (thinking folded
   assert.deepEqual(done.data.usage, {
     prompt_tokens: 155, // fresh 120 + cache read 30 + cache write 5
     completion_tokens: 45,
+    cached_tokens: 30,  // frozen top-level contract key
     prompt_tokens_details: { cached_tokens: 30 },
     cache_write_tokens: 5,
   });

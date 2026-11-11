@@ -166,6 +166,17 @@ export function validateConfig(cfg, { requirePort = true } = {}) {
     if (b.approval !== undefined && !APPROVALS.includes(b.approval)) errors.push(`${at}: "approval" must be one of ${APPROVALS.join(' | ')}`);
     if (b.corsOrigin !== undefined && b.corsOrigin !== '*') errors.push(`${at}: "corsOrigin" must be "*" or omitted (loopback only)`);
     if (b.acp !== undefined && typeof b.acp !== 'boolean') errors.push(`${at}: "acp" must be a boolean (opts the bridge into the ACP-over-WebSocket front at /acp)`);
+    // Kind-specific fields must not be silently accepted on another adapter:
+    // a claude entry with "sandbox" looked configured but the value never
+    // reached anything. Rejecting is the honest answer (owner decision
+    // 2026-11-10) — every error is reported at once with the owning adapter.
+    const kindGate = (field, kind, label) => {
+      if (b[field] !== undefined && spec && spec.kind !== kind) {
+        errors.push(`${at}: "${field}" only applies to ${label} ("${name}" runs on the ${spec.kind} adapter)`);
+      }
+    };
+    for (const f of ['sandbox', 'approval', 'network', 'codexBin', 'codexHome']) kindGate(f, 'codex', 'the codex native adapter');
+    for (const f of ['transcriptFix', 'workspaceRegister', 'claudeProjectsDir']) kindGate(f, 'acp', 'ACP-spawned agents');
 
     seenNames.add(name);
     seenPorts.add(port);
