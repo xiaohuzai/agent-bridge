@@ -46,6 +46,7 @@ export OPENAI_API_KEY=...  # ② 或 OpenAI API key
 
 - 默认 **read-only 沙箱**（`"sandbox": "read-only"`）：可读可推理，逃逸沙箱的命令被拒绝。`"workspace-write"` 放开写（要联网再加 `"network": true`）。
 - `"approval": "on-request"` 才会向客户端发 `approval` 事件；默认 `"never"` 不发——命令按沙箱策略直接执行或被拒。
+- **工具状态**：Codex 明确报告命令或文件修改失败、审批被拒，以及 MCP 调用失败时，桥发出 `failed` 工具事件；agent 仍可能正常结束回合。桥按 agent 的状态判断，不按命令退出码推断。状态缺失时保留原有 `completed` 事件，无法据此确认工具是否成功。
 - 图片（data:/https URL）直接透传给模型。
 - 桥重启后会话从磁盘恢复（codex 自己持久化线程）。
 - codex 需在 PATH 上；否则用 `"codexBin": "/path/to/codex"` 指定。
@@ -218,7 +219,8 @@ FROM model_usage ORDER BY started_at DESC;
 **行为要点**（2026-10-21 对 CLI 0.17.0 / server 3.16.2 经真实桥实机验证）：
 
 - **流式**：`model.streaming` 的 `text_delta` → v1 `delta`；`turn.completed.response` 是权威的 `done.full`。模型真的吐 reasoning 增量时，会包进 `<thinking>…</thinking>`，保证 `full` 与 delta 拼接一致。
-- **工具调用**：`tool.updated` 的 `scheduled/started/result` → v1 `tool` 行，用 agent 自己的 `toolCallId` 配对；detail 优先取 `command` / `file_path` / `pattern`。
+- **工具调用**：`tool.updated` 用 agent 自己的 `toolCallId` 配对；detail 优先取 `command` / `file_path` / `pattern`。明确的 `error` 或 `result.success:false` 映射为 `failed`，不因此判定整个回合失败。success 标记缺失时保留原有 `completed` 事件，不能据此确认成功。CLI 0.17.1 中，Bash 退出码非零、客户端 MCP 返回错误的情况仍可能报告 `success:true`，所以桥不根据退出码或输出文案推断失败（2026-11-17 用模拟后端验证）。
+- 桥按 agent 会话与工具 ID 记录重放顺序，失败状态会保留到新的 `started` 事件，或新的 `scheduled` 调用收到结果；缺少序号时，重放事件与真正的新调用不一定能区分。帧缺少会话 ID 时，桥会尽力复用已观察到的唯一匹配调用，且不比较该帧序号；有多个活跃候选时则保持未归属。尚未观察到的会话若使用相同 ID，归属本身无法判定；缺少工具 ID 也无法可靠配对。线上事件保留原始 ID，因此不同子会话并发使用相同工具 ID 时，v1 和 ACP 客户端无法区分这两个调用。
 - **Usage**：`inputTokens` / `outputTokens` / `cacheReadTokens` / `cacheWriteTokens` → `prompt_tokens` / `completion_tokens` / `cached_tokens` / `cache_write_tokens`。
 - **会话**：CLI 分配 `sess_…`；后续回合把它带回来，适配器会加 `--resume`。续接是真的续上下文（追问能复述上一轮原话），并且命中 provider 缓存（28.5K 输入的回合里 22,528 个缓存 token）。
 - **模型由 ZCode 选，不是桥选。** headless 回合跑的是 `~/.zcode/v2/provider_config.json` 里 **`providerOrder` 的第一个供应商 + 该供应商 `modelOrder` 的第一个模型**；桥不传模型参数，CLI 本身也没有（`--model` 会被拒）。改这个文件要先关掉 ZCode（运行中的 server 会用内存值覆盖），并让 `modelOrder` 与 `personalModelIds` 保持同一顺序——两者可能不同步，表现出来就是"排第一的没被选中"。

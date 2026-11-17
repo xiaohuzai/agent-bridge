@@ -29,6 +29,16 @@
 //     {inputTokens, outputTokens}}}; thread/status/changed (activeFlags may
 //     carry 'waitingOnApproval'); error {error:{message}, willRetry};
 //     turn/completed {turn:{status:'completed'|'interrupted'|'failed', error, items}}.
+//   LIVE 2026-11-17, codex-cli 0.162.1 and 0.169.0-alpha.11.1, isolated Linux
+//   container + mock Responses/MCP backends: commandExecution item/completed carries status
+//   'failed' for `exit 7`, 'completed' for `exit 0`, and 'declined' after
+//   rejecting approval; all were followed by a normally completed turn.
+//   mcpToolCall item/completed.status is 'failed' for both an MCP isError
+//   result and a JSON-RPC error, and 'completed' for a successful result.
+//   In 0.162.1, an unsuccessful apply_patch produces fileChange.status
+//   'failed', and declining its approval produces 'declined'; the enclosing
+//   turn can still complete normally. Both item frames carry changes[].path.
+//   Use status, not exitCode, for the tool row.
 //   server→client REQUESTS (must always be answered or codex blocks forever):
 //     item/commandExecution/requestApproval {command, cwd, availableDecisions:
 //       ['accept', {acceptWithExecpolicyAmendment:{…}}, 'cancel']} → answer
@@ -79,6 +89,13 @@ const INIT_TIMEOUT_MS = 15000;
  * because the detail strings differ between them (codex appends " (exit N)"). */
 function toolEv(name, status, detail, id) {
   return { type: 'tool', name, status, detail, ...(id ? { id } : {}) };
+}
+
+function fileChangeDetail(item) {
+  const paths = Array.isArray(item.changes)
+    ? item.changes.map((change) => change?.path).filter((path) => typeof path === 'string' && path)
+    : [];
+  return paths.length ? paths.join(', ') : item.files?.join?.(', ') || '';
 }
 
 /** Can this completed agentMessage text still join the turn's item list?
@@ -261,7 +278,7 @@ export class CodexAppServerAdapter {
           if (t.curMsg && it.id !== t.curMsg.id) closeCurMsg(t);
           if (!t.curMsg && it.id != null) t.curMsg = { id: it.id, text: '', phase: it.phase ?? null };
         } else if (it.type === 'commandExecution') t.events?.(toolEv('command', 'started', it.command || '', it.id ?? params.itemId));
-        else if (it.type === 'fileChange') t.events?.(toolEv('file', 'started', it.files?.join?.(', ') || '', it.id ?? params.itemId));
+        else if (it.type === 'fileChange') t.events?.(toolEv('file', 'started', fileChangeDetail(it), it.id ?? params.itemId));
         else if (it.type === 'mcpToolCall') t.events?.(toolEv(it.tool || 'mcp', 'started', it.server || '', it.id ?? params.itemId));
         break;
       }
@@ -270,9 +287,9 @@ export class CodexAppServerAdapter {
         if (!matches(params.turnId)) break;
         // EVERY tool-bearing item completes — fileChange/mcpToolCall included:
         // a started with no completed leaves client tool rows stuck mid-call.
-        if (it.type === 'commandExecution') t.events?.(toolEv('command', 'completed', `${it.command || ''}${it.exitCode != null ? ` (exit ${it.exitCode})` : ''}`, it.id ?? params.itemId));
-        else if (it.type === 'fileChange') t.events?.(toolEv('file', 'completed', it.files?.join?.(', ') || '', it.id ?? params.itemId));
-        else if (it.type === 'mcpToolCall') t.events?.(toolEv(it.tool || 'mcp', 'completed', it.server || '', it.id ?? params.itemId));
+        if (it.type === 'commandExecution') t.events?.(toolEv('command', it.status === 'failed' || it.status === 'declined' ? 'failed' : 'completed', `${it.command || ''}${it.exitCode != null ? ` (exit ${it.exitCode})` : ''}`, it.id ?? params.itemId));
+        else if (it.type === 'fileChange') t.events?.(toolEv('file', it.status === 'failed' || it.status === 'declined' ? 'failed' : 'completed', fileChangeDetail(it), it.id ?? params.itemId));
+        else if (it.type === 'mcpToolCall') t.events?.(toolEv(it.tool || 'mcp', it.status === 'failed' ? 'failed' : 'completed', it.server || '', it.id ?? params.itemId));
         if (it.type !== 'agentMessage' || !it.text) break;
         if (t.curMsg && it.id === t.curMsg.id) {
           // The streaming item's own completed: deltas are authoritative;

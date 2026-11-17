@@ -35,6 +35,16 @@
 //   tool.updated payload.kind: scheduled {toolCallId, toolName, input} |
 //   started {toolCallId, toolName, readOnly, sideEffectScope} | result
 //   {toolCallId, result:{success, content,…}} | batch {toolCallIds,…}.
+//   LIVE 2026-11-17, CLI 0.17.1 in an isolated Linux container with a mock
+//   Chat Completions backend: Read of a missing file emits error
+//   {toolCallId, error:{type, message, code, detail, stack}}, then a batch
+//   with errorCount:1; the enclosing turn can still complete successfully.
+//   A mock Anthropic backend's server-side MCP failure emits result with
+//   result.success:false; the enclosing turn can likewise succeed.
+//   The captured envelopes carry numeric seq and sessionId. Replayed frames
+//   are ordered only within a known sessionId + toolCallId; a failure stays
+//   terminal until a new started or a new scheduled/result pair. Without seq,
+//   a replay cannot always be distinguished from actual reuse of the same id.
 //
 //   turn.completed payload: {response, usage:{inputTokens, outputTokens,
 //   cacheReadTokens, cacheWriteTokens, reasoningTokens, …}, toolCallCount,
@@ -286,20 +296,7 @@ export const HEADLESS_PROFILES = {
           }
           return;
         case 'tool.updated':
-          if (p.kind === 'scheduled') {
-            turn.tools.set(p.toolCallId, {
-              name: p.toolName || 'tool',
-              detail: summarizeToolInput(p.input),
-            });
-          } else if (p.kind === 'started') {
-            const known = turn.tools.get(p.toolCallId);
-            const name = p.toolName || known?.name || 'tool';
-            turn.tools.set(p.toolCallId, { name, detail: known?.detail || '' });
-            emit({ type: 'tool', id: p.toolCallId, name, status: 'started', detail: known?.detail || '' });
-          } else if (p.kind === 'result') {
-            const known = turn.tools.get(p.toolCallId) || { name: 'tool', detail: '' };
-            emit({ type: 'tool', id: p.toolCallId, name: known.name, status: 'completed', detail: known.detail });
-          }
+          zcodeToolUpdate(msg, turn, emit);
           return;
         case 'turn.completed': {
           emitUsage(p.usage, turn, emit);
@@ -408,6 +405,100 @@ function summarizeToolInput(input) {
   }
 }
 
+const validToolKey = (value) => typeof value === 'string' && !!value.trim();
+const activeToolCall = (call) => call.pending !== null || (call.status !== 'completed' && call.status !== 'failed');
+const compatibleToolCall = (call, name) => !name || call.name === 'tool' || call.name === name;
+const staleToolFrame = (call, seq) => seq !== null && call?.lastSeq != null && seq <= call.lastSeq;
+
+function zcodeToolIdentity(msg, p) {
+  const session = validToolKey(msg.sessionId) ? msg.sessionId : null;
+  const hasId = validToolKey(p.toolCallId);
+  const identified = session !== null && hasId;
+  const seq = identified && Number.isSafeInteger(msg.seq) && msg.seq >= 0 ? msg.seq : null;
+  return { session, hasId, identified, seq };
+}
+
+function canAttachUnscoped(existing, unscoped, others, kind) {
+  if (!existing && !others.length) return true;
+  if (!activeToolCall(unscoped) || others.some(activeToolCall)) return false;
+  return !existing || (!activeToolCall(existing) && kind !== 'scheduled');
+}
+
+function attachUnscopedTool(turn, tools, p, existing) {
+  const unscoped = turn.unscopedTools.get(p.toolCallId);
+  if (!unscoped || !compatibleToolCall(unscoped, p.toolName)) return;
+  const others = [...turn.tools.values()].filter((calls) => calls !== tools && calls.has(p.toolCallId))
+    .map((calls) => calls.get(p.toolCallId));
+  if (!canAttachUnscoped(existing, unscoped, others, p.kind)) return;
+  const lastSeq = existing?.lastSeq ?? unscoped.lastSeq;
+  tools.set(p.toolCallId, { ...unscoped, lastSeq });
+  turn.unscopedTools.delete(p.toolCallId);
+}
+
+function scopedToolMap(turn, p, identity) {
+  let tools = turn.tools.get(identity.session);
+  if (!tools) { tools = new Map(); turn.tools.set(identity.session, tools); }
+  const existing = tools.get(p.toolCallId);
+  if (staleToolFrame(existing, identity.seq)) return null;
+  attachUnscopedTool(turn, tools, p, existing);
+  return tools;
+}
+
+function chooseUnscopedTool(candidates, id, kind) {
+  const active = candidates.filter((calls) => activeToolCall(calls.get(id)));
+  if (active.length === 1) return active[0];
+  if (active.length !== 0 || (kind !== 'result' && kind !== 'error')) return null;
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function unscopedToolMap(turn, p, hasId) {
+  if (!hasId || turn.unscopedTools.has(p.toolCallId)) return turn.unscopedTools;
+  const candidates = [...turn.tools.values()].filter((calls) => calls.has(p.toolCallId));
+  const candidate = chooseUnscopedTool(candidates, p.toolCallId, p.kind);
+  return candidate && compatibleToolCall(candidate.get(p.toolCallId), p.toolName) ? candidate : turn.unscopedTools;
+}
+
+function scheduledTool(call, p) {
+  const next = { name: p.toolName || 'tool', detail: summarizeToolInput(p.input) };
+  return call.status === 'failed' || call.status === 'completed' ? { ...call, pending: next } : { ...call, ...next };
+}
+
+function startedTool(call, p) {
+  return { ...call, name: p.toolName || call.pending?.name || call.name,
+    detail: call.pending?.detail ?? call.detail, pending: null, status: 'started' };
+}
+
+function terminalTool(call, p, hasId) {
+  // A new scheduled item can finish without a started item.
+  const current = call.pending ? { ...call, ...call.pending, pending: null, status: null } : call;
+  if (hasId && current.status === 'failed') return { call: current, status: null };
+  const status = p.kind === 'error' || p.result?.success === false ? 'failed' : 'completed';
+  return { call: { ...current, status }, status };
+}
+
+function transitionTool(call, p, hasId) {
+  if (p.kind === 'scheduled') return { call: scheduledTool(call, p), status: null };
+  if (p.kind === 'started') return { call: startedTool(call, p), status: 'started' };
+  return terminalTool(call, p, hasId);
+}
+
+/** Track sequence only for a known session and call. Missing-session frames
+ * use the single compatible observed call when possible; ambiguous ones stay
+ * unscoped. Emitted ids remain the agent's original ids. */
+function zcodeToolUpdate(msg, turn, emit) {
+  const p = msg.payload || {};
+  if (!['scheduled', 'started', 'result', 'error'].includes(p.kind)) return;
+  const identity = zcodeToolIdentity(msg, p);
+  const tools = identity.identified ? scopedToolMap(turn, p, identity) : unscopedToolMap(turn, p, identity.hasId);
+  if (!tools) return;
+  const known = tools.get(p.toolCallId) || { name: 'tool', detail: '', status: null, lastSeq: null, pending: null };
+  if (staleToolFrame(known, identity.seq)) return;
+  const { call, status } = transitionTool(known, p, identity.hasId);
+  if (identity.seq !== null) call.lastSeq = identity.seq;
+  tools.set(p.toolCallId, call);
+  if (status) emit({ type: 'tool', id: p.toolCallId, name: call.name, status, detail: call.detail });
+}
+
 export class HeadlessCliAdapter {
   constructor({ profile = 'zcode', command, cwd = process.cwd(), mode, env = {}, installHint, log = () => {} } = {}) {
     const spec = HEADLESS_PROFILES[profile];
@@ -458,7 +549,8 @@ export class HeadlessCliAdapter {
       text: '',
       thinking: '',
       thinkingOpen: false,
-      tools: new Map(),
+      tools: new Map(),      // sessionId → (toolCallId → tool state)
+      unscopedTools: new Map(), // legacy metadata for frames lacking either id
       child: null,
       settled: false,       // done/aborted/error emitted
       aborted: false,

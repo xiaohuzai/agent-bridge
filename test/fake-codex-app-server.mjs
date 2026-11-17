@@ -22,6 +22,7 @@
 //                 item → final answer item; the narration must ride a note,
 //                 done.full must be the answer alone.
 //   'EDIT'      → fileChange + mcpToolCall items, started AND completed.
+//   'TOOL_STATUS' → completed tool items with explicit success/failure statuses.
 //   otherwise   → two deltas + tokenUsage + turn/completed (completed).
 // Every request method received is echoed to stderr as FAKE_METHOD:<m>.
 
@@ -119,6 +120,26 @@ function handle(j) {
       if (text.includes('FAIL')) {
         send({ method: 'error', params: { error: { message: 'Missing environment variable: `NOPE`.' }, threadId, turnId, willRetry: false } });
         complete(threadId, turnId, 'failed', []);
+        return;
+      }
+      if (text.includes('TOOL_STATUS')) {
+        // Synthetic cases exercise adapter mapping independently of the
+        // outcome of the enclosing turn. Do not infer failure from exitCode.
+        const items = [
+          { type: 'commandExecution', id: 'c-fail', command: "/usr/bin/bash -lc 'exit 7'", status: 'failed', exitCode: 7 },
+          { type: 'commandExecution', id: 'c-declined', command: "/usr/bin/bash -lc 'exit 7'", status: 'declined', exitCode: null },
+          { type: 'fileChange', id: 'f-fail', changes: [{ path: '/tmp/work/target.txt', kind: { type: 'update', move_path: null }, diff: '@@ -1 +1 @@\n-before\n+after\n' }], status: 'failed' },
+          { type: 'fileChange', id: 'f-declined', changes: [{ path: '/tmp/work/target.txt', kind: { type: 'update', move_path: null }, diff: '@@ -1 +1 @@\n-before\n+after\n' }], status: 'declined' },
+          { type: 'mcpToolCall', id: 'm-fail', tool: 'logical_fail', server: 'fixture', status: 'failed', arguments: {}, result: { content: [{ type: 'text', text: 'fixture result' }], structuredContent: null, _meta: null }, error: null },
+          { type: 'mcpToolCall', id: 'm-ok', tool: 'logical_ok', server: 'fixture', status: 'completed', arguments: {}, result: { content: [{ type: 'text', text: 'ok' }], structuredContent: null, _meta: null }, error: null },
+          { type: 'commandExecution', id: 'c-ok', command: "/usr/bin/bash -lc 'exit 0'", status: 'completed', exitCode: 0 },
+          { type: 'commandExecution', id: 'c-nonzero', command: 'check status', status: 'completed', exitCode: 1 },
+        ];
+        for (const item of items) {
+          send({ method: 'item/started', params: { threadId, turnId, item: { ...item, status: 'inProgress' } } });
+          send({ method: 'item/completed', params: { threadId, turnId, item } });
+        }
+        complete(threadId, turnId, 'completed', [{ type: 'agentMessage', id: 'm1', text: 'continued' }]);
         return;
       }
       if (text.includes('MIXED')) {
