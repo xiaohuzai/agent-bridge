@@ -188,6 +188,203 @@ test('tool.updated maps to paired v1 tool rows carrying the call id', async () =
   assert.equal(done.data.full, 'tool done');
 });
 
+for (const marker of ['TOOL_BAD_RESULT', 'TOOL_EXCEPTION']) {
+  test(`zcode ${marker} maps to failed without making the turn fail`, async () => {
+    const res = await post('/turns', { text: marker });
+    const sse = sseReader(res.body);
+    const done = await sse.readUntil((f) => f.data.type === 'done');
+    assert.equal(done.data.full, 'tool done');
+    const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+    assert.deepEqual(tools.map(({ id, status }) => [id, status]), [
+      ['call_fake_1', 'started'], ['call_fake_1', 'failed'],
+    ]);
+    assert.equal(tools[1].name, marker === 'TOOL_BAD_RESULT' ? 'fixture_fail' : 'Read');
+    assert.equal(tools[1].detail, marker === 'TOOL_BAD_RESULT' ? '{}' : '/tmp/fake.txt');
+    assert.deepEqual(Object.keys(tools[1]).sort(), ['detail', 'id', 'name', 'status', 'type']);
+    assert.equal(sse.frames.some((f) => f.data.type === 'error'), false);
+  });
+}
+
+for (const [marker, name, detail] of [
+  ['TOOL_NONZERO', 'Bash', 'false'],
+  ['TOOL_MCP_ERROR', 'mcp__fixture__fixture_fail', '{}'],
+]) {
+  test(`zcode ${marker} follows the upstream success signal`, async () => {
+    const res = await post('/turns', { text: marker });
+    const sse = sseReader(res.body);
+    const done = await sse.readUntil((f) => f.data.type === 'done');
+    assert.equal(done.data.full, 'tool done');
+    const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+    assert.deepEqual(tools.map(({ id, status }) => [id, status]), [
+      ['call_fake_1', 'started'], ['call_fake_1', 'completed'],
+    ]);
+    assert.equal(tools[1].name, name);
+    assert.equal(tools[1].detail, detail);
+  });
+}
+
+test('zcode keeps the legacy completed event when result.success is absent', async () => {
+  const res = await post('/turns', { text: 'TOOL_UNKNOWN' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, status }) => [id, status]), [
+    ['call_fake_1', 'started'], ['call_fake_1', 'completed'],
+  ]);
+});
+
+test('zcode ignores older replayed tool frames and accepts an explicit new start', async () => {
+  const res = await post('/turns', { text: 'REPLAY_SEQUENCE' });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data.type === 'done');
+  assert.equal(done.data.full, 'PONG');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, status, detail }) => [id, status, detail]), [
+    ['call_replay', 'started', '/tmp/replay.txt'],
+    ['call_replay', 'completed', '/tmp/replay.txt'],
+    ['call_replay', 'failed', '/tmp/replay.txt'],
+    ['call_replay', 'started', '/tmp/reused.txt'],
+    ['call_replay', 'completed', '/tmp/reused.txt'],
+  ]);
+});
+
+test('zcode advances the replay watermark even when a success after failure is ignored', async () => {
+  const res = await post('/turns', { text: 'REVIEW_WATERMARK' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, status, detail }) => [id, status, detail]), [
+    ['call_watermark', 'started', '/tmp/a.txt'], ['call_watermark', 'failed', '/tmp/a.txt'],
+    ['call_watermark', 'started', '/tmp/a.txt'], ['call_watermark', 'completed', '/tmp/a.txt'],
+  ]);
+});
+
+test('zcode preserves new scheduled tool details when no started event arrives', async () => {
+  const res = await post('/turns', { text: 'REVIEW_NO_START' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, name, status, detail }) => [id, name, status, detail]), [
+    ['call_completed', 'Read', 'started', '/tmp/a.txt'], ['call_completed', 'Read', 'completed', '/tmp/a.txt'],
+    ['call_completed', 'Bash', 'completed', 'echo b'],
+    ['call_failed', 'Read', 'started', '/tmp/a.txt'], ['call_failed', 'Read', 'failed', '/tmp/a.txt'],
+    ['call_failed', 'Bash', 'completed', 'echo b'],
+    ['call_partial_reused', 'Read', 'started', '/tmp/a.txt'], ['call_partial_reused', 'Read', 'completed', '/tmp/a.txt'],
+    ['call_partial_reused', 'Bash', 'completed', 'echo mixed'],
+  ]);
+});
+
+test('zcode matches a new child session to its only active unscoped call', async () => {
+  const res = await post('/turns', { text: 'REVIEW_CHILD_SCOPE' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, name, status, detail }) => [id, name, status, detail]), [
+    ['call_child', 'Read', 'started', '/tmp/a.txt'], ['call_child', 'Read', 'completed', '/tmp/a.txt'],
+    ['call_child', 'Bash', 'started', 'echo b'], ['call_child', 'Bash', 'completed', 'echo b'],
+    ['call_same_name', 'Read', 'started', '/tmp/first.txt'], ['call_same_name', 'Read', 'completed', '/tmp/first.txt'],
+    ['call_same_name', 'Read', 'started', '/tmp/second.txt'], ['call_same_name', 'Read', 'completed', '/tmp/second.txt'],
+    ['call_ambiguous', 'Read', 'started', '/tmp/active.txt'], ['call_ambiguous', 'Bash', 'started', 'echo other'],
+    ['call_ambiguous', 'tool', 'completed', ''], ['call_ambiguous', 'Read', 'completed', '/tmp/active.txt'],
+  ]);
+});
+
+test('zcode preserves tool outcomes and details for duplicate, incomplete and ambiguous frames', async () => {
+  const res = await post('/turns', { text: 'REVIEW_BEHAVIOR' });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data.type === 'done');
+  assert.equal(done.data.full, 'PONG');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, name, status, detail }) => [id, name, status, detail]), [
+    ['quality_equal', 'Read', 'started', '/tmp/equal.txt'],
+    ['quality_equal', 'Read', 'completed', '/tmp/equal.txt'],
+    ['quality_failed', 'Read', 'started', '/tmp/failed.txt'],
+    ['quality_failed', 'Read', 'failed', '/tmp/failed.txt'],
+    ['quality_missing', 'Read', 'started', '/tmp/missing.txt'],
+    ['quality_missing', 'Read', 'completed', '/tmp/missing.txt'],
+    ['quality_empty', 'Read', 'started', '/tmp/old.txt'],
+    ['quality_empty', 'Read', 'completed', '/tmp/old.txt'],
+    ['quality_empty', 'Bash', 'started', ''],
+    ['quality_empty', 'Bash', 'completed', ''],
+    ['quality_pending', 'Read', 'started', '/tmp/a.txt'],
+    ['quality_pending', 'Read', 'completed', '/tmp/a.txt'],
+    ['quality_pending', 'Read', 'started', '/tmp/b.txt'],
+    ['quality_pending', 'tool', 'failed', ''],
+    ['quality_pending', 'Bash', 'completed', 'echo a'],
+    ['quality_pending', 'Read', 'completed', '/tmp/b.txt'],
+  ]);
+});
+
+test('zcode keeps an unsequenced failure until another start', async () => {
+  const res = await post('/turns', { text: 'REPLAY_NO_SEQ' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, status }) => [id, status]), [
+    ['call_unsequenced', 'started'], ['call_unsequenced', 'failed'],
+    ['call_unsequenced', 'started'], ['call_unsequenced', 'completed'],
+  ]);
+});
+
+for (const marker of ['REPLAY_SESSIONS', 'REPLAY_SESSIONS_NO_SEQ']) {
+  test(`zcode keeps same tool id independent across child sessions: ${marker}`, async () => {
+    const res = await post('/turns', { text: marker });
+    const sse = sseReader(res.body);
+    await sse.readUntil((f) => f.data.type === 'done');
+    const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+    assert.deepEqual(tools.map(({ id, name, status, detail }) => [id, name, status, detail]), [
+      ['call_shared', 'Read', 'started', '/tmp/a.txt'],
+      ['call_shared', 'Bash', 'started', 'echo b'],
+      ['call_shared', 'Read', 'failed', '/tmp/a.txt'],
+      ['call_shared', 'Bash', 'completed', 'echo b'],
+    ]);
+  });
+}
+
+test('zcode does not compare a missing session id to another session sequence', async () => {
+  const res = await post('/turns', { text: 'REPLAY_NO_SESSION' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ name, status, detail }) => [name, status, detail]), [
+    ['Read', 'started', ''], ['Read', 'failed', ''],
+    ['Bash', 'started', 'echo unknown'], ['Bash', 'completed', 'echo unknown'],
+  ]);
+});
+
+test('zcode keeps tool metadata across partially missing session ids without mixing ambiguous sessions', async () => {
+  const res = await post('/turns', { text: 'REPLAY_PARTIAL' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, name, status, detail }) => [id, name, status, detail]), [
+    ['partial_a', 'Read', 'started', '/tmp/partial-a.txt'],
+    ['partial_a', 'Read', 'failed', '/tmp/partial-a.txt'],
+    ['partial_a', 'Read', 'started', '/tmp/partial-a.txt'],
+    ['partial_a', 'Read', 'completed', '/tmp/partial-a.txt'],
+    ['partial_b', 'Read', 'started', '/tmp/partial-b.txt'],
+    ['partial_b', 'Read', 'completed', '/tmp/partial-b.txt'],
+    ['partial_c', 'Read', 'started', '/tmp/c.txt'],
+    ['partial_c', 'Bash', 'started', 'echo c'],
+    ['partial_c', 'tool', 'failed', ''],
+    ['partial_c', 'Read', 'completed', '/tmp/c.txt'],
+    ['partial_c', 'Bash', 'completed', 'echo c'],
+  ]);
+});
+
+test('zcode keeps failure when all tool frames omit a session id', async () => {
+  const res = await post('/turns', { text: 'REPLAY_NO_SESSION_ONLY' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data.type === 'done');
+  const tools = sse.frames.filter((f) => f.data.type === 'tool').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, status, detail }) => [id, status, detail]), [
+    ['call_unscoped', 'started', '/tmp/unscoped.txt'],
+    ['call_unscoped', 'failed', '/tmp/unscoped.txt'],
+    ['call_unscoped', 'started', '/tmp/unscoped.txt'],
+    ['call_unscoped', 'completed', '/tmp/unscoped.txt'],
+  ]);
+});
+
 test('reasoning deltas are fenced so full agrees with the delta concat', async () => {
   const res = await post('/turns', { text: 'THINK' });
   const sse = sseReader(res.body);

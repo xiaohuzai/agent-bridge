@@ -458,6 +458,47 @@ test('fileChange and mcpToolCall items complete too (not just start)', async () 
     ['file', 'started', 'f1'], ['file', 'completed', 'f1'],
     ['search', 'started', 'x1'], ['search', 'completed', 'x1'],
   ]);
+  assert.deepEqual(sse.frames.filter((f) => f.data?.type === 'tool' && f.data.name === 'file').map((f) => f.data.detail), ['a.txt', 'a.txt']);
+});
+
+test('codex command failure reaches v1 without making the turn fail', async () => {
+  const res = await post('/turns', { text: 'TOOL_STATUS' });
+  const sse = sseReader(res.body);
+  const done = await sse.readUntil((f) => f.data?.type === 'done');
+  assert.equal(done.data.full, 'continued');
+  const tools = sse.frames.filter((f) => f.data?.type === 'tool' && f.data.name === 'command').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, status }) => [id, status]), [
+    ['c-fail', 'started'], ['c-fail', 'failed'],
+    ['c-declined', 'started'], ['c-declined', 'failed'],
+    ['c-ok', 'started'], ['c-ok', 'completed'],
+    ['c-nonzero', 'started'], ['c-nonzero', 'completed'],
+  ]);
+  assert.match(tools.at(-1).detail, /\(exit 1\)/);
+  assert.deepEqual(Object.keys(tools[1]).sort(), ['detail', 'id', 'name', 'status', 'type']);
+  assert.equal(sse.frames.some((f) => f.data?.type === 'error'), false);
+});
+
+test('codex MCP failure reaches v1', async () => {
+  const res = await post('/turns', { text: 'TOOL_STATUS' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'done');
+  const tools = sse.frames.filter((f) => f.data?.type === 'tool' && f.data.name.startsWith('logical_')).map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, status }) => [id, status]), [
+    ['m-fail', 'started'], ['m-fail', 'failed'],
+    ['m-ok', 'started'], ['m-ok', 'completed'],
+  ]);
+});
+
+test('codex file change failure reaches v1', async () => {
+  const res = await post('/turns', { text: 'TOOL_STATUS' });
+  const sse = sseReader(res.body);
+  await sse.readUntil((f) => f.data?.type === 'done');
+  const tools = sse.frames.filter((f) => f.data?.type === 'tool' && f.data.name === 'file').map((f) => f.data);
+  assert.deepEqual(tools.map(({ id, status }) => [id, status]), [
+    ['f-fail', 'started'], ['f-fail', 'failed'],
+    ['f-declined', 'started'], ['f-declined', 'failed'],
+  ]);
+  assert.deepEqual(tools.map((tool) => tool.detail), Array(4).fill('/tmp/work/target.txt'));
 });
 
 test('oversized bodies are refused with 413 (the cap counts bytes, not chars)', async () => {

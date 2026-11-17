@@ -18,12 +18,14 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FAKE_ACP = join(__dirname, 'fake-acp-agent.mjs');
 const FAKE_CODEX = join(__dirname, 'fake-codex-app-server.mjs');
+const FAKE_ZCODE = join(__dirname, 'fake-zcode-cli.mjs');
 
 const { createBridgeServer } = await import('../server.mjs');
 const { attachAcpFront } = await import('../acp-front-ws.mjs');
 const { createFrameDecoder } = await import('../wire-ws.mjs');
 const { AcpStdioAdapter } = await import('../adapters/acp-stdio.mjs');
 const { CodexAppServerAdapter } = await import('../adapters/codex-app-server.mjs');
+const { HeadlessCliAdapter } = await import('../adapters/headless-cli.mjs');
 const { wsConnect } = await import('./ws-client.mjs');
 
 chmodSync(FAKE_ACP, 0o755);
@@ -35,10 +37,12 @@ let port = 0;
 let logs = [];
 const clients = [];
 
-async function startBridge({ token, attach = true, command, codex = false } = {}) {
+async function startBridge({ token, attach = true, command, codex = false, headless = false } = {}) {
   logs = [];
   const adapter = codex
     ? new CodexAppServerAdapter({ codexBin: FAKE_CODEX, log: (m) => logs.push(m) })
+    : headless
+      ? new HeadlessCliAdapter({ profile: 'zcode', command: [process.execPath, FAKE_ZCODE], cwd: '/tmp', log: (m) => logs.push(m) })
     : new AcpStdioAdapter({ command: command || [FAKE_ACP], cwd: '/tmp', log: (m) => logs.push(m) });
   const server = createBridgeServer({ adapter, agent: 'acp', version: 'test', token, log: (m) => logs.push(m) });
   if (attach) {
@@ -236,6 +240,145 @@ test('codex-native tool events pair started/completed into ONE toolCallId', asyn
   assert.deepEqual(updates.map((u) => u.status), ['in_progress', 'completed']);
   assert.equal(new Set(updates.map((u) => u.toolCallId)).size, 1, `one toolCallId across started/completed; got ${JSON.stringify(updates.map((u) => u.toolCallId))}`);
   assert.notEqual(updates[0].title, updates[1].title, 'titles differ — the id is what pairs them');
+  ws.close();
+});
+
+test('codex command failure reaches ACP while the prompt ends normally', async () => {
+  await startBridge({ codex: true });
+  const { ws } = await openAcpClient();
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'TOOL_STATUS' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update);
+  assert.deepEqual(updates.slice(0, 4).map((u) => u.status), ['in_progress', 'failed', 'in_progress', 'failed']);
+  assert.equal(updates[0].toolCallId, updates[1].toolCallId);
+  assert.equal(updates[2].toolCallId, updates[3].toolCallId);
+  assert.deepEqual(updates.slice(-4).map((u) => u.status), ['in_progress', 'completed', 'in_progress', 'completed']);
+  ws.close();
+});
+
+test('codex file changes carry real paths into ACP updates', async () => {
+  await startBridge({ codex: true });
+  const { ws } = await openAcpClient();
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'TOOL_STATUS' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update)
+    .filter((u) => u.title === '/tmp/work/target.txt');
+  assert.deepEqual(updates.map((u) => u.status), ['in_progress', 'failed', 'in_progress', 'failed']);
+  assert.equal(updates[0].toolCallId, updates[1].toolCallId);
+  assert.equal(updates[2].toolCallId, updates[3].toolCallId);
+  ws.close();
+});
+
+test('zcode replayed terminal frames do not undo ACP failures', async () => {
+  await startBridge({ headless: true });
+  const { ws } = await openAcpClient();
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'REPLAY_SEQUENCE' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update);
+  assert.deepEqual(updates.map((u) => u.status), ['in_progress', 'completed', 'failed', 'in_progress', 'completed']);
+  assert.equal(new Set(updates.map((u) => u.toolCallId)).size, 1);
+  ws.close();
+});
+
+test('zcode advances the replay watermark before emitting ACP updates', async () => {
+  await startBridge({ headless: true });
+  const { ws } = await openAcpClient();
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'REVIEW_WATERMARK' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update);
+  assert.deepEqual(updates.map((u) => u.status), ['in_progress', 'failed', 'in_progress', 'completed']);
+  ws.close();
+});
+
+test('zcode preserves new scheduled tool details without started in ACP', async () => {
+  await startBridge({ headless: true });
+  const { ws } = await openAcpClient();
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'REVIEW_NO_START' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update);
+  assert.deepEqual(updates.map((u) => [u.status, u.title]), [
+    ['in_progress', '/tmp/a.txt'], ['completed', '/tmp/a.txt'], ['completed', 'echo b'],
+    ['in_progress', '/tmp/a.txt'], ['failed', '/tmp/a.txt'], ['completed', 'echo b'],
+    ['in_progress', '/tmp/a.txt'], ['completed', '/tmp/a.txt'], ['completed', 'echo mixed'],
+  ]);
+  ws.close();
+});
+
+test('zcode matches only an unambiguous active child call before ACP', async () => {
+  await startBridge({ headless: true });
+  const { ws } = await openAcpClient();
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'REVIEW_CHILD_SCOPE' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update);
+  assert.deepEqual(updates.map((u) => [u.status, u.title]), [
+    ['in_progress', '/tmp/a.txt'], ['completed', '/tmp/a.txt'],
+    ['in_progress', 'echo b'], ['completed', 'echo b'],
+    ['in_progress', '/tmp/first.txt'], ['completed', '/tmp/first.txt'],
+    ['in_progress', '/tmp/second.txt'], ['completed', '/tmp/second.txt'],
+    ['in_progress', '/tmp/active.txt'], ['in_progress', 'echo other'],
+    ['completed', 'tool'], ['completed', '/tmp/active.txt'],
+  ]);
+  ws.close();
+});
+
+test('zcode child-session tool state is isolated before the ACP front', async () => {
+  await startBridge({ headless: true });
+  const { ws } = await openAcpClient();
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'REPLAY_SESSIONS' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update);
+  assert.deepEqual(updates.map((u) => [u.status, u.title]), [
+    ['in_progress', '/tmp/a.txt'], ['in_progress', 'echo b'],
+    ['failed', '/tmp/a.txt'], ['completed', 'echo b'],
+  ]);
+  // v1 carries the agent's raw id only. The ACP front therefore cannot
+  // distinguish two child sessions that reuse that id; do not invent one.
+  assert.equal(new Set(updates.map((u) => u.toolCallId)).size, 1);
+  ws.close();
+});
+
+test('zcode missing-session failures remain failed in ACP until a new start', async () => {
+  await startBridge({ headless: true });
+  const { ws } = await openAcpClient();
+  const sid = await newSession(ws);
+  await ws.send({ jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: sid, prompt: [{ type: 'text', text: 'REPLAY_NO_SESSION_ONLY' }] } });
+  const done = await ws.recv((f) => text(f)?.id === 3);
+  assert.equal(done.msg.result.stopReason, 'end_turn');
+  const updates = ws.frames.map(text)
+    .filter((m) => m?.method === 'session/update' && m.params.update.sessionUpdate === 'tool_call_update')
+    .map((m) => m.params.update);
+  assert.deepEqual(updates.map((u) => [u.status, u.title]), [
+    ['in_progress', '/tmp/unscoped.txt'], ['failed', '/tmp/unscoped.txt'],
+    ['in_progress', '/tmp/unscoped.txt'], ['completed', '/tmp/unscoped.txt'],
+  ]);
   ws.close();
 });
 
